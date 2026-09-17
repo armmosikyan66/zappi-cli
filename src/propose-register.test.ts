@@ -31,9 +31,9 @@ describe('parseProposeRegisterArgs', () => {
     assert.equal(parsed.generate, false)
   })
 
-  it('defaults origin to production Zappi', () => {
+  it('defaults origin to local / staging web', () => {
     const parsed = parseProposeRegisterArgs(['--generate'], {})
-    assert.equal(parsed.origin, 'https://zappi.money')
+    assert.equal(parsed.origin, 'http://dev.zappi.money')
     assert.equal(parsed.generate, true)
   })
 })

@@ -1,0 +1,12 @@
+# Published package should not ship tests, maps, or declarations
+*.test.js
+*.test.d.ts
+*.test.js.map
+*.test.d.ts.map
+*.map
+*.d.ts
+src/
+tsconfig.json
+*.tgz
+coverage/
+.github/

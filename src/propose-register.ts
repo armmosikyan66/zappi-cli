@@ -1,14 +1,24 @@
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
 import { spawn } from 'node:child_process'
-import { generateMnemonic } from '@scure/bip39'
-import { wordlist } from '@scure/bip39/wordlists/english.js'
-import { resolveAppOrigin, resolveSparkNetwork, type PotEnv } from './env.js'
 import {
   buildRegisterDeepLink,
   parseRegisterDeepLinkQuery,
 } from './register-deep-link.js'
+import {
+  defaultKeyFile,
+  deriveSparkAddress,
+  resolveKeyFilePath,
+  writeKeyFile,
+} from './pot-key-file.js'
+import { runProposeWizard } from './propose-wizard.js'
+import { resolveAppOrigin, resolveSparkNetwork, type PotEnv } from './env.js'
+
+export {
+  defaultKeyFile,
+  deriveSparkAddress,
+  resolveKeyFilePath,
+  writeKeyFile,
+} from './pot-key-file.js'
+export { runProposeWizard } from './propose-wizard.js'
 
 export interface ProposeRegisterArgs {
   address?: string
@@ -20,12 +30,14 @@ export interface ProposeRegisterArgs {
 }
 
 const USAGE = `Usage:
+  zappi-pot propose                                  # interactive wizard (recommended)
   zappi-pot propose --address spark1… [--label Research] [--origin https://zappi.money] [--open]
   zappi-pot propose --generate [--label Research] [--key-file ~/.zappi/new-pot.txt] [--open]
 
-Generates or accepts a public pot address, prints the P0 register deep link,
-and never prints the mnemonic. The human signs in and taps Register.
-Do not pass a recovery phrase as --address.`
+The wizard asks: existing pot or generate new → pot label (blank = auto pot_<id>)
+→ opens the Zappi register link in your browser (ENTER to open, auto-opens after
+a few seconds, or "c" to copy it). Never prints the mnemonic. The human signs in
+and taps Register. Do not pass a recovery phrase as --address.`
 
 export function parseProposeRegisterArgs(
   argv: string[],
@@ -108,51 +120,6 @@ export function printRegisterDeepLink(input: {
   ].join('\n')
 }
 
-function defaultKeyFile(): string {
-  return join(homedir(), '.zappi', `new-pot-${Date.now()}.txt`)
-}
-
-function writeKeyFile(
-  path: string,
-  mnemonic: string,
-  sparkAddress: string,
-  label?: string,
-) {
-  mkdirSync(dirname(path), { recursive: true })
-  const body = [
-    'Zappi agent pot key',
-    label ? `Label: ${label}` : null,
-    `Wallet address: ${sparkAddress}`,
-    '',
-    'This file is the pot spend key. Store it as a host secret (ZAPPI_POT_SEED)',
-    'or chmod 0600 on the agent machine. Never paste it into chat.',
-    '',
-    mnemonic,
-    '',
-  ]
-    .filter((line): line is string => line !== null)
-    .join('\n')
-  writeFileSync(path, body, { encoding: 'utf8', mode: 0o600 })
-  chmodSync(path, 0o600)
-}
-
-async function deriveSparkAddress(
-  mnemonic: string,
-  network: 'MAINNET' | 'REGTEST',
-): Promise<string> {
-  const { SparkWallet } = await import('@buildonspark/spark-sdk')
-  const { wallet } = await SparkWallet.initialize({
-    mnemonicOrSeed: mnemonic,
-    accountNumber: 0,
-    options: { network },
-  })
-  try {
-    return await wallet.getSparkAddress()
-  } finally {
-    await wallet.cleanupConnections()
-  }
-}
-
 function openUrl(href: string) {
   const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
   const child = spawn(command, [href], { stdio: 'ignore', detached: true })
@@ -163,14 +130,32 @@ export async function runProposeRegister(
   argv: string[],
   env: PotEnv = process.env,
 ): Promise<string> {
+  // Bare `zappi-pot propose` on a TTY → interactive wizard:
+  // existing vs new pot → label (blank = pot_<unique>) → auth/browser prompt.
+  if (argv.length === 0) {
+    if (process.stdin.isTTY) {
+      const result = await runProposeWizard(argv, env)
+      return result.output
+    }
+    throw new Error(
+      'Interactive wizard needs a terminal (TTY). Run from a shell, or use flags:\n\n' +
+        USAGE,
+    )
+  }
+
   const args = parseProposeRegisterArgs(argv, env)
   const network = resolveSparkNetwork(env)
   let sparkAddress = args.address?.trim()
 
   if (args.generate) {
+    const { generateMnemonic } = await import('@scure/bip39')
+    const { wordlist } = await import('@scure/bip39/wordlists/english.js')
     const mnemonic = generateMnemonic(wordlist, 128)
     sparkAddress = await deriveSparkAddress(mnemonic, network)
-    const keyFile = args.keyFile?.trim() || defaultKeyFile()
+    const keyFile = resolveKeyFilePath(
+      args.keyFile,
+      defaultKeyFile(args.label),
+    )
     writeKeyFile(keyFile, mnemonic, sparkAddress, args.label)
     const printed = printRegisterDeepLink({
       sparkAddress,

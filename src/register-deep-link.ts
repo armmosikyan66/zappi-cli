@@ -4,8 +4,8 @@ import {
   type SparkNetworkEnv,
 } from './spark-address.js'
 
-/** Production app origin. CLI/docs default. */
-export const DEFAULT_ZAPPI_APP_ORIGIN = 'https://zappi.money'
+/** Default app origin for register links. Override with `ZAPPI_APP_ORIGIN`. */
+export const DEFAULT_ZAPPI_APP_ORIGIN = 'http://dev.zappi.money'
 
 export type RegisterDeepLinkStatus = 'empty' | 'ok' | 'mnemonic' | 'invalid'
 

@@ -12,7 +12,8 @@ export interface PotEnv {
 
 export const DEFAULT_ZAPPI_API_URL = 'https://api.zappi.money'
 export const STAGING_ZAPPI_API_URL = 'https://api-dev.zappi.money'
-export const DEFAULT_ZAPPI_APP_ORIGIN = 'https://zappi.money'
+/** Local / staging web — production override: `ZAPPI_APP_ORIGIN=https://zappi.money`. */
+export const DEFAULT_ZAPPI_APP_ORIGIN = 'http://dev.zappi.money'
 
 export function resolvePaywallBase(env: PotEnv = process.env): string {
   const base =

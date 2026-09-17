@@ -58,8 +58,8 @@ describe('resolveUnlockToken', () => {
 })
 
 describe('resolveAppOrigin + spark network + units', () => {
-  it('defaults app origin to production Zappi', () => {
-    assert.equal(resolveAppOrigin({}), 'https://zappi.money')
+  it('defaults app origin to local / staging web', () => {
+    assert.equal(resolveAppOrigin({}), 'http://dev.zappi.money')
   })
 
   it('treats REGTEST as the only non-mainnet spark network', () => {

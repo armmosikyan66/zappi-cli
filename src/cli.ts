@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { redactSecrets } from './paywall-http.js'
 import { parsePositiveUnits } from './env.js'
 import { parseResourceId, consumeResource, payResource } from './paywall.js'
@@ -7,7 +9,11 @@ import { runProposeRegister } from './propose-register.js'
 export const HELP = `zappi-pot — buyer CLI for Zappi agent pots
 
 Commands:
-  propose   Print a human register deep link (never prints the mnemonic)
+  propose   Interactive wizard: existing pot or generate a new one, pick a pot
+            label (blank = auto pot_<id>), then open the Zappi register link
+            in your browser (ENTER to open, auto-opens after a few seconds,
+            or "c" to copy). Flags (--address/--generate) still work for
+            scripts. Never prints the mnemonic.
   pay       Pay a nest PaidResource (402 → sign from pot → settle)
             Metered resources auto-consume one unit after settle
             (opt out with --no-consume)
@@ -20,13 +26,14 @@ Env:
   ZAPPI_API_URL         Nest origin (default https://api.zappi.money)
   ZAPPI_PAYWALL_BASE    Optional override of the paywall origin
   ZAPPI_UNLOCK_TOKEN    Unlock bearer for consume (preferred over --unlock-token)
-  ZAPPI_APP_ORIGIN      Web origin for propose links (default https://zappi.money)
+  ZAPPI_APP_ORIGIN      Web origin for propose links (default http://dev.zappi.money)
   SPARK_NETWORK         MAINNET (default) or REGTEST
 
 Staging dogfood:
   ZAPPI_API_URL=https://api-dev.zappi.money
 
 Examples:
+  zappi-pot propose                     # interactive wizard
   zappi-pot propose --generate --label Research --open
   zappi-pot pay <resourceId>
   zappi-pot pay <resourceId> --no-consume
@@ -131,8 +138,18 @@ async function main(argv: string[]) {
   process.stdout.write(`${output}\n`)
 }
 
-const isDirectRun =
-  process.argv[1]?.endsWith('cli.js') || process.argv[1]?.endsWith('cli.ts')
+// Works through the `zappi-pot` bin symlink too: argv[1] is the symlink, so
+// resolve it to the real file and compare against this module's own path.
+const isDirectRun = (() => {
+  try {
+    return (
+      process.argv[1] !== undefined &&
+      realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
+    )
+  } catch {
+    return false
+  }
+})()
 
 if (isDirectRun) {
   main(process.argv.slice(2)).catch((error: unknown) => {

@@ -1,13 +1,15 @@
 {
-  "name": "zappi-cli",
+  "name": "@zappimoney/zappi-cli",
   "version": "0.1.0",
   "description": "Buyer CLI for Zappi agent pots — propose register links, pay ResourcePaywall (402/settle), consume metered grants.",
   "type": "module",
   "bin": {
-    "zappi-pot": "./dist/cli.js"
+    "zappi-pot": "./bin/cli.js"
   },
   "files": [
-    "dist",
+    "bin",
+    "dist/**/*.js",
+    "!dist/**/*.test.js",
     "README.md",
     "LICENSE",
     "SKILL.md"
@@ -44,6 +46,10 @@
     "cli",
     "spark",
     "paywall",
-    "agent"
-  ]
+    "agent",
+    "zappimoney"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

@@ -9,8 +9,12 @@ Install the CLI:
 
 ```bash
 npm i -g github:armmosikyan66/zappi-cli
-zappi-pot propose --generate --open
+zappi-pot propose --open
 ```
+
+The wizard asks whether the pot already exists or should be generated, prompts
+for a label (blank auto-names it `pot_<unique-id>`), then opens the register
+link in your browser (ENTER to open, auto-opens after 5s, `c` to copy).
 
 After the human registers and funds the pot:
 
