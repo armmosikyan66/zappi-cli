@@ -36,8 +36,9 @@ function makeDeps(overrides: Partial<Record<'ask' | 'select' | 'promptOpenLink',
       if (_prompt.includes('spend') || _prompt.includes('Auth')) return 'free'
       return 'generate'
     },
-    promptOpenLink: async (href: string) => {
+    promptOpenLink: async (href: string, options?: { openBrowser?: boolean; headline?: string }) => {
       prompts.push(href)
+      prompts.push(`openBrowser:${options?.openBrowser !== false}`)
       return (overrides.promptOpenLink as { action: string; auto: boolean }) ?? { action: 'opened', auto: false }
     },
     generateMnemonic: () => 'test mnemonic words only for unit tests never use',
@@ -223,7 +224,7 @@ describe('runProposeWizard', () => {
   })
 
   it('free tab sets mode=free and pots=agent on the link', async () => {
-    const { deps } = makeDeps({
+    const { deps, prompts } = makeDeps({
       select: ['generate', 'free'],
       ask: ['Research', ''],
     })
@@ -231,6 +232,23 @@ describe('runProposeWizard', () => {
     assert.equal(result.spendMode, 'free')
     assert.match(result.href!, /mode=free/)
     assert.match(result.href!, /pots=agent/)
+    assert.ok(
+      prompts.includes('openBrowser:false'),
+      'free must not open the browser',
+    )
+  })
+
+  it('auth_required tab opens the browser', async () => {
+    const { deps, prompts } = makeDeps({
+      select: ['existing', 'auth_required'],
+      ask: [ADDRESS, 'Research'],
+      promptOpenLink: { action: 'opened', auto: true },
+    })
+    await runProposeWizard([], { SPARK_NETWORK: 'MAINNET' }, deps)
+    assert.ok(
+      prompts.includes('openBrowser:true'),
+      'auth_required must open the browser',
+    )
   })
 
   it('copied action notes the clipboard', async () => {

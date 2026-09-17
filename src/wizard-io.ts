@@ -274,33 +274,39 @@ export interface AuthPromptResult {
 }
 
 /**
- * Open a register / approve link in the browser.
+ * Show a register / approve link.
  *
- * Always opens immediately (so a stuck readline/raw-mode conflict cannot
- * swallow ENTER and skip the browser). Then waits for ENTER to continue or
- * "c" to copy. Ctrl+C quits.
+ * - `openBrowser: true` (default): open immediately, then wait for ENTER / copy.
+ * - `openBrowser: false`: print the link only (Auth not required / free) — never
+ *   call `open`. User can still press "c" to copy or ENTER to continue.
  */
 export async function promptOpenLink(
   href: string,
-  options: { autoOpenMs?: number; headline?: string } = {},
+  options: { autoOpenMs?: number; headline?: string; openBrowser?: boolean } = {},
 ): Promise<AuthPromptResult> {
   closeWizardReadline()
 
-  const headline = options.headline ?? 'Open this link:'
+  const openBrowser = options.openBrowser !== false
+  const headline =
+    options.headline ??
+    (openBrowser ? 'Open this link:' : 'Register link (browser not opened):')
   process.stdout.write(`${headline}\n`)
   process.stdout.write(`${href}\n`)
 
-  // Open right away — do not wait for ENTER. Waiting was unreliable after
-  // arrow-key menus + readline prompts on the same stdin.
-  openUrl(href)
+  if (openBrowser) {
+    openUrl(href)
+  }
 
   if (!process.stdin.isTTY) {
-    return { action: 'opened', auto: true }
+    return { action: openBrowser ? 'opened' : 'skipped', auto: true }
   }
 
   process.stdout.write(
-    'Opened in your browser. Press ENTER to continue — or "c" to copy the link (Ctrl+C to quit)… ',
+    openBrowser
+      ? 'Opened in your browser. Press ENTER to continue — or "c" to copy the link (Ctrl+C to quit)… '
+      : 'Browser not opened (auth not required). Press ENTER to continue — or "c" to copy the link (Ctrl+C to quit)… ',
   )
+
 
   return await new Promise<AuthPromptResult>((resolve) => {
     const finish = (result: AuthPromptResult) => {
@@ -328,7 +334,10 @@ export async function promptOpenLink(
         process.exit(130)
       }
       if (key === '\r' || key === '\n') {
-        finish({ action: 'opened', auto: true })
+        finish({
+          action: openBrowser ? 'opened' : 'skipped',
+          auto: true,
+        })
         return
       }
       if (key === 'c' || key === 'C') {
@@ -344,8 +353,10 @@ export async function promptOpenLink(
     try {
       process.stdin.setRawMode(true)
     } catch {
-      // Raw mode unavailable — browser already opened above.
-      finish({ action: 'opened', auto: true })
+      finish({
+        action: openBrowser ? 'opened' : 'skipped',
+        auto: true,
+      })
       return
     }
     process.stdin.resume()
