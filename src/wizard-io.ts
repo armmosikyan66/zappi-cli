@@ -73,12 +73,35 @@ const pendingLines: string[] = []
 let pendingResolver: ((answer: string) => void) | null = null
 
 /**
+ * Tear down the shared readline before raw-mode UIs (`select`, `promptOpenLink`).
+ * Leaving readline attached to stdin steals keypresses so the browser open
+ * prompt never sees ENTER / never seems to run.
+ */
+export function closeWizardReadline(): void {
+  pendingLines.length = 0
+  pendingResolver = null
+  if (!sharedInterface) {
+    interfaceClosed = false
+    return
+  }
+  try {
+    sharedInterface.removeAllListeners()
+    sharedInterface.close()
+  } catch {
+    // already closed
+  }
+  sharedInterface = null
+  interfaceClosed = false
+}
+
+/**
  * One readline interface + a manual line buffer for every question.
  * `rl.question()` alone drops lines that arrive between prompts (piped stdin);
  * buffering 'line' events keeps TTY and pipe input behaving identically.
  */
 function ensureReadline() {
   if (sharedInterface) return sharedInterface
+  interfaceClosed = false
   sharedInterface = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -144,6 +167,7 @@ export async function select(
   options: SelectOption[],
   io: SelectIo = {},
 ): Promise<string> {
+  closeWizardReadline()
   const input = io.stdin ?? process.stdin
   const output = io.stdout ?? process.stdout
   output.write(`${prompt}\n`)
@@ -250,68 +274,61 @@ export interface AuthPromptResult {
 }
 
 /**
- * npm-style auth/browser prompt:
+ * Open a register / approve link in the browser.
  *
- *   Authenticate your account at:
- *   https://…
- *   Press ENTER to open in the browser…
- *   (auto-opening in 5s — or press "c" to copy the link, Ctrl+C to quit)
- *
- * ENTER (or timeout) → openUrl(). "c"/"C" → copyToClipboard(). Ctrl+C → exit.
+ * Always opens immediately (so a stuck readline/raw-mode conflict cannot
+ * swallow ENTER and skip the browser). Then waits for ENTER to continue or
+ * "c" to copy. Ctrl+C quits.
  */
 export async function promptOpenLink(
   href: string,
-  options: { autoOpenMs?: number } = {},
+  options: { autoOpenMs?: number; headline?: string } = {},
 ): Promise<AuthPromptResult> {
-  const autoOpenMs = options.autoOpenMs ?? 5000
-  process.stdout.write('Authenticate your account at:\n')
+  closeWizardReadline()
+
+  const headline = options.headline ?? 'Open this link:'
+  process.stdout.write(`${headline}\n`)
   process.stdout.write(`${href}\n`)
 
+  // Open right away — do not wait for ENTER. Waiting was unreliable after
+  // arrow-key menus + readline prompts on the same stdin.
+  openUrl(href)
+
   if (!process.stdin.isTTY) {
-    openUrl(href)
     return { action: 'opened', auto: true }
   }
 
-  process.stdout.write('Press ENTER to open in the browser… ')
+  process.stdout.write(
+    'Opened in your browser. Press ENTER to continue — or "c" to copy the link (Ctrl+C to quit)… ',
+  )
+
   return await new Promise<AuthPromptResult>((resolve) => {
     const finish = (result: AuthPromptResult) => {
-      clearInterval(countdown)
-      clearTimeout(timer)
-      process.stdin.setRawMode(false)
+      try {
+        process.stdin.setRawMode(false)
+      } catch {
+        // ignore
+      }
       process.stdin.removeListener('data', onData)
       if (process.stdin.isTTY) process.stdin.pause()
       process.stdout.write('\n')
       resolve(result)
     }
 
-    let remaining = Math.ceil(autoOpenMs / 1000)
-    const countdown = setInterval(() => {
-      remaining -= 1
-      if (remaining > 0) {
-        process.stdout.write(`\r(auto-opening in ${remaining}s — or press "c" to copy the link, Ctrl+C to quit)   `)
-      }
-    }, 1000)
-
-    const timer = setTimeout(async () => {
-      process.stdout.write('\n')
-      openUrl(href)
-      finish({ action: 'opened', auto: true })
-    }, autoOpenMs)
-
     const onData = async (chunk: Buffer) => {
       const key = chunk.toString('utf8')
       if (key === '\x03') {
-        // Ctrl+C — the hint says "Ctrl+C to quit", so honor it.
-        clearInterval(countdown)
-        clearTimeout(timer)
-        process.stdin.setRawMode(false)
+        try {
+          process.stdin.setRawMode(false)
+        } catch {
+          // ignore
+        }
         process.stdin.removeListener('data', onData)
         process.stdout.write('\n')
         process.exit(130)
       }
       if (key === '\r' || key === '\n') {
-        openUrl(href)
-        finish({ action: 'opened', auto: false })
+        finish({ action: 'opened', auto: true })
         return
       }
       if (key === 'c' || key === 'C') {
@@ -324,7 +341,13 @@ export async function promptOpenLink(
       }
     }
 
-    process.stdin.setRawMode(true)
+    try {
+      process.stdin.setRawMode(true)
+    } catch {
+      // Raw mode unavailable — browser already opened above.
+      finish({ action: 'opened', auto: true })
+      return
+    }
     process.stdin.resume()
     process.stdin.on('data', onData)
   })

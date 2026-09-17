@@ -52,7 +52,7 @@ export interface WizardDeps {
   deriveAddress: (mnemonic: string, network: 'MAINNET' | 'REGTEST') => Promise<string>
   writeKeyFile: (path: string, mnemonic: string, sparkAddress: string, label?: string) => void
   defaultKeyFile: (label?: string) => string
-  promptOpenLink: (href: string, options?: { autoOpenMs?: number }) => Promise<{ action: string; auto: boolean }>
+  promptOpenLink: (href: string, options?: { autoOpenMs?: number; headline?: string }) => Promise<{ action: string; auto: boolean }>
 }
 
 export interface PotEnvSubset {
@@ -144,8 +144,12 @@ export async function runProposeWizard(
     const href = buildRegisterDeepLink({ sparkAddress, label, origin, network, mode: spendMode })
     if (!href) throw new Error('Could not build the register deep link.')
 
-    // Step 4 — auth: open browser (ENTER / timeout auto-open / copy).
-    const openResult = await d.promptOpenLink(href)
+    // Step 4 — open browser (always; readline torn down inside promptOpenLink).
+    const openHeadline =
+      spendMode === 'free'
+        ? 'Register this pot (auth not required) at:'
+        : 'Approve / authenticate this pot at:'
+    const openResult = await d.promptOpenLink(href, { headline: openHeadline })
     if (openResult.action === 'copied') {
       lines.push('Link copied to clipboard.')
     } else if (openResult.action === 'skipped') {
@@ -183,7 +187,11 @@ export async function runProposeWizard(
   const href = buildRegisterDeepLink({ sparkAddress, label, origin, network, mode: spendMode })
   if (!href) throw new Error('Could not build the deep link for the new pot.')
 
-  const openResult = await d.promptOpenLink(href)
+  const openHeadline =
+    spendMode === 'free'
+      ? 'Register this pot (auth not required) at:'
+      : 'Approve / authenticate this pot at:'
+  const openResult = await d.promptOpenLink(href, { headline: openHeadline })
   lines.push(
     `Pot address: ${sparkAddress}`,
     `Spend mode: ${spendMode === 'free' ? 'auth not required (free)' : 'auth required'}`,
