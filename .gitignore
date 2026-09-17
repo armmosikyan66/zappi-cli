@@ -1,0 +1,34 @@
+# Dependencies & build
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Env & secrets — never commit pot keys / mnemonics / unlock tokens
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.zappi/
+pot-key*
+**/pot.key
+**/keys/
+**/secrets/
+
+# Logs & caches
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.cache/
+.turbo/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.log

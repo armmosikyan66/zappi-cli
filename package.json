@@ -1,0 +1,49 @@
+{
+  "name": "zappi-cli",
+  "version": "0.1.0",
+  "description": "Buyer CLI for Zappi agent pots — propose register links, pay ResourcePaywall (402/settle), consume metered grants.",
+  "type": "module",
+  "bin": {
+    "zappi-pot": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/",
+    "prepare": "npm run build",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@buildonspark/spark-sdk": "^0.11.0",
+    "@scure/base": "^1.2.6",
+    "@scure/bip39": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/armmosikyan66/zappi-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/armmosikyan66/zappi-cli/issues"
+  },
+  "homepage": "https://github.com/armmosikyan66/zappi-cli#readme",
+  "license": "MIT",
+  "keywords": [
+    "zappi",
+    "cli",
+    "spark",
+    "paywall",
+    "agent"
+  ]
+}
