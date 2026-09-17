@@ -121,6 +121,8 @@ npm test          # tsc → node --test dist/
 npm run build
 ```
 
+**Labels:** active pot names are unique per Zappi project (case-insensitive). Nest returns `409 AGENT_POT_LABEL_EXISTS` if the name is taken when you register in the app.
+
 ## Hard rules
 
 - **Never** print, log, `echo`, or `set -x` `ZAPPI_POT_SEED`, the key file, or `ZAPPI_UNLOCK_TOKEN`.
