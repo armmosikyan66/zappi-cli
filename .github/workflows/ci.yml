@@ -30,7 +30,7 @@ jobs:
         run: npm run build
 
       - name: Test (no live Spark / no paywall network)
-        run: node --test "dist/*.test.js"
+        run: node --test dist/*.test.js
         env:
           # Guardrails: tests must not rely on real secrets or spend
           ZAPPI_POT_SEED: ''
