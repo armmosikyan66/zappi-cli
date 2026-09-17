@@ -4,7 +4,7 @@
   "description": "Buyer CLI for Zappi agent pots — propose register links, pay ResourcePaywall (402/settle), consume metered grants.",
   "type": "module",
   "bin": {
-    "zappi-pot": "./bin/cli.js"
+    "zappi-cli": "./bin/cli.js"
   },
   "files": [
     "bin",
@@ -23,7 +23,9 @@
   "dependencies": {
     "@buildonspark/spark-sdk": "^0.11.0",
     "@scure/base": "^1.2.6",
-    "@scure/bip39": "^2.2.0"
+    "@scure/bip39": "^2.2.0",
+    "ora": "^8.2.0",
+    "picocolors": "^1.1.1"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

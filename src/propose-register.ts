@@ -30,9 +30,9 @@ export interface ProposeRegisterArgs {
 }
 
 const USAGE = `Usage:
-  zappi-pot propose                                  # interactive wizard (recommended)
-  zappi-pot propose --address spark1… [--label Research] [--origin https://zappi.money] [--open]
-  zappi-pot propose --generate [--label Research] [--key-file ~/.zappi/new-pot.txt] [--open]
+  zappi-cli propose                                  # interactive wizard (recommended)
+  zappi-cli propose --address spark1… [--label Research] [--origin https://zappi.money] [--open]
+  zappi-cli propose --generate [--label Research] [--key-file ~/.zappi/new-pot.txt] [--open]
 
 The wizard asks: existing pot or generate new → pot label (blank = auto pot_<id>)
 → opens the Zappi register link in your browser (ENTER to open, auto-opens after
@@ -130,7 +130,7 @@ export async function runProposeRegister(
   argv: string[],
   env: PotEnv = process.env,
 ): Promise<string> {
-  // Bare `zappi-pot propose` on a TTY → interactive wizard:
+  // Bare `zappi-cli propose` on a TTY → interactive wizard:
   // existing vs new pot → label (blank = pot_<unique>) → auth/browser prompt.
   if (argv.length === 0) {
     if (process.stdin.isTTY) {

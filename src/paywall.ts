@@ -21,6 +21,12 @@ import {
   type SendUsdbFromPotInput,
   type SendUsdbFromPotResult,
 } from './spark-send.js'
+import {
+  formatConsumePlain,
+  formatPayPlain,
+  type ConsumeResult,
+  type PayResult,
+} from './results.js'
 
 export interface PaywallAcceptExtra {
   priceCents?: number
@@ -126,12 +132,14 @@ export interface PayResourceOptions {
   /** Default true: after settle, consume one grant unit when pricingMode is metered. */
   autoConsume?: boolean
   consumeUnits?: number
+  /** Optional progress labels (spinner-friendly). Never include secrets. */
+  onStatus?: (label: string) => void
 }
 
-export async function payResource(
+export async function payResourceResult(
   resourceId: string,
   options: PayResourceOptions = {},
-): Promise<string> {
+): Promise<PayResult> {
   const env = options.env ?? process.env
   const potId = requirePotId(env)
   const loadSeed = options.loadSeed ?? loadPotSeed
@@ -140,10 +148,17 @@ export async function payResource(
   const autoConsume = options.autoConsume ?? true
   const consumeUnits = options.consumeUnits ?? 1
   const http = httpOptions(env, options)
+  const onStatus = options.onStatus
 
+  onStatus?.('Checking resource…')
   const first = await getResource(resourceId, http)
   if (first.status === 200) {
-    return 'Resource already unlocked (HTTP 200). Nothing to pay.'
+    return {
+      ok: true,
+      command: 'pay',
+      status: 'already_unlocked',
+      resourceId,
+    }
   }
   if (first.status !== 402) {
     throw new Error(
@@ -159,12 +174,14 @@ export async function payResource(
 
   const readToken = options.readTokenIdentifier ?? readUsdbTokenIdentifier
   const sendUsdb = options.sendUsdb ?? sendUsdbFromPot
+  onStatus?.('Reading pot USDB token…')
   const tokenIdentifier = await readToken(
     mnemonic,
     DEFAULT_ACCOUNT_NUMBER,
     network,
   )
 
+  onStatus?.(`Signing ${priceCents}¢ USDB…`)
   const { sparkTxHash } = await sendUsdb({
     mnemonic,
     accountNumber: DEFAULT_ACCOUNT_NUMBER,
@@ -174,6 +191,7 @@ export async function payResource(
     amountCents: priceCents,
   })
 
+  onStatus?.('Settling payment…')
   const settled = await settleWithRetry(
     { resourceId, potId, sparkTxHash },
     http,
@@ -187,45 +205,61 @@ export async function payResource(
     )
   }
 
-  const lines = [
-    `Settled resource ${resourceId} (${priceCents} cents USDB).`,
-    `sparkTxHash: ${sparkTxHash}`,
-  ]
-  if (settled.firstUnlock && settled.unlockToken) {
-    lines.push(
-      'Unlock token received (withheld from output). Store it as ZAPPI_UNLOCK_TOKEN — never echo it.',
-    )
-  }
-  if (settled.unlockUrl) {
-    lines.push(`unlockUrl: ${settled.unlockUrl}`)
-  }
+  const notes: string[] = []
+  const unlockTokenReceived = Boolean(settled.firstUnlock && settled.unlockToken)
 
   const shouldConsume = autoConsume && metered && Boolean(settled.unlockToken)
   if (autoConsume && metered && !settled.unlockToken) {
-    lines.push(
-      'Metered resource: skip auto-consume (no first-unlock token). Set ZAPPI_UNLOCK_TOKEN and run zappi-pot consume.',
+    notes.push(
+      'Metered resource: skip auto-consume (no first-unlock token). Set ZAPPI_UNLOCK_TOKEN and run zappi-cli consume.',
+    )
+  } else if (!autoConsume && metered) {
+    notes.push(
+      'Metered resource: auto-consume skipped (--no-consume). Run zappi-cli consume with ZAPPI_UNLOCK_TOKEN.',
     )
   }
+
+  let consume: ConsumeResult | undefined
   if (shouldConsume && settled.unlockToken) {
     try {
+      onStatus?.(
+        `Consuming ${consumeUnits} unit${consumeUnits === 1 ? '' : 's'}…`,
+      )
       const consumed = await consumeGrant(
         resourceId,
         settled.unlockToken,
         consumeUnits,
         http,
       )
-      lines.push(formatConsumeResult(resourceId, consumeUnits, consumed))
+      consume = consumeResultFromHttp(resourceId, consumeUnits, consumed)
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
-      lines.push(redactSecrets(`Auto-consume failed: ${message}`))
+      notes.push(redactSecrets(`Auto-consume failed: ${message}`))
     }
-  } else if (!autoConsume && metered) {
-    lines.push(
-      'Metered resource: auto-consume skipped (--no-consume). Run zappi-pot consume with ZAPPI_UNLOCK_TOKEN.',
-    )
   }
 
-  return lines.join('\n')
+  return {
+    ok: true,
+    command: 'pay',
+    status: 'settled',
+    resourceId,
+    priceCents,
+    sparkTxHash,
+    unlockTokenReceived,
+    unlockUrl: settled.unlockUrl || undefined,
+    metered,
+    autoConsume,
+    consume,
+    notes,
+  }
+}
+
+/** Human-readable string (stable plain format for tests). */
+export async function payResource(
+  resourceId: string,
+  options: PayResourceOptions = {},
+): Promise<string> {
+  return formatPayPlain(await payResourceResult(resourceId, options))
 }
 
 export interface ConsumeResourceOptions {
@@ -237,10 +271,10 @@ export interface ConsumeResourceOptions {
   units?: number
 }
 
-export async function consumeResource(
+export async function consumeResourceResult(
   resourceId: string,
   options: ConsumeResourceOptions = {},
-): Promise<string> {
+): Promise<ConsumeResult> {
   const env = options.env ?? process.env
   const units = parsePositiveUnits(
     options.units == null ? undefined : String(options.units),
@@ -249,23 +283,30 @@ export async function consumeResource(
   const unlockToken = resolveUnlockToken(env, options.unlockToken)
   const http = httpOptions(env, options)
   const consumed = await consumeGrant(resourceId, unlockToken, units, http)
-  return formatConsumeResult(resourceId, units, consumed)
+  return consumeResultFromHttp(resourceId, units, consumed)
 }
 
-function formatConsumeResult(
+export async function consumeResource(
+  resourceId: string,
+  options: ConsumeResourceOptions = {},
+): Promise<string> {
+  return formatConsumePlain(await consumeResourceResult(resourceId, options))
+}
+
+function consumeResultFromHttp(
   resourceId: string,
   units: number,
   consumed: { status: number; body: unknown },
-): string {
+): ConsumeResult {
   if (consumed.status === 200) {
     const remaining = grantRemainingFromBody(consumed.body)
-    const lines = [
-      `Consumed ${units} unit${units === 1 ? '' : 's'} on resource ${resourceId}.`,
-    ]
-    if (remaining != null) {
-      lines.push(`grantRemaining: ${remaining}`)
+    return {
+      ok: true,
+      command: 'consume',
+      resourceId,
+      units,
+      grantRemaining: remaining,
     }
-    return lines.join('\n')
   }
 
   const detail = messageFromBody(

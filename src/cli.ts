@@ -3,44 +3,29 @@ import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { redactSecrets } from './paywall-http.js'
 import { parsePositiveUnits } from './env.js'
-import { parseResourceId, consumeResource, payResource } from './paywall.js'
+import {
+  parseResourceId,
+  consumeResourceResult,
+  payResourceResult,
+} from './paywall.js'
 import { runProposeRegister } from './propose-register.js'
+import {
+  createSpinner,
+  renderHelp,
+  stripJsonFlag,
+  type OutputMode,
+} from './ui.js'
+import {
+  formatConsumePretty,
+  formatError,
+  formatPayPretty,
+  formatProposePretty,
+  toJson,
+  type ProposeResult,
+} from './results.js'
 
-export const HELP = `zappi-pot — buyer CLI for Zappi agent pots
-
-Commands:
-  propose   Interactive wizard: existing pot or generate a new one, pick a pot
-            label (blank = auto pot_<id>), then open the Zappi register link
-            in your browser (ENTER to open, auto-opens after a few seconds,
-            or "c" to copy). Flags (--address/--generate) still work for
-            scripts. Never prints the mnemonic.
-  pay       Pay a nest PaidResource (402 → sign from pot → settle)
-            Metered resources auto-consume one unit after settle
-            (opt out with --no-consume)
-  consume   Burn metered grant units (POST …/consume)
-
-Env:
-  ZAPPI_POT_ID          Required for pay (pot id from the Zappi prompt)
-  ZAPPI_POT_SEED        Preferred pot key (host secret — never echo)
-  ZAPPI_POT_KEY_FILE    Fallback mode-0600 key file
-  ZAPPI_API_URL         Nest origin (default https://api.zappi.money)
-  ZAPPI_PAYWALL_BASE    Optional override of the paywall origin
-  ZAPPI_UNLOCK_TOKEN    Unlock bearer for consume (preferred over --unlock-token)
-  ZAPPI_APP_ORIGIN      Web origin for propose links (default http://dev.zappi.money)
-  SPARK_NETWORK         MAINNET (default) or REGTEST
-
-Staging dogfood:
-  ZAPPI_API_URL=https://api-dev.zappi.money
-
-Examples:
-  zappi-pot propose                     # interactive wizard
-  zappi-pot propose --generate --label Research --open
-  zappi-pot pay <resourceId>
-  zappi-pot pay <resourceId> --no-consume
-  zappi-pot consume <resourceId> [--units N]
-  zappi-pot pay https://api.zappi.money/api/paywall/resources/<id>
-
-Never print or log ZAPPI_POT_SEED, the key file, or ZAPPI_UNLOCK_TOKEN.`
+/** @deprecated Prefer renderHelp(); kept for tests that import HELP. */
+export const HELP = renderHelp('plain')
 
 export interface PayCliArgs {
   resourceArg?: string
@@ -93,52 +78,130 @@ export function parseConsumeCliArgs(argv: string[]): ConsumeCliArgs {
   return parsed
 }
 
-export async function runCli(argv: string[]): Promise<string> {
+export async function runCli(
+  argv: string[],
+  mode: OutputMode = 'pretty',
+): Promise<string> {
   const [command, ...rest] = argv
 
   if (!command || command === '--help' || command === '-h') {
-    return HELP
+    return renderHelp(mode === 'json' ? 'plain' : mode)
   }
 
   if (command === 'propose') {
-    return runProposeRegister(rest)
+    const output = await runProposeRegister(rest)
+    if (mode === 'json') {
+      // Best-effort structured propose from plain lines (wizard already printed interactively).
+      const address = output.match(/Pot address:\s*(\S+)/)?.[1]
+      const href = output
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => /^https?:\/\//.test(l))
+      const keyFile = output.match(/Key file written[^:]*:\s*(.+)/)?.[1]
+      const result: ProposeResult = {
+        ok: true,
+        command: 'propose',
+        mode: keyFile ? 'generate' : 'flags',
+        sparkAddress: address ?? '',
+        href: href ?? '',
+        keyFile,
+        copied: /Link copied/i.test(output),
+      }
+      return toJson(result)
+    }
+    if (mode === 'pretty' && process.stdout.isTTY) {
+      const address = output.match(/Pot address:\s*(\S+)/)?.[1]
+      const href = output
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => /^https?:\/\//.test(l))
+      if (address && href) {
+        const keyFile = output.match(/Key file written[^:]*:\s*(.+)/)?.[1]
+        return formatProposePretty({
+          ok: true,
+          command: 'propose',
+          mode: keyFile ? 'generate' : 'flags',
+          sparkAddress: address,
+          href,
+          keyFile,
+          copied: /Link copied/i.test(output),
+        })
+      }
+    }
+    return output
   }
 
   if (command === 'pay') {
     const args = parsePayCliArgs(rest)
     if (!args.resourceArg) {
       throw new Error(
-        'Usage: zappi-pot pay <resourceIdOrUrl> [--no-consume] [--units N]',
+        'Usage: zappi-cli pay <resourceIdOrUrl> [--no-consume] [--units N] [--json]',
       )
     }
-    return payResource(parseResourceId(args.resourceArg), {
-      autoConsume: !args.noConsume,
-      consumeUnits: args.units,
-    })
+    const spinner = createSpinner('Paying…', mode)
+    spinner.start('Checking resource…')
+    try {
+      const result = await payResourceResult(parseResourceId(args.resourceArg), {
+        autoConsume: !args.noConsume,
+        consumeUnits: args.units,
+        onStatus: (label) => spinner.setText(label),
+      })
+      spinner.succeed(
+        result.status === 'already_unlocked' ? 'Already unlocked' : 'Settled',
+      )
+      if (mode === 'json') return toJson(result)
+      if (mode === 'plain') {
+        const { formatPayPlain } = await import('./results.js')
+        return formatPayPlain(result)
+      }
+      return formatPayPretty(result, mode)
+    } catch (error) {
+      spinner.fail('Pay failed')
+      throw error
+    }
   }
 
   if (command === 'consume') {
     const args = parseConsumeCliArgs(rest)
     if (!args.resourceArg) {
       throw new Error(
-        'Usage: zappi-pot consume <resourceIdOrUrl> [--units N] [--unlock-token <token>]',
+        'Usage: zappi-cli consume <resourceIdOrUrl> [--units N] [--unlock-token <token>] [--json]',
       )
     }
-    return consumeResource(parseResourceId(args.resourceArg), {
-      units: args.units,
-      unlockToken: args.unlockTokenFlag,
-    })
+    const spinner = createSpinner('Consuming…', mode)
+    spinner.start()
+    try {
+      const result = await consumeResourceResult(
+        parseResourceId(args.resourceArg),
+        {
+          units: args.units,
+          unlockToken: args.unlockTokenFlag,
+        },
+      )
+      spinner.succeed('Consumed')
+      if (mode === 'json') return toJson(result)
+      if (mode === 'plain') {
+        const { formatConsumePlain } = await import('./results.js')
+        return formatConsumePlain(result)
+      }
+      return formatConsumePretty(result, mode)
+    } catch (error) {
+      spinner.fail('Consume failed')
+      throw error
+    }
   }
 
-  throw new Error(`Unknown command: ${command}\n\n${HELP}`)
+  throw new Error(`Unknown command: ${command}\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`)
 }
 
 async function main(argv: string[]) {
-  const output = await runCli(argv)
+  const { json, argv: rest } = stripJsonFlag(argv)
+  const mode: OutputMode = json ? 'json' : 'pretty'
+  const output = await runCli(rest, mode)
   process.stdout.write(`${output}\n`)
 }
 
-// Works through the `zappi-pot` bin symlink too: argv[1] is the symlink, so
+// Works through the `zappi-cli` bin symlink too: argv[1] is the symlink, so
 // resolve it to the real file and compare against this module's own path.
 const isDirectRun = (() => {
   try {
@@ -153,8 +216,10 @@ const isDirectRun = (() => {
 
 if (isDirectRun) {
   main(process.argv.slice(2)).catch((error: unknown) => {
+    const { json } = stripJsonFlag(process.argv.slice(2))
+    const mode: OutputMode = json ? 'json' : 'pretty'
     const message = error instanceof Error ? error.message : String(error)
-    process.stderr.write(`${redactSecrets(message)}\n`)
+    process.stderr.write(`${formatError(redactSecrets(message), mode)}\n`)
     process.exitCode = 1
   })
 }

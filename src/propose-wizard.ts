@@ -22,7 +22,7 @@ import {
 export const WIZARD_MODES = ['existing', 'generate'] as const
 export type WizardMode = (typeof WIZARD_MODES)[number]
 
-/** Generate is the default (first) row — most `zappi-pot propose` runs create a fresh pot. */
+/** Generate is the default (first) row — most `zappi-cli propose` runs create a fresh pot. */
 export const WIZARD_MODE_OPTIONS: SelectOption[] = [
   { label: 'Generate a new pot (create a fresh key on this host)', value: 'generate' },
   { label: 'Use an existing pot (I already registered one)', value: 'existing' },

@@ -1,6 +1,6 @@
 # @zappimoney/zappi-cli
 
-Buyer CLI (`zappi-pot`) for prepaid Zappi agent pots. Propose a register deep link, pay a nest `PaidResource` (HTTP 402 → sign USDB from the pot → settle), then consume metered grant units.
+Buyer CLI (`zappi-cli`) for prepaid Zappi agent pots. Propose a register deep link, pay a nest `PaidResource` (HTTP 402 → sign USDB from the pot → settle), then consume metered grant units.
 
 ## Install
 
@@ -8,7 +8,7 @@ Buyer CLI (`zappi-pot`) for prepaid Zappi agent pots. Propose a register deep li
 
 ```bash
 npm install -g @zappimoney/zappi-cli
-zappi-pot --help
+zappi-cli --help
 ```
 
 **npx (no install):**
@@ -21,7 +21,7 @@ npx @zappimoney/zappi-cli --help
 
 ```bash
 npm i -g github:armmosikyan66/zappi-cli
-zappi-pot --help
+zappi-cli --help
 ```
 
 **Clone + link (local development):**
@@ -31,17 +31,20 @@ git clone https://github.com/armmosikyan66/zappi-cli.git
 cd zappi-cli
 npm install
 npm link
-zappi-pot --help
+zappi-cli --help
 ```
 
-Requires **Node.js ≥ 20.9**. The package compiles TypeScript to `dist/` on install (`prepare`); the `zappi-pot` bin runs compiled JS via `bin/cli.js` (no experimental flags).
+Requires **Node.js ≥ 20.9**. The package compiles TypeScript to `dist/` on install (`prepare`); the `zappi-cli` bin runs compiled JS via `bin/cli.js` (no experimental flags).
 
 ## Commands
 
+Global flag: `--json` prints machine-readable JSON (never includes pot seeds or unlock tokens).
+
+
 ```bash
-zappi-pot propose                     # interactive wizard (recommended)
-zappi-pot pay <resourceId>
-zappi-pot consume <resourceId> [--units N]
+zappi-cli propose                     # interactive wizard (recommended)
+zappi-cli pay <resourceId>
+zappi-cli consume <resourceId> [--units N]
 ```
 
 | Command   | What it does                                                                                                                                                                                                                                              |
@@ -53,7 +56,7 @@ zappi-pot consume <resourceId> [--units N]
 ### The `propose` wizard
 
 ```text
-$ zappi-pot propose
+$ zappi-cli propose
 Do you already have a pot, or should this host generate a new one?
 ◉ Generate a new pot (create a fresh key on this host)
 ○ Use an existing pot (I already registered one)
@@ -72,7 +75,7 @@ Do you already have a pot, or should this host generate a new one?
 1. **Propose** — agent generates the pot key on the host and prints a register URL. Human opens it in Zappi and taps Register.
 2. **Fund** — human funds the pot in the Zappi app. The CLI does not call deposit APIs.
 3. **Pay** — after `ZAPPI_POT_ID` + `ZAPPI_POT_SEED` (or key file) are set, pay a PaidResource. Nest returns an unlock bearer once on first settle. The CLI withholds that token from stdout/logs. Metered resources auto-consume one unit in the same `pay` (opt out with `--no-consume`).
-4. **Consume** — further metered units: `zappi-pot consume <id>` with `ZAPPI_UNLOCK_TOKEN` set as a host secret.
+4. **Consume** — further metered units: `zappi-cli consume <id>` with `ZAPPI_UNLOCK_TOKEN` set as a host secret.
 
 Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest returns it. Empty pot = stop. Do not fall back to the main wallet.
 
@@ -99,11 +102,11 @@ export ZAPPI_APP_ORIGIN=http://dev.zappi.money   # default; use https://zappi.mo
 export ZAPPI_POT_ID='<pot id>'
 # set ZAPPI_POT_SEED / ZAPPI_UNLOCK_TOKEN as host secrets — never echo / never commit
 
-zappi-pot propose --generate --label Staging --open
+zappi-cli propose --generate --label Staging --open
 # human registers + funds in the staging app
-zappi-pot pay '<paidResourceId>'
+zappi-cli pay '<paidResourceId>'
 # metered: pay already consumed one unit; more:
-zappi-pot consume '<paidResourceId>' --units 1
+zappi-cli consume '<paidResourceId>' --units 1
 ```
 
 Production paywall is the default (`https://api.zappi.money`). CI runs build + unit tests only — **no live Spark spend / no paywall network**.
