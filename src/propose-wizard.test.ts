@@ -79,15 +79,16 @@ describe('runProposeWizard', () => {
     assert.match(result.href!, new RegExp(ADDRESS))
     assert.match(result.href!, /label=Research/)
     assert.match(result.output, new RegExp(ADDRESS))
-    // Mode was asked (argv empty) and auth prompt ran with the link
+    assert.match(result.output, /Pot created successfully/)
     assert.equal(prompts.length >= 2, true)
     assert.ok(
       prompts.some((p) => p.includes('Do you already have a pot')),
       'mode prompt shown',
     )
+    // free mode does not open browser / promptOpenLink
     assert.ok(
-      prompts.some((p) => p.startsWith('http://') || p.startsWith('https://')),
-      'auth prompt got the link',
+      !prompts.some((p) => p.startsWith('http://') || p.startsWith('https://')),
+      'free skips browser prompt',
     )
   })
 
@@ -144,7 +145,7 @@ describe('runProposeWizard', () => {
     assert.equal(written.length, 1)
     assert.equal(written[0].label, 'Research')
     assert.match(written[0].path, /fake-pot-Research/)
-    assert.match(result.output, /Key file written/)
+    assert.match(result.output, /Pot created successfully/)
     assert.match(result.output, /fake-pot-Research/)
     assert.ok(!result.output.includes('test mnemonic words'))
     assert.match(result.href!, /http:\/\/dev\.zappi\.money\//)
@@ -232,9 +233,11 @@ describe('runProposeWizard', () => {
     assert.equal(result.spendMode, 'free')
     assert.match(result.href!, /mode=free/)
     assert.match(result.href!, /pots=agent/)
+    assert.match(result.output, /Pot created successfully/)
+    assert.equal(result.openResult?.action, 'skipped')
     assert.ok(
-      prompts.includes('openBrowser:false'),
-      'free must not open the browser',
+      !prompts.some((p) => p.startsWith('openBrowser:')),
+      'free must not call promptOpenLink',
     )
   })
 
@@ -253,11 +256,11 @@ describe('runProposeWizard', () => {
 
   it('copied action notes the clipboard', async () => {
     const { deps } = makeDeps({
-      select: ['existing', 'free'],
+      select: ['existing', 'auth_required'],
       ask: [ADDRESS, 'Research'],
       promptOpenLink: { action: 'copied', auto: false },
     })
-    const result = await runProposeWizard([], {}, deps)
+    const result = await runProposeWizard([], { SPARK_NETWORK: 'MAINNET' }, deps)
     assert.match(result.output, /Link copied to clipboard/)
   })
 

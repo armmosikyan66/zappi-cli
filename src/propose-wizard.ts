@@ -18,8 +18,10 @@ import {
   select,
   generatePotLabel,
   promptOpenLink,
+  closeWizardReadline,
   type SelectOption,
 } from './wizard-io.js'
+import { infoLine, kv, successLine } from './ui.js'
 
 export const WIZARD_MODES = ['existing', 'generate'] as const
 export type WizardMode = (typeof WIZARD_MODES)[number]
@@ -43,6 +45,31 @@ export const AUTH_MODE_OPTIONS: SelectOption[] = [
 ]
 
 const AUTH_MODE_PROMPT = 'How should this pot spend when you test it?'
+
+/** Success summary for free (auth not required) — no browser prompt. */
+function formatFreeSuccess(input: {
+  sparkAddress: string
+  label: string
+  href: string
+  keyFile?: string
+}): string {
+  const lines = [
+    successLine('Pot created successfully (auth not required)'),
+    kv('address', input.sparkAddress),
+    kv('label', input.label),
+  ]
+  if (input.keyFile) {
+    lines.push(kv('key file', input.keyFile))
+    lines.push(infoLine('Set ZAPPI_POT_SEED as a host secret. Do not cat the file.'))
+  } else {
+    lines.push(infoLine('Store the pot key as ZAPPI_POT_SEED or a mode 0600 file.'))
+  }
+  lines.push(kv('register', input.href))
+  lines.push(infoLine('Open the register link in Zappi when you are ready.'))
+  lines.push(infoLine('Never print, email, or paste the mnemonic into chat or this link.'))
+  return lines.join('\n')
+}
+
 
 export interface WizardDeps {
   env: PotEnvSubset
@@ -144,14 +171,25 @@ export async function runProposeWizard(
     const href = buildRegisterDeepLink({ sparkAddress, label, origin, network, mode: spendMode })
     if (!href) throw new Error('Could not build the register deep link.')
 
-    // Step 4 — free: print link only (no browser). auth_required: open browser.
-    const openBrowser = spendMode === 'auth_required'
-    const openHeadline = openBrowser
-      ? 'Approve / authenticate this pot at:'
-      : 'Register link (auth not required — browser not opened):'
+    // free: success summary only (no browser, no ENTER prompt).
+    // auth_required: open browser for approve/authenticate.
+    if (spendMode === 'free') {
+      closeWizardReadline()
+      const output = formatFreeSuccess({ sparkAddress, label, href })
+      return {
+        mode,
+        spendMode,
+        label,
+        sparkAddress,
+        href,
+        openResult: { action: 'skipped', auto: true },
+        output,
+      }
+    }
+
     const openResult = await d.promptOpenLink(href, {
-      headline: openHeadline,
-      openBrowser,
+      headline: 'Approve / authenticate this pot at:',
+      openBrowser: true,
     })
     if (openResult.action === 'copied') {
       lines.push('Link copied to clipboard.')
@@ -160,8 +198,8 @@ export async function runProposeWizard(
     }
     lines.push(
       `Pot address: ${sparkAddress}`,
-      `Spend mode: ${spendMode === 'free' ? 'auth not required (free)' : 'auth required'}`,
-      `${spendMode === 'auth_required' ? 'Approve in Zappi (sign in / authenticate):' : 'Register in Zappi when ready (open the link yourself):'}`,
+      'Spend mode: auth required',
+      'Approve in Zappi (sign in / authenticate):',
       href,
       '',
       'Store the pot key as ZAPPI_POT_SEED or a mode 0600 file.',
@@ -190,20 +228,31 @@ export async function runProposeWizard(
   const href = buildRegisterDeepLink({ sparkAddress, label, origin, network, mode: spendMode })
   if (!href) throw new Error('Could not build the deep link for the new pot.')
 
-  const openBrowser = spendMode === 'auth_required'
-  const openHeadline = openBrowser
-    ? 'Approve / authenticate this pot at:'
-    : 'Register link (auth not required — browser not opened):'
+  if (spendMode === 'free') {
+    closeWizardReadline()
+    const output = formatFreeSuccess({ sparkAddress, label, href, keyFile })
+    return {
+      mode,
+      spendMode,
+      label,
+      sparkAddress,
+      keyFile,
+      href,
+      openResult: { action: 'skipped', auto: true },
+      output,
+    }
+  }
+
   const openResult = await d.promptOpenLink(href, {
-    headline: openHeadline,
-    openBrowser,
+    headline: 'Approve / authenticate this pot at:',
+    openBrowser: true,
   })
   lines.push(
     `Pot address: ${sparkAddress}`,
-    `Spend mode: ${spendMode === 'free' ? 'auth not required (free)' : 'auth required'}`,
+    'Spend mode: auth required',
     `Key file written (mode 0600): ${keyFile}`,
     'Set ZAPPI_POT_SEED as a host secret. Do not cat or print the file.',
-    `${spendMode === 'auth_required' ? 'Approve in Zappi (sign in / authenticate):' : 'Register in Zappi when ready (open the link yourself):'}`,
+    'Approve in Zappi (sign in / authenticate):',
     href,
     '',
     'Never print, email, or paste the mnemonic into chat or this link.',
