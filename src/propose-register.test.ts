@@ -35,6 +35,15 @@ describe('parseProposeRegisterArgs', () => {
     const parsed = parseProposeRegisterArgs(['--generate'], {})
     assert.equal(parsed.origin, 'http://dev.zappi.money')
     assert.equal(parsed.generate, true)
+    assert.equal(parsed.mode, 'free')
+  })
+
+  it('reads --mode auth_required', () => {
+    const parsed = parseProposeRegisterArgs(
+      ['--generate', '--mode', 'auth_required'],
+      {},
+    )
+    assert.equal(parsed.mode, 'auth_required')
   })
 })
 
@@ -47,6 +56,8 @@ describe('printRegisterDeepLink', () => {
     })
     assert.match(printed, new RegExp(ADDRESS))
     assert.match(printed, /panel=pots/)
+    assert.match(printed, /mode=free/)
+    assert.match(printed, /pots=agent/)
     assert.match(printed, /register=/)
     assert.match(printed, /label=Research/)
     assert.doesNotMatch(printed, /abandon/)
@@ -58,5 +69,16 @@ describe('printRegisterDeepLink', () => {
       () => printRegisterDeepLink({ sparkAddress: MNEMONIC }),
       /recovery phrase/,
     )
+  })
+
+  it('prints auth_required mode when requested', () => {
+    const printed = printRegisterDeepLink({
+      sparkAddress: ADDRESS,
+      label: 'Research',
+      origin: 'https://zappi.money',
+      mode: 'auth_required',
+    })
+    assert.match(printed, /mode=auth_required/)
+    assert.match(printed, /pots=mine/)
   })
 })

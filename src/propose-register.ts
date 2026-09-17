@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process'
 import {
   buildRegisterDeepLink,
   parseRegisterDeepLinkQuery,
+  parsePotSpendMode,
+  type PotSpendMode,
 } from './register-deep-link.js'
 import {
   defaultKeyFile,
@@ -27,17 +29,19 @@ export interface ProposeRegisterArgs {
   generate: boolean
   open: boolean
   keyFile?: string
+  /** free (default) | auth_required — sets deep-link mode tab */
+  mode: PotSpendMode
 }
 
 const USAGE = `Usage:
   zappi-cli propose                                  # interactive wizard (recommended)
-  zappi-cli propose --address spark1… [--label Research] [--origin https://zappi.money] [--open]
-  zappi-cli propose --generate [--label Research] [--key-file ~/.zappi/new-pot.txt] [--open]
+  zappi-cli propose --address spark1… [--label Research] [--mode free|auth_required] [--open]
+  zappi-cli propose --generate [--label Research] [--mode free|auth_required] [--key-file …] [--open]
 
-The wizard asks: existing pot or generate new → pot label (blank = auto pot_<id>)
-→ opens the Zappi register link in your browser (ENTER to open, auto-opens after
-a few seconds, or "c" to copy it). Never prints the mnemonic. The human signs in
-and taps Register. Do not pass a recovery phrase as --address.`
+The wizard asks: existing pot or generate new → auth not required vs auth required
+→ pot label (blank = auto pot_<id>) → opens the Zappi register link in your browser
+(ENTER to open, auto-opens after a few seconds, or "c" to copy it). Never prints
+the mnemonic. Do not pass a recovery phrase as --address.`
 
 export function parseProposeRegisterArgs(
   argv: string[],
@@ -47,6 +51,7 @@ export function parseProposeRegisterArgs(
     origin: resolveAppOrigin(env),
     generate: false,
     open: false,
+    mode: 'free',
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -68,6 +73,13 @@ export function parseProposeRegisterArgs(
       parsed.generate = true
     } else if (arg === '--open') {
       parsed.open = true
+    } else if (arg === '--mode' && next) {
+      const mode = parsePotSpendMode(next)
+      if (!mode) {
+        throw new Error('Use --mode free or --mode auth_required')
+      }
+      parsed.mode = mode
+      index += 1
     } else if (arg === '--help' || arg === '-h') {
       throw new Error(USAGE)
     }
@@ -81,6 +93,7 @@ export function printRegisterDeepLink(input: {
   label?: string
   origin?: string
   network?: 'MAINNET' | 'REGTEST'
+  mode?: PotSpendMode
 }): string {
   const parsed = parseRegisterDeepLinkQuery(
     {
@@ -105,6 +118,7 @@ export function printRegisterDeepLink(input: {
     label: parsed.label,
     origin: input.origin,
     network: input.network,
+    mode: input.mode ?? 'free',
   })
   if (!href) {
     throw new Error('Could not build the register deep link.')
@@ -162,6 +176,7 @@ export async function runProposeRegister(
       label: args.label,
       origin: args.origin,
       network,
+      mode: args.mode,
     })
     const output = [
       printed,
@@ -174,6 +189,7 @@ export async function runProposeRegister(
         label: args.label,
         origin: args.origin,
         network,
+        mode: args.mode,
       })
       if (href) openUrl(href)
     }
@@ -185,6 +201,7 @@ export async function runProposeRegister(
     label: args.label,
     origin: args.origin,
     network,
+    mode: args.mode,
   })
   if (args.open) {
     const href = buildRegisterDeepLink({
@@ -192,6 +209,7 @@ export async function runProposeRegister(
       label: args.label,
       origin: args.origin,
       network,
+      mode: args.mode,
     })
     if (href) openUrl(href)
   }

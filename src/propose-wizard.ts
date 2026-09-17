@@ -1,6 +1,8 @@
 import {
   buildRegisterDeepLink,
   parseRegisterDeepLinkQuery,
+  parsePotSpendMode,
+  type PotSpendMode,
 } from './register-deep-link.js'
 import {
   defaultKeyFile,
@@ -28,6 +30,20 @@ export const WIZARD_MODE_OPTIONS: SelectOption[] = [
   { label: 'Use an existing pot (I already registered one)', value: 'existing' },
 ]
 
+/** Matches web pots chooser: Auth not required vs Auth required. */
+export const AUTH_MODE_OPTIONS: SelectOption[] = [
+  {
+    label: 'Auth not required — agent can spend without approval (free)',
+    value: 'free',
+  },
+  {
+    label: 'Auth required — approve each payment in Zappi',
+    value: 'auth_required',
+  },
+]
+
+const AUTH_MODE_PROMPT = 'How should this pot spend when you test it?'
+
 export interface WizardDeps {
   env: PotEnvSubset
   ask: (prompt: string) => Promise<string>
@@ -47,6 +63,7 @@ export interface PotEnvSubset {
 
 export interface RunProposeWizardResult {
   mode: WizardMode
+  spendMode: PotSpendMode
   label: string
   sparkAddress?: string
   keyFile?: string
@@ -85,6 +102,10 @@ export async function runProposeWizard(
   const mode: WizardMode =
     rawMode === 'existing' || rawMode === 'generate' ? rawMode : 'existing'
 
+  // Step 1b — auth tab: free (no auth) vs auth_required
+  const rawSpend = await d.select(AUTH_MODE_PROMPT, AUTH_MODE_OPTIONS)
+  const spendMode: PotSpendMode = parsePotSpendMode(rawSpend) ?? 'free'
+
   const lines: string[] = []
 
   if (mode === 'existing') {
@@ -120,7 +141,7 @@ export async function runProposeWizard(
     // Step 3 — label (blank = pot_<unique>).
     const label = generatePotLabel(await d.ask(`Label for this pot ${LABEL_HINT}:`))
 
-    const href = buildRegisterDeepLink({ sparkAddress, label, origin, network })
+    const href = buildRegisterDeepLink({ sparkAddress, label, origin, network, mode: spendMode })
     if (!href) throw new Error('Could not build the register deep link.')
 
     // Step 4 — auth: open browser (ENTER / timeout auto-open / copy).
@@ -132,13 +153,14 @@ export async function runProposeWizard(
     }
     lines.push(
       `Pot address: ${sparkAddress}`,
+      `Spend mode: ${spendMode === 'free' ? 'auth not required (free)' : 'auth required'}`,
       `Approve in Zappi (human signs in and taps Register):`,
       href,
       '',
       'Store the pot key as ZAPPI_POT_SEED or a mode 0600 file.',
       'Never print, email, or paste the mnemonic into chat or this link.',
     )
-    return { mode, label, sparkAddress, href, openResult, output: lines.join('\n') }
+    return { mode, spendMode, label, sparkAddress, href, openResult, output: lines.join('\n') }
   }
 
   // generate mode ---------------------------------------------------------
@@ -158,12 +180,13 @@ export async function runProposeWizard(
   const sparkAddress = await d.deriveAddress(mnemonic, network)
   d.writeKeyFile(keyFile, mnemonic, sparkAddress, label)
 
-  const href = buildRegisterDeepLink({ sparkAddress, label, origin, network })
+  const href = buildRegisterDeepLink({ sparkAddress, label, origin, network, mode: spendMode })
   if (!href) throw new Error('Could not build the deep link for the new pot.')
 
   const openResult = await d.promptOpenLink(href)
   lines.push(
     `Pot address: ${sparkAddress}`,
+    `Spend mode: ${spendMode === 'free' ? 'auth not required (free)' : 'auth required'}`,
     `Key file written (mode 0600): ${keyFile}`,
     'Set ZAPPI_POT_SEED as a host secret. Do not cat or print the file.',
     `Approve in Zappi (human signs in and taps Register):`,
@@ -178,6 +201,7 @@ export async function runProposeWizard(
   }
   return {
     mode,
+    spendMode,
     label,
     sparkAddress,
     keyFile,

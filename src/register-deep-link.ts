@@ -4,6 +4,15 @@ import {
   type SparkNetworkEnv,
 } from './spark-address.js'
 
+/** Matches web `POT_MODES`: free = auth not required, auth_required = approve spends. */
+export const POT_SPEND_MODES = ['free', 'auth_required'] as const
+export type PotSpendMode = (typeof POT_SPEND_MODES)[number]
+
+export function parsePotSpendMode(raw?: string | null): PotSpendMode | null {
+  if (raw === 'free' || raw === 'auth_required') return raw
+  return null
+}
+
 /** Default app origin for register links. Override with `ZAPPI_APP_ORIGIN`. */
 export const DEFAULT_ZAPPI_APP_ORIGIN = 'http://dev.zappi.money'
 
@@ -38,6 +47,8 @@ export interface BuildRegisterDeepLinkInput {
   label?: string | null
   origin?: string | null
   network?: SparkNetworkEnv
+  /** `free` (default) = auth not required; `auth_required` = approve in Zappi. */
+  mode?: PotSpendMode
 }
 
 function isLikelySparkAddress(
@@ -94,22 +105,25 @@ export function parseRegisterDeepLinkQuery(
 }
 
 /**
- * Free-mode attach: `/?panel=pots&pots=agent&mode=free&register=<sparkAddress>`
- * (optional `&label=`). Returns null when the address is missing, invalid, or
- * a recovery phrase. No pot mnemonic UI — the agent already holds the key.
+ * Register deep link for an agent-held pot address.
+ * - `mode=free` (default): `/?panel=pots&pots=agent&mode=free&register=…`
+ * - `mode=auth_required`: `/?panel=pots&pots=mine&mode=auth_required&register=…`
+ * Optional `&label=`. Returns null when the address is missing, invalid, or a
+ * recovery phrase. Never puts a mnemonic in the URL.
  */
 export function buildRegisterDeepLink(
   input: BuildRegisterDeepLinkInput,
 ): string | null {
   const sparkAddress = input.sparkAddress.trim()
   const network = input.network ?? 'MAINNET'
+  const mode: PotSpendMode = input.mode ?? 'free'
   if (!sparkAddress || looksLikeMnemonicPhrase(sparkAddress)) return null
   if (!isLikelySparkAddress(sparkAddress, network)) return null
 
   const url = new URL('/', safeAppOrigin(input.origin))
   url.searchParams.set('panel', 'pots')
-  url.searchParams.set('pots', 'agent')
-  url.searchParams.set('mode', 'free')
+  url.searchParams.set('pots', mode === 'free' ? 'agent' : 'mine')
+  url.searchParams.set('mode', mode)
   url.searchParams.set('register', sparkAddress)
   const label = sanitizeLabel(input.label)
   if (label) url.searchParams.set('label', label)

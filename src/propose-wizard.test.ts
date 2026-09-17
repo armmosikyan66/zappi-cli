@@ -27,8 +27,14 @@ function makeDeps(overrides: Partial<Record<'ask' | 'select' | 'promptOpenLink',
     },
     select: async (_prompt: string, _options: unknown[]) => {
       prompts.push(_prompt)
-      const value = (overrides.select as string | undefined) ?? 'generate'
-      return value
+      const queued = overrides.select
+      if (Array.isArray(queued)) {
+        return String(queued.shift() ?? 'free')
+      }
+      if (typeof queued === 'string') return queued
+      // Default: generate for pot-mode prompt, free for auth-mode prompt
+      if (_prompt.includes('spend') || _prompt.includes('Auth')) return 'free'
+      return 'generate'
     },
     promptOpenLink: async (href: string) => {
       prompts.push(href)
@@ -60,7 +66,7 @@ describe('generatePotLabel', () => {
 describe('runProposeWizard', () => {
   it('existing mode: asks address + label, validates, builds link, prompts auth', async () => {
     const { deps, prompts } = makeDeps({
-      select: 'existing',
+      select: ['existing', 'free'],
       ask: [ADDRESS, 'Research'],
       promptOpenLink: { action: 'opened', auto: false },
     })
@@ -86,7 +92,7 @@ describe('runProposeWizard', () => {
 
   it('existing mode: blank label auto-generates pot_<id>', async () => {
     const { deps } = makeDeps({
-      select: 'existing',
+      select: ['existing', 'free'],
       ask: [ADDRESS, ''],
       promptOpenLink: { action: 'opened', auto: false },
     })
@@ -102,7 +108,7 @@ describe('runProposeWizard', () => {
       'Research',
     ]
     const { deps } = makeDeps({
-      select: 'existing',
+      select: ['existing', 'free'],
       ask: answers,
       promptOpenLink: { action: 'opened', auto: false },
     })
@@ -112,7 +118,7 @@ describe('runProposeWizard', () => {
 
   it('existing mode: blank address cancels', async () => {
     const { deps } = makeDeps({
-      select: 'existing',
+      select: ['existing', 'free'],
       ask: [''],
     })
     await assert.rejects(
@@ -124,7 +130,7 @@ describe('runProposeWizard', () => {
   it('generate mode: asks label then key file, writes 0600 key file, builds link', async () => {
     const written: Array<{ path: string; label?: string }> = []
     const { deps } = makeDeps({
-      select: 'generate',
+      select: ['generate', 'free'],
       ask: ['Research', ''], // label, blank key-file → default suggested
     })
     deps.writeKeyFile = (path: string, _m: string, _a: string, label?: string) => {
@@ -147,7 +153,7 @@ describe('runProposeWizard', () => {
     const dir = mkdtempSync(join(tmpdir(), 'zappi-wiz-'))
     const written: string[] = []
     const { deps } = makeDeps({
-      select: 'generate',
+      select: ['generate', 'free'],
       ask: ['Research', dir],
     })
     deps.defaultKeyFile = () => '/tmp/pot-research-1.txt'
@@ -166,7 +172,7 @@ describe('runProposeWizard', () => {
   it('generate mode: blank label auto-generates pot_<id> and names the key file', async () => {
     const written: Array<{ path: string; label?: string }> = []
     const { deps } = makeDeps({
-      select: 'generate',
+      select: ['generate', 'free'],
       ask: ['', ''],
     })
     deps.writeKeyFile = (path: string, _m: string, _a: string, label?: string) => {
@@ -179,7 +185,7 @@ describe('runProposeWizard', () => {
 
   it('mode from argv skips the mode question (existing)', async () => {
     const { deps, prompts } = makeDeps({
-      select: 'existing',
+      select: ['existing', 'free'],
       ask: [ADDRESS, 'Research'],
       promptOpenLink: { action: 'opened', auto: false },
     })
@@ -203,9 +209,33 @@ describe('runProposeWizard', () => {
     )
   })
 
+  it('auth_required tab sets mode=auth_required and pots=mine on the link', async () => {
+    const { deps } = makeDeps({
+      select: ['existing', 'auth_required'],
+      ask: [ADDRESS, 'Research'],
+      promptOpenLink: { action: 'opened', auto: false },
+    })
+    const result = await runProposeWizard([], { SPARK_NETWORK: 'MAINNET' }, deps)
+    assert.equal(result.spendMode, 'auth_required')
+    assert.match(result.href!, /mode=auth_required/)
+    assert.match(result.href!, /pots=mine/)
+    assert.match(result.output, /auth required/)
+  })
+
+  it('free tab sets mode=free and pots=agent on the link', async () => {
+    const { deps } = makeDeps({
+      select: ['generate', 'free'],
+      ask: ['Research', ''],
+    })
+    const result = await runProposeWizard([], {}, deps)
+    assert.equal(result.spendMode, 'free')
+    assert.match(result.href!, /mode=free/)
+    assert.match(result.href!, /pots=agent/)
+  })
+
   it('copied action notes the clipboard', async () => {
     const { deps } = makeDeps({
-      select: 'existing',
+      select: ['existing', 'free'],
       ask: [ADDRESS, 'Research'],
       promptOpenLink: { action: 'copied', auto: false },
     })
@@ -215,7 +245,7 @@ describe('runProposeWizard', () => {
 
   it('respects ZAPPI_APP_ORIGIN and REGTEST network', async () => {
     const { deps } = makeDeps({
-      select: 'existing',
+      select: ['existing', 'free'],
       ask: [REGTEST_ADDRESS, 'Dev'],
       promptOpenLink: { action: 'opened', auto: false },
     })
@@ -229,7 +259,7 @@ describe('runProposeWizard', () => {
 
   it('rejects a mainnet address when network is REGTEST', async () => {
     const answers = [ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS]
-    const { deps } = makeDeps({ select: 'existing', ask: answers })
+    const { deps } = makeDeps({ select: ['existing', 'free'], ask: answers })
     await assert.rejects(
       () => runProposeWizard([], { SPARK_NETWORK: 'REGTEST' }, deps),
       /Cancelled/,

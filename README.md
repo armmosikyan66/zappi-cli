@@ -40,6 +40,8 @@ Requires **Node.js ≥ 20.9**. The package compiles TypeScript to `dist/` on ins
 
 Global flag: `--json` prints machine-readable JSON (never includes pot seeds or unlock tokens).
 
+`propose` wizard asks **Auth not required** vs **Auth required** (sets deep-link `mode=free|auth_required`). Flags: `--mode free|auth_required`.
+
 
 ```bash
 zappi-cli propose                     # interactive wizard (recommended)
