@@ -52,7 +52,7 @@ zappi-cli consume <resourceId> [--units N]
 | Command   | What it does                                                                                                                                                                                                                                              |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `propose` | **Wizard:** asks *existing pot or generate new* → pot **label** (blank = auto `pot_<unique-id>`) → shows the register link npm-style — `Press ENTER to open in the browser…`, **auto-opens after 5s**, or press `c` to copy it. Writes a mode `0600` key file when generating. **Never prints the mnemonic.** Flags (`--address` / `--generate`) still work for scripts. |
-| `pay`     | `GET` resource → 402 → sign pot USDB to `payTo` → `POST …/settle` with `{ sparkTxHash, potId }`. If `pricingMode` is `metered` (or `unlockMode` is `metered_grant`), **auto-consumes one unit** after a first-unlock settle. Pass `--no-consume` to skip. |
+| `pay`     | `GET` resource → 402 → read `accepts[0].network` + `asset` (must be `spark` / `USDB`) → sign pot USDB to `payTo` → `POST …/settle` with `{ sparkTxHash, potId }`. Missing or other-chain rails **fail closed** (do not invent a send). If `pricingMode` is `metered` (or `unlockMode` is `metered_grant`), **auto-consumes one unit** after a first-unlock settle. Pass `--no-consume` to skip. |
 | `consume` | `POST …/consume` with `X-Zappi-Unlock-Token` and `{ units }` (default `1`).                                                                                                                                                                               |
 
 ### The `propose` wizard
@@ -91,6 +91,7 @@ Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest return
 | `ZAPPI_API_URL`      | Nest origin. **Production default:** `https://api.zappi.money`. |
 | `ZAPPI_PAYWALL_BASE` | Optional paywall origin override (wins over `ZAPPI_API_URL`).   |
 | `ZAPPI_UNLOCK_TOKEN` | Unlock bearer for `consume` (preferred over `--unlock-token`).  |
+| `ZAPPI_POT_SPEND_MODE` | Runtime spend mode. `auth_required` refuses `pay` free-sign (approve in Zappi). Unset / `free` for agent-held pots. |
 | `ZAPPI_APP_ORIGIN`   | Web origin for `propose` links. Default `http://dev.zappi.money`. Production: `https://zappi.money`. |
 | `SPARK_NETWORK`      | `MAINNET` (default) or `REGTEST`.                               |
 
@@ -111,13 +112,23 @@ zappi-cli pay '<paidResourceId>'
 zappi-cli consume '<paidResourceId>' --units 1
 ```
 
-Production paywall is the default (`https://api.zappi.money`). CI runs build + unit tests only — **no live Spark spend / no paywall network**.
+Production paywall is the default (`https://api.zappi.money`).
+
+## CI vs live dogfood
+
+- **CI** (`npm test`): mocked HTTP + mocked Spark. Covers 402 → settle `{ sparkTxHash, potId }` → consume, empty pot fail-closed, **402 `network`/`asset` required** (refuse non-`spark`/`USDB` before sign), secret redaction (including BIP-39), `ZAPPI_POT_SPEND_MODE=auth_required` refusing CLI free-sign, and a **mocked TypeSafe judge** (copy honesty / skill / route). **No live Spark spend / no paywall network / no TypeSafe API.**
+- **Optional TypeSafe judge** (`npm run test:judge`): requires `TYPESAFE_API_KEY` and `TYPESAFE_JUDGE=1`. Grades already-redacted transcripts only. Not part of default CI. Pass^3 is documented, not implemented.
+- **Staging dogfood** (this section): human registers + funds in the app, then `pay` / `consume` against `api-dev`. Never commit seeds.
+- `--json` is the CLI trace contract: `command`, `potId`, `sparkTxHash`, `network`, `asset`, `unlockTokenReceived` (boolean). It never includes the mnemonic, `ZAPPI_POT_SEED`, or `zpu_…` / `zpc_…` values.
+
+Install has **no `--pot` flag**. Runtime pot id is `ZAPPI_POT_ID` after the human registers.
 
 ## Develop
 
 ```bash
 npm install
-npm test          # tsc → node --test dist/
+npm test          # tsc → node --test dist/ (mocked HTTP + Spark + TypeSafe)
+npm run test:judge  # live TypeSafe; needs TYPESAFE_API_KEY + TYPESAFE_JUDGE=1
 npm run build
 ```
 
@@ -128,5 +139,7 @@ npm run build
 - **Never** print, log, `echo`, or `set -x` `ZAPPI_POT_SEED`, the key file, or `ZAPPI_UNLOCK_TOKEN`.
 - **Never** pass a recovery phrase as `--address` or put one in a deep link.
 - Nest never holds the pot key. Cap v1 is an empty pot.
+- Do **not** invent a payment chain from an address. Paywall 402 must include `accepts[0].network` and `accepts[0].asset`; this CLI only pays `spark` / `USDB`.
 - Seller / project API is out of scope for this package.
+- `@typesafe-ai/sdk` is a **devDependency** for `src/eval/` only. Do not import it from the buyer CLI. `dist/eval/` is not published. This is not `@zappimoney/zappi-sdk`.
 - Do not add `@zappimoney/zappi-sdk` to this package unless intentionally migrating off the Nest HTTP + Spark path.

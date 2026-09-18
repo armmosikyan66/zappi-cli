@@ -62,6 +62,7 @@ describe('printRegisterDeepLink', () => {
     assert.match(printed, /label=Research/)
     assert.doesNotMatch(printed, /abandon/)
     assert.match(printed, /Never print/)
+    assert.doesNotMatch(printed, /--pot/)
   })
 
   it('refuses a recovery phrase as --address', () => {

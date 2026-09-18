@@ -2,6 +2,9 @@ import type { Bech32mTokenIdentifier } from '@buildonspark/spark-sdk'
 
 export const USDB_MICRO_UNITS_PER_CENT = 10_000
 
+export const EMPTY_POT_ERROR =
+  'Pot has no USDB balance. Fund the pot before paying a resource.'
+
 export interface SendUsdbFromPotInput {
   mnemonic: string
   accountNumber: number
@@ -61,9 +64,7 @@ export async function readUsdbTokenIdentifier(
     for (const tokenIdentifier of Object.keys(tokenBalances)) {
       if (tokenIdentifier.startsWith('btkn')) return tokenIdentifier
     }
-    throw new Error(
-      'Pot has no USDB balance. Fund the pot before paying a resource.',
-    )
+    throw new Error(EMPTY_POT_ERROR)
   } finally {
     await wallet.cleanupConnections()
   }

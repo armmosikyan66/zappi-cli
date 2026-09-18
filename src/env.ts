@@ -6,9 +6,13 @@ export interface PotEnv {
   ZAPPI_PAYWALL_BASE?: string
   ZAPPI_APP_ORIGIN?: string
   ZAPPI_UNLOCK_TOKEN?: string
+  /** Runtime spend mode. `auth_required` refuses CLI free-sign (1-200). */
+  ZAPPI_POT_SPEND_MODE?: string
   NEXT_PUBLIC_SITE_URL?: string
   SPARK_NETWORK?: string
 }
+
+export type PotSpendModeEnv = 'free' | 'auth_required'
 
 export const DEFAULT_ZAPPI_API_URL = 'https://api.zappi.money'
 export const STAGING_ZAPPI_API_URL = 'https://api-dev.zappi.money'
@@ -45,6 +49,16 @@ export function resolveSparkNetwork(
   const raw = env.SPARK_NETWORK?.trim().toUpperCase()
   return raw === 'REGTEST' ? 'REGTEST' : 'MAINNET'
 }
+
+export function resolvePotSpendMode(
+  env: PotEnv = process.env,
+): PotSpendModeEnv {
+  const raw = env.ZAPPI_POT_SPEND_MODE?.trim().toLowerCase()
+  return raw === 'auth_required' ? 'auth_required' : 'free'
+}
+
+export const AUTH_REQUIRED_PAY_ERROR =
+  'This pot is auth_required. Do not free-sign from the CLI. Approve each payment in Zappi. Unset ZAPPI_POT_SPEND_MODE for a free pot.'
 
 export function requirePotId(env: PotEnv = process.env): string {
   const potId = env.ZAPPI_POT_ID?.trim()

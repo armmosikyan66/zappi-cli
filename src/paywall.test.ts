@@ -8,8 +8,12 @@ import {
   isMeteredPricing,
   parseResourceId,
   payResource,
+  payResourceResult,
 } from './paywall.js'
 import { parseConsumeCliArgs, parsePayCliArgs } from './cli.js'
+import { AUTH_REQUIRED_PAY_ERROR } from './env.js'
+import { EMPTY_POT_ERROR } from './spark-send.js'
+import { toJson } from './results.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -20,6 +24,19 @@ function jsonResponse(status: number, body: Record<string, unknown> | null): Res
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+function unpaid402(extra: Record<string, unknown> = {}): Response {
+  return jsonResponse(402, {
+    accepts: [
+      {
+        payTo: 'spark1payto',
+        network: 'spark',
+        asset: 'USDB',
+        extra: { priceCents: 25, pricingMode: 'exact', ...extra },
+      },
+    ],
   })
 }
 
@@ -86,17 +103,10 @@ describe('pay + consume request shaping (mock fetch, no Spark)', () => {
         token: headers.get('X-Zappi-Unlock-Token'),
       })
       if (url.endsWith('/res_1') && (init?.method ?? 'GET') === 'GET') {
-        return jsonResponse(402, {
-          accepts: [
-            {
-              payTo: 'spark1payto',
-              extra: {
-                priceCents: 25,
-                pricingMode: 'metered',
-                unlockMode: 'metered_grant',
-              },
-            },
-          ],
+        return unpaid402({
+          priceCents: 25,
+          pricingMode: 'metered',
+          unlockMode: 'metered_grant',
         })
       }
       if (url.endsWith('/settle')) {
@@ -139,6 +149,136 @@ describe('pay + consume request shaping (mock fetch, no Spark)', () => {
     assert.match(calls[2]?.url ?? '', /\/consume$/)
   })
 
+  it('JSON pay trace includes potId and never the unlock token or seed', async () => {
+    const result = await payResourceResult('res_1', {
+      env,
+      fetch: async (input, init) => {
+        if ((init?.method ?? 'GET') === 'GET') {
+          return unpaid402({ priceCents: 25, pricingMode: 'exact' })
+        }
+        return jsonResponse(200, {
+          firstUnlock: true,
+          unlockToken: 'zpu_secret_token',
+        })
+      },
+      loadSeed: () => SEED,
+      readTokenIdentifier: async () => 'btkn1example',
+      sendUsdb: async () => ({ sparkTxHash: 'aa'.repeat(32) }),
+    })
+    assert.equal(result.ok, true)
+    if (result.ok !== true || result.status !== 'settled') {
+      throw new Error('expected settled pay result')
+    }
+    assert.equal(result.potId, 'pot_1')
+    assert.equal(result.unlockTokenReceived, true)
+    assert.equal(result.network, 'spark')
+    assert.equal(result.asset, 'USDB')
+    const json = toJson(result)
+    assert.doesNotMatch(json, /zpu_secret_token/)
+    assert.doesNotMatch(json, /alpha bravo charlie/)
+    assert.match(json, /"potId": "pot_1"/)
+    assert.match(json, /"network": "spark"/)
+    assert.match(json, /"asset": "USDB"/)
+  })
+
+  it('fails closed on an empty pot without signing or settling', async () => {
+    let signed = false
+    let settled = false
+    await assert.rejects(
+      () =>
+        payResource('res_1', {
+          env,
+          fetch: async (input, init) => {
+            if ((init?.method ?? 'GET') === 'GET') {
+              return unpaid402({ priceCents: 10, pricingMode: 'exact' })
+            }
+            settled = true
+            throw new Error('settle must not run')
+          },
+          loadSeed: () => SEED,
+          readTokenIdentifier: async () => {
+            throw new Error(EMPTY_POT_ERROR)
+          },
+          sendUsdb: async () => {
+            signed = true
+            return { sparkTxHash: 'cc'.repeat(32) }
+          },
+        }),
+      /no USDB balance/,
+    )
+    assert.equal(signed, false)
+    assert.equal(settled, false)
+  })
+
+  it('refuses a non-Spark 402 rail before signing or settling', async () => {
+    let signed = false
+    let settled = false
+    await assert.rejects(
+      () =>
+        payResource('res_1', {
+          env,
+          fetch: async (input, init) => {
+            if ((init?.method ?? 'GET') === 'GET') {
+              return jsonResponse(402, {
+                accepts: [
+                  {
+                    payTo: 'spark1payto',
+                    network: 'solana',
+                    asset: 'USDC',
+                    extra: { priceCents: 10, pricingMode: 'exact' },
+                  },
+                ],
+              })
+            }
+            settled = true
+            throw new Error('settle must not run')
+          },
+          loadSeed: () => SEED,
+          readTokenIdentifier: async () => 'btkn1example',
+          sendUsdb: async () => {
+            signed = true
+            return { sparkTxHash: 'dd'.repeat(32) }
+          },
+        }),
+      /solana\/USDC/,
+    )
+    assert.equal(signed, false)
+    assert.equal(settled, false)
+  })
+
+  it('refuses to free-sign when ZAPPI_POT_SPEND_MODE is auth_required', async () => {
+    let fetched = false
+    await assert.rejects(
+      () =>
+        payResource('res_1', {
+          env: { ...env, ZAPPI_POT_SPEND_MODE: 'auth_required' },
+          fetch: async () => {
+            fetched = true
+            throw new Error('must not hit paywall')
+          },
+          loadSeed: () => {
+            throw new Error('must not load seed')
+          },
+          sendUsdb: async () => {
+            throw new Error('must not sign')
+          },
+        }),
+      new RegExp(AUTH_REQUIRED_PAY_ERROR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    )
+    assert.equal(fetched, false)
+  })
+
+  it('requires potId before paying', async () => {
+    await assert.rejects(
+      () =>
+        payResource('res_1', {
+          env: { ZAPPI_API_URL: 'https://api.example.test' },
+          loadSeed: () => SEED,
+        }),
+      /ZAPPI_POT_ID/,
+    )
+  })
+
   it('skips auto-consume when --no-consume is set', async () => {
     const urls: string[] = []
     const output = await payResource('res_1', {
@@ -147,14 +287,7 @@ describe('pay + consume request shaping (mock fetch, no Spark)', () => {
       fetch: async (input, init) => {
         urls.push(String(input))
         if ((init?.method ?? 'GET') === 'GET') {
-          return jsonResponse(402, {
-            accepts: [
-              {
-                payTo: 'spark1payto',
-                extra: { priceCents: 10, pricingMode: 'metered' },
-              },
-            ],
-          })
+          return unpaid402({ priceCents: 10, pricingMode: 'metered' })
         }
         return jsonResponse(200, {
           firstUnlock: true,
@@ -224,6 +357,14 @@ describe('package isolation', () => {
     for (const file of ['cli.js', 'paywall.js', 'propose-register.js']) {
       const source = readFileSync(join(here, file), 'utf8')
       assert.doesNotMatch(source, /examples\//)
+    }
+  })
+
+  it('keeps TypeSafe eval out of the buyer CLI runtime', () => {
+    for (const file of ['cli.js', 'paywall.js', 'propose-register.js', 'env.js']) {
+      const source = readFileSync(join(here, file), 'utf8')
+      assert.doesNotMatch(source, /@typesafe-ai\/sdk/)
+      assert.doesNotMatch(source, /eval\/typesafe/)
     }
   })
 })

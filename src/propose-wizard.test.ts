@@ -146,6 +146,7 @@ describe('runProposeWizard', () => {
     assert.equal(written[0].label, 'Research')
     assert.match(written[0].path, /fake-pot-Research/)
     assert.match(result.output, /Pot created successfully/)
+    assert.match(result.output, /Disconnect cannot stop on-chain spend/)
     assert.match(result.output, /fake-pot-Research/)
     assert.ok(!result.output.includes('test mnemonic words'))
     assert.match(result.href!, /http:\/\/dev\.zappi\.money\//)

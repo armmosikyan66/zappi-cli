@@ -142,6 +142,7 @@ export function renderHelp(mode: OutputMode = 'pretty'): string {
     `  ${c.dim('ZAPPI_POT_KEY_FILE')}   Fallback mode-0600 key file`,
     `  ${c.dim('ZAPPI_API_URL')}        Nest origin (default https://api.zappi.money)`,
     `  ${c.dim('ZAPPI_UNLOCK_TOKEN')}   Unlock bearer for consume`,
+    `  ${c.dim('ZAPPI_POT_SPEND_MODE')}  free (default) or auth_required`,
     `  ${c.dim('ZAPPI_APP_ORIGIN')}     Web origin for propose links`,
     `  ${c.dim('SPARK_NETWORK')}        MAINNET (default) or REGTEST`,
     '',

@@ -17,13 +17,17 @@ export type PayResult =
       command: 'pay'
       status: 'already_unlocked'
       resourceId: string
+      potId: string
     }
   | {
       ok: true
       command: 'pay'
       status: 'settled'
       resourceId: string
+      potId: string
       priceCents: number
+      network: string
+      asset: string
       sparkTxHash: string
       unlockTokenReceived: boolean
       unlockUrl?: string
@@ -65,7 +69,7 @@ export function formatPayPlain(result: PayResult): string {
     return 'Resource already unlocked (HTTP 200). Nothing to pay.'
   }
   const lines = [
-    `Settled resource ${result.resourceId} (${result.priceCents} cents USDB).`,
+    `Settled resource ${result.resourceId} (${result.priceCents} cents ${result.asset} on ${result.network}).`,
     `sparkTxHash: ${result.sparkTxHash}`,
   ]
   if (result.unlockTokenReceived) {
@@ -105,7 +109,8 @@ export function formatPayPretty(result: PayResult, mode: OutputMode = 'pretty'):
   }
   const lines = [
     successLine(`Settled ${result.resourceId}`, mode),
-    kv('amount', `${result.priceCents}¢ USDB`, mode),
+    kv('amount', `${result.priceCents}¢ ${result.asset}`, mode),
+    kv('network', result.network, mode),
     kv('tx', result.sparkTxHash, mode),
   ]
   if (result.unlockTokenReceived) {

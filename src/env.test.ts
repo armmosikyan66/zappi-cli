@@ -4,8 +4,10 @@ import {
   DEFAULT_ZAPPI_API_URL,
   STAGING_ZAPPI_API_URL,
   parsePositiveUnits,
+  requirePotId,
   resolveAppOrigin,
   resolvePaywallBase,
+  resolvePotSpendMode,
   resolveSparkNetwork,
   resolveUnlockToken,
 } from './env.js'
@@ -71,5 +73,18 @@ describe('resolveAppOrigin + spark network + units', () => {
     assert.equal(parsePositiveUnits(undefined), 1)
     assert.equal(parsePositiveUnits('3'), 3)
     assert.throws(() => parsePositiveUnits('0'), /positive integer/)
+  })
+
+  it('defaults spend mode to free and treats auth_required as a pay gate', () => {
+    assert.equal(resolvePotSpendMode({}), 'free')
+    assert.equal(
+      resolvePotSpendMode({ ZAPPI_POT_SPEND_MODE: 'auth_required' }),
+      'auth_required',
+    )
+  })
+
+  it('requires a runtime pot id (install args are not a pot id)', () => {
+    assert.throws(() => requirePotId({}), /ZAPPI_POT_ID/)
+    assert.equal(requirePotId({ ZAPPI_POT_ID: 'pot_live' }), 'pot_live')
   })
 })

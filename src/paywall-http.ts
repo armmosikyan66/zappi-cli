@@ -1,4 +1,5 @@
 import { DEFAULT_ZAPPI_API_URL } from './env.js'
+import { looksLikeMnemonicPhrase } from './spark-address.js'
 
 export const DEFAULT_PAYWALL_BASE = DEFAULT_ZAPPI_API_URL
 
@@ -43,8 +44,9 @@ export function shouldRetrySettle(status: number): boolean {
 }
 
 export function redactSecrets(text: string): string {
-  return text
+  const redacted = text
     .replace(/zpu_[A-Za-z0-9]+/g, 'zpu_[redacted]')
+    .replace(/zpc_[A-Za-z0-9_-]+/g, 'zpc_[redacted]')
     .replace(/ZAPPI_POT_SEED=\S+/g, 'ZAPPI_POT_SEED=[redacted]')
     .replace(/ZAPPI_UNLOCK_TOKEN=\S+/g, 'ZAPPI_UNLOCK_TOKEN=[redacted]')
     .replace(
@@ -52,6 +54,10 @@ export function redactSecrets(text: string): string {
       'X-Zappi-Unlock-Token: [redacted]',
     )
     .replace(/X-Zappi-Payment:\s*\S+/gi, 'X-Zappi-Payment: [redacted]')
+  return redacted.replace(/\b(?:[A-Za-z]+(?:\s+|$)){12,24}/g, (match) => {
+    const trimmed = match.trim()
+    return looksLikeMnemonicPhrase(trimmed) ? '[redacted mnemonic]' : match
+  })
 }
 
 export function shapeSettleBody(input: {

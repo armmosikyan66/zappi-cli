@@ -66,6 +66,11 @@ function formatFreeSuccess(input: {
   }
   lines.push(kv('register', input.href))
   lines.push(infoLine('Open the register link in Zappi when you are ready.'))
+  lines.push(
+    infoLine(
+      'Disconnect cannot stop on-chain spend. Empty pot is the cap.',
+    ),
+  )
   lines.push(infoLine('Never print, email, or paste the mnemonic into chat or this link.'))
   return lines.join('\n')
 }

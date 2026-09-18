@@ -1,7 +1,9 @@
 import {
+  AUTH_REQUIRED_PAY_ERROR,
   parsePositiveUnits,
   requirePotId,
   resolvePaywallBase,
+  resolvePotSpendMode,
   resolveSparkNetwork,
   resolveUnlockToken,
   type PotEnv,
@@ -21,6 +23,7 @@ import {
   type SendUsdbFromPotInput,
   type SendUsdbFromPotResult,
 } from './spark-send.js'
+import { isMeteredPricing, pickPaywallAccept, type PaywallChallenge } from './paywall-accept.js'
 import {
   formatConsumePlain,
   formatPayPlain,
@@ -28,25 +31,18 @@ import {
   type PayResult,
 } from './results.js'
 
-export interface PaywallAcceptExtra {
-  priceCents?: number
-  pricingMode?: string
-  unlockMode?: string
-  settlePath?: string
-  consumePath?: string
-  payToSparkAddress?: string
-}
-
-export interface PaywallAccept {
-  payTo?: string
-  maxAmountRequired?: string
-  extra?: PaywallAcceptExtra
-}
-
-export interface PaywallChallenge {
-  x402Version?: number
-  accepts?: PaywallAccept[]
-}
+export {
+  PAYABLE_PAYWALL_ASSET,
+  PAYABLE_PAYWALL_NETWORK,
+  isMeteredPricing,
+  pickPaywallAccept,
+} from './paywall-accept.js'
+export type {
+  PaywallAccept,
+  PaywallAcceptExtra,
+  PaywallChallenge,
+  SelectedPaywallAccept,
+} from './paywall-accept.js'
 
 const DEFAULT_ACCOUNT_NUMBER = 0
 
@@ -68,24 +64,6 @@ export function parseResourceId(input: string): string {
   throw new Error(
     'Could not parse resource id. Use a UUID/slug or a full …/api/paywall/resources/:id URL.',
   )
-}
-
-export function isMeteredPricing(accept: PaywallAccept): boolean {
-  const pricingMode = accept.extra?.pricingMode?.trim().toLowerCase()
-  const unlockMode = accept.extra?.unlockMode?.trim().toLowerCase()
-  return pricingMode === 'metered' || unlockMode === 'metered_grant'
-}
-
-function pickAccept(challenge: PaywallChallenge): PaywallAccept {
-  const accept = challenge.accepts?.[0]
-  if (!accept?.payTo) {
-    throw new Error('402 response missing accepts[0].payTo')
-  }
-  const priceCents = accept.extra?.priceCents
-  if (typeof priceCents !== 'number' || priceCents <= 0) {
-    throw new Error('402 response missing extra.priceCents')
-  }
-  return accept
 }
 
 function httpOptions(
@@ -142,9 +120,12 @@ export async function payResourceResult(
 ): Promise<PayResult> {
   const env = options.env ?? process.env
   const potId = requirePotId(env)
+  if (resolvePotSpendMode(env) === 'auth_required') {
+    throw new Error(AUTH_REQUIRED_PAY_ERROR)
+  }
   const loadSeed = options.loadSeed ?? loadPotSeed
   const mnemonic = loadSeed(env)
-  const network = resolveSparkNetwork(env)
+  const sparkNetwork = resolveSparkNetwork(env)
   const autoConsume = options.autoConsume ?? true
   const consumeUnits = options.consumeUnits ?? 1
   const http = httpOptions(env, options)
@@ -158,6 +139,7 @@ export async function payResourceResult(
       command: 'pay',
       status: 'already_unlocked',
       resourceId,
+      potId,
     }
   }
   if (first.status !== 402) {
@@ -167,10 +149,9 @@ export async function payResourceResult(
   }
 
   const challenge = first.body as PaywallChallenge
-  const accept = pickAccept(challenge)
-  const priceCents = accept.extra!.priceCents!
-  const payTo = accept.payTo!
-  const metered = isMeteredPricing(accept)
+  const selected = pickPaywallAccept(challenge)
+  const { payTo, priceCents, network, asset } = selected
+  const metered = isMeteredPricing(selected.accept)
 
   const readToken = options.readTokenIdentifier ?? readUsdbTokenIdentifier
   const sendUsdb = options.sendUsdb ?? sendUsdbFromPot
@@ -178,14 +159,14 @@ export async function payResourceResult(
   const tokenIdentifier = await readToken(
     mnemonic,
     DEFAULT_ACCOUNT_NUMBER,
-    network,
+    sparkNetwork,
   )
 
   onStatus?.(`Signing ${priceCents}¢ USDB…`)
   const { sparkTxHash } = await sendUsdb({
     mnemonic,
     accountNumber: DEFAULT_ACCOUNT_NUMBER,
-    network,
+    network: sparkNetwork,
     tokenIdentifier,
     receiverSparkAddress: payTo,
     amountCents: priceCents,
@@ -243,7 +224,10 @@ export async function payResourceResult(
     command: 'pay',
     status: 'settled',
     resourceId,
+    potId,
     priceCents,
+    network,
+    asset,
     sparkTxHash,
     unlockTokenReceived,
     unlockUrl: settled.unlockUrl || undefined,

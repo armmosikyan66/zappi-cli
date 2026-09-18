@@ -42,6 +42,18 @@ describe('paywall retry policy', () => {
     assert.doesNotMatch(redacted, /ZAPPI_UNLOCK_TOKEN=zpu/)
     assert.match(redacted, /\[redacted\]/)
   })
+
+  it('redacts pairing tokens and BIP-39-shaped word runs', () => {
+    const mnemonic =
+      'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima'
+    const redacted = redactSecrets(
+      `pairing zpc_secretToken123 leaked ${mnemonic} into stderr`,
+    )
+    assert.doesNotMatch(redacted, /zpc_secretToken123/)
+    assert.doesNotMatch(redacted, /alpha bravo charlie/)
+    assert.match(redacted, /zpc_\[redacted\]/)
+    assert.match(redacted, /\[redacted mnemonic\]/)
+  })
 })
 
 describe('request shaping', () => {
@@ -198,5 +210,17 @@ describe('get and consume', () => {
       },
     })
     assert.equal(consume.status, 402)
+  })
+
+  it('does not treat a public sparkTxHash as unlock proof on GET', async () => {
+    const urls: string[] = []
+    await getResource('res_1', {
+      fetch: async (input) => {
+        urls.push(String(input))
+        return jsonResponse(402, { error: 'PAYMENT_REQUIRED' })
+      },
+    })
+    assert.doesNotMatch(urls[0] ?? '', /sparkTxHash/)
+    assert.doesNotMatch(urls[0] ?? '', /\?/)
   })
 })

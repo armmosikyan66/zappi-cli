@@ -10,13 +10,15 @@
     "bin",
     "dist/**/*.js",
     "!dist/**/*.test.js",
+    "!dist/eval/**",
     "README.md",
     "LICENSE",
     "SKILL.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/*.test.js",
+    "test": "npm run build && node --test dist/*.test.js dist/eval/*.test.js",
+    "test:judge": "npm run build && TYPESAFE_JUDGE=1 node --env-file=.env --test dist/eval/typesafe-judge.live.test.js",
     "prepare": "npm run build",
     "prepack": "npm run build"
   },
@@ -29,6 +31,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
+    "@typesafe-ai/sdk": "^0.6.0",
     "typescript": "^5.8.2"
   },
   "engines": {
