@@ -19,6 +19,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/*.test.js dist/eval/*.test.js",
     "test:judge": "npm run build && TYPESAFE_JUDGE=1 node --env-file=.env --test dist/eval/typesafe-judge.live.test.js",
+    "test:pipeline": "npm run build && TYPESAFE_JUDGE=1 node --env-file=.env --test dist/eval/pipeline.live.test.js",
     "prepare": "npm run build",
     "prepack": "npm run build"
   },

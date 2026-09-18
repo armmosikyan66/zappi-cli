@@ -1,8 +1,11 @@
+import { DEFAULT_ZAPPI_APP_ORIGIN } from './env.js'
 import {
   isSparkAddressForNetwork,
   looksLikeMnemonicPhrase,
   type SparkNetworkEnv,
 } from './spark-address.js'
+
+export { DEFAULT_ZAPPI_APP_ORIGIN }
 
 /** Matches web `POT_MODES`: free = auth not required, auth_required = approve spends. */
 export const POT_SPEND_MODES = ['free', 'auth_required'] as const
@@ -12,9 +15,6 @@ export function parsePotSpendMode(raw?: string | null): PotSpendMode | null {
   if (raw === 'free' || raw === 'auth_required') return raw
   return null
 }
-
-/** Default app origin for register links. Override with `ZAPPI_APP_ORIGIN`. */
-export const DEFAULT_ZAPPI_APP_ORIGIN = 'http://dev.zappi.money'
 
 export type RegisterDeepLinkStatus = 'empty' | 'ok' | 'mnemonic' | 'invalid'
 

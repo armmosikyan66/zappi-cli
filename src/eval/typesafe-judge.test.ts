@@ -8,7 +8,7 @@ import { hybridEvalQuestions } from './typesafe-questions.js'
 const HONEST_FREE_COPY = [
   'Pot created successfully (auth not required)',
   'Disconnect cannot stop on-chain spend. Empty pot is the cap.',
-  'Never print, email, or paste the mnemonic into chat or this link.',
+  'Never print, email, or paste the pot key into chat or this link.',
   'Set ZAPPI_POT_ID from the Zappi pot install snippet after register.',
 ].join('\n')
 
@@ -55,6 +55,14 @@ function mockAnswers(overrides: Partial<HybridEvalAnswers> = {}): HybridEvalAnsw
     treats_install_as_runtime_pot: noulAnswer(0.05),
     exposes_pot_secret: noulAnswer(0.02),
     states_empty_pot_is_cap: noulAnswer(0.92),
+    claims_attach_deny_is_live: noulAnswer(0.05),
+    forces_mnemonic_quiz: noulAnswer(0.04),
+    allows_receive_without_wallet: noulAnswer(0.04),
+    human_runs_npx_on_laptop: noulAnswer(0.06),
+    help_mixes_jobs: noulAnswer(0.05),
+    spark_in_human_cli: noulAnswer(0.04),
+    env_default_mismatch: noulAnswer(0.04),
+    usage_lies_about_browser: noulAnswer(0.04),
     needs_buyer_skill: noulAnswer(0.08),
     chosen_skill: choiceAnswer('none', skillProbs, 0.88),
     handler: choiceAnswer('copy_review', handlerProbs, 0.82),
@@ -83,13 +91,21 @@ describe('hybrid eval questions', () => {
   it('batches copy, skill, and route questions in one map', () => {
     const questions = hybridEvalQuestions()
     assert.deepEqual(Object.keys(questions).sort(), [
+      'allows_receive_without_wallet',
       'chosen_skill',
+      'claims_attach_deny_is_live',
       'claims_disconnect_stops_spend',
+      'env_default_mismatch',
       'exposes_pot_secret',
+      'forces_mnemonic_quiz',
       'handler',
+      'help_mixes_jobs',
+      'human_runs_npx_on_laptop',
       'needs_buyer_skill',
+      'spark_in_human_cli',
       'states_empty_pot_is_cap',
       'treats_install_as_runtime_pot',
+      'usage_lies_about_browser',
     ])
     assert.equal(questions.claims_disconnect_stops_spend.type, 'noul')
     assert.equal(questions.chosen_skill.type, 'choice')
@@ -150,6 +166,31 @@ describe('decideHybridEval (code owns thresholds)', () => {
     assert.ok(
       decision.reasons.some((reason) => reason.includes('claims_disconnect_stops_spend')),
     )
+  })
+
+  it('fails help that mixes human launch with agent spend', () => {
+    const decision = decideHybridEval(
+      'copy',
+      mockAnswers({
+        help_mixes_jobs: noulAnswer(0.88),
+      }),
+      'free',
+      { copy: { helpMixesJobs: false } },
+    )
+    assert.equal(decision.verdict, 'fail')
+  })
+
+  it('ignores unused human-ui nouls on agent-agent copy', () => {
+    const decision = decideHybridEval(
+      'copy',
+      mockAnswers({
+        allows_receive_without_wallet: noulAnswer(0.52),
+        claims_attach_deny_is_live: noulAnswer(0.48),
+      }),
+      'free',
+      { copy: { requireEmptyPotCap: true } },
+    )
+    assert.equal(decision.verdict, 'pass')
   })
 
   it('reviews uncertain copy harm', () => {
@@ -245,7 +286,7 @@ describe('runHybridEvalJudge (mocked TypeSafe, no network)', () => {
     assert.equal(result.decision.verdict, 'pass')
     assert.doesNotMatch(result.state.transcript, /alpha bravo charlie/)
     const questions = capture.body?.questions as Record<string, unknown>
-    assert.equal(Object.keys(questions ?? {}).length, 7)
+    assert.equal(Object.keys(questions ?? {}).length, 15)
     const state = JSON.stringify(capture.body?.state)
     assert.doesNotMatch(state, /alpha bravo charlie/)
     assert.match(state, /redacted mnemonic/)

@@ -34,14 +34,14 @@ export interface ProposeRegisterArgs {
 }
 
 const USAGE = `Usage:
-  zappi-cli propose                                  # interactive wizard (recommended)
-  zappi-cli propose --address spark1… [--label Research] [--mode free|auth_required] [--open]
+  zappi-cli propose                                  # interactive wizard — run on the agent host
+  zappi-cli propose --address <pot-address> [--label Research] [--mode free|auth_required] [--open]
   zappi-cli propose --generate [--label Research] [--mode free|auth_required] [--key-file …] [--open]
 
-The wizard asks: existing pot or generate new → auth not required vs auth required
+The wizard asks: existing pot or generate new → how the pot should spend
 → pot label (blank = auto pot_<id>) → opens the Zappi register link in your browser
 (ENTER to open, auto-opens after a few seconds, or "c" to copy it). Never prints
-the mnemonic. Do not pass a recovery phrase as --address.`
+the pot key. Do not pass a recovery phrase as --address.`
 
 export function parseProposeRegisterArgs(
   argv: string[],
@@ -104,12 +104,12 @@ export function printRegisterDeepLink(input: {
   )
   if (parsed.status === 'mnemonic') {
     throw new Error(
-      'Do not pass a recovery phrase. Pass the public spark1 address only.',
+      'Do not pass a recovery phrase. Pass the public pot address only.',
     )
   }
   if (parsed.status !== 'ok') {
     throw new Error(
-      'Pass a public spark1 pot address as --address (Bech32m checksum, matching network).',
+      'Pass a public pot address as --address (checksum matching this network).',
     )
   }
 
@@ -130,7 +130,7 @@ export function printRegisterDeepLink(input: {
     href,
     '',
     'Store the pot key as ZAPPI_POT_SEED or a mode 0600 file.',
-    'Never print, email, or paste the mnemonic into chat or this link.',
+    'Never print, email, or paste the pot key into chat or this link.',
   ].join('\n')
 }
 

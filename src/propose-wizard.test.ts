@@ -85,11 +85,20 @@ describe('runProposeWizard', () => {
       prompts.some((p) => p.includes('Do you already have a pot')),
       'mode prompt shown',
     )
-    // free mode does not open browser / promptOpenLink
     assert.ok(
-      !prompts.some((p) => p.startsWith('http://') || p.startsWith('https://')),
-      'free skips browser prompt',
+      prompts.includes('openBrowser:true'),
+      'free opens the register link',
     )
+    assert.ok(
+      prompts.some((p) => p.startsWith('http://') || p.startsWith('https://')),
+      'register href shown',
+    )
+    assert.ok(prompts.some((p) => p.includes('Public pot address from your agent')))
+    assert.ok(prompts.some((p) => p === 'How should this pot spend?'))
+    const humanPrompts = prompts.filter(
+      (p) => !p.startsWith('http') && !p.startsWith('openBrowser:'),
+    )
+    assert.ok(!humanPrompts.some((p) => /Bech32m|when you test it|spark1…|sparkrt1/i.test(p)))
   })
 
   it('existing mode: blank label auto-generates pot_<id>', async () => {
@@ -101,6 +110,7 @@ describe('runProposeWizard', () => {
     const result = await runProposeWizard([], {}, deps)
     assert.match(result.label, /^pot_[0-9a-f]{8}$/)
     assert.match(result.href!, /label=pot_/)
+    assert.ok(result.output.includes('Sign in to Zappi and tap Register'))
   })
 
   it('existing mode: rejects a mnemonic as address and re-asks', async () => {
@@ -131,7 +141,7 @@ describe('runProposeWizard', () => {
 
   it('generate mode: asks label then key file, writes 0600 key file, builds link', async () => {
     const written: Array<{ path: string; label?: string }> = []
-    const { deps } = makeDeps({
+    const { deps, prompts } = makeDeps({
       select: ['generate', 'free'],
       ask: ['Research', ''], // label, blank key-file → default suggested
     })
@@ -149,7 +159,12 @@ describe('runProposeWizard', () => {
     assert.match(result.output, /Disconnect cannot stop on-chain spend/)
     assert.match(result.output, /fake-pot-Research/)
     assert.ok(!result.output.includes('test mnemonic words'))
-    assert.match(result.href!, /http:\/\/dev\.zappi\.money\//)
+    assert.match(result.href!, /https:\/\/zappi\.money\//)
+    assert.ok(
+      prompts.some((p) => p.startsWith('Pot key file')),
+      'key-file prompt does not say mnemonic',
+    )
+    assert.ok(!prompts.some((p) => /mnemonic/i.test(p)))
   })
 
   it('generate mode: a directory answer writes the suggested filename inside it', async () => {
@@ -235,10 +250,10 @@ describe('runProposeWizard', () => {
     assert.match(result.href!, /mode=free/)
     assert.match(result.href!, /pots=agent/)
     assert.match(result.output, /Pot created successfully/)
-    assert.equal(result.openResult?.action, 'skipped')
+    assert.equal(result.openResult?.action, 'opened')
     assert.ok(
-      !prompts.some((p) => p.startsWith('openBrowser:')),
-      'free must not call promptOpenLink',
+      prompts.includes('openBrowser:true'),
+      'free must open the register link',
     )
   })
 

@@ -118,11 +118,16 @@ export function renderHelp(mode: OutputMode = 'pretty'): string {
   const nl = '\n'
   const lines = [
     `${c.bold('zappi-cli')} ${c.dim('buyer CLI for Zappi agent pots')}`,
+    c.dim('Run propose on the agent host so the pot key is created there.'),
+    c.dim('In Zappi, the human only registers and funds.'),
     '',
-    c.bold('Commands'),
-    `  ${c.cyan('propose')}   Register a pot (wizard or flags)`,
-    `  ${c.cyan('pay')}       Unlock a PaidResource (402 → settle)`,
-    `  ${c.cyan('consume')}   Burn metered grant units`,
+    c.bold('Host setup'),
+    `  ${c.cyan('propose')}   Create or register a pot on this host (wizard)`,
+    '',
+    c.bold('Agent spend'),
+    c.dim('  After the pot is funded — the agent runs these, not the human launch.'),
+    `  ${c.cyan('pay')}       Unlock a PaidResource`,
+    `  ${c.cyan('consume')}   Use more of a metered grant`,
     '',
     c.bold('Options'),
     `  ${c.dim('--json')}              Machine-readable output (no colors)`,
@@ -143,10 +148,10 @@ export function renderHelp(mode: OutputMode = 'pretty'): string {
     `  ${c.dim('ZAPPI_API_URL')}        Nest origin (default https://api.zappi.money)`,
     `  ${c.dim('ZAPPI_UNLOCK_TOKEN')}   Unlock bearer for consume`,
     `  ${c.dim('ZAPPI_POT_SPEND_MODE')}  free (default) or auth_required`,
-    `  ${c.dim('ZAPPI_APP_ORIGIN')}     Web origin for propose links`,
-    `  ${c.dim('SPARK_NETWORK')}        MAINNET (default) or REGTEST`,
+    `  ${c.dim('ZAPPI_APP_ORIGIN')}     Web origin (default https://zappi.money)`,
     '',
-    c.dim('Never print or log pot seeds, mnemonics, or unlock tokens.'),
+    c.dim('Staging dogfood: set ZAPPI_API_URL and ZAPPI_APP_ORIGIN together.'),
+    c.dim('Never print or log pot keys or unlock tokens.'),
   ]
   return lines.join(nl)
 }

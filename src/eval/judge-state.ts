@@ -14,6 +14,8 @@ export type JudgeHandlerId =
 
 export type JudgeFocus = 'copy' | 'skill' | 'route'
 
+export type EvalLane = 'agent-agent' | 'human-ui'
+
 /** Ground-truth policy the model may cite. Not a catalog of live rails. */
 export interface JudgePolicyFacts {
   spendMode: JudgeSpendMode
@@ -23,11 +25,22 @@ export interface JudgePolicyFacts {
   paywallNetwork: 'spark'
   paywallAsset: 'USDB'
   runtimePotIdEnv: 'ZAPPI_POT_ID'
+  attachDenyLive: false
+  receiveRequiresLinkedWallet: true
+  accountFirstNoMnemonicQuiz: true
+}
+
+export interface HumanUiTrace {
+  url: string
+  panel: string
+  action: string
 }
 
 export interface JudgeState {
   transcript: string
   userTurn: string | null
+  lane: EvalLane | null
+  ui: HumanUiTrace | null
   policy: JudgePolicyFacts
 }
 
@@ -35,6 +48,8 @@ export interface PrepareJudgeStateInput {
   transcript: string
   userTurn?: string
   spendMode?: JudgeSpendMode
+  lane?: EvalLane
+  ui?: HumanUiTrace
 }
 
 const PLACEHOLDERS = [
@@ -75,6 +90,8 @@ export function prepareJudgeState(input: PrepareJudgeStateInput): JudgeState {
   return {
     transcript,
     userTurn,
+    lane: input.lane ?? null,
+    ui: input.ui ?? null,
     policy: {
       spendMode: input.spendMode ?? 'unknown',
       emptyPotIsCap: true,
@@ -83,6 +100,9 @@ export function prepareJudgeState(input: PrepareJudgeStateInput): JudgeState {
       paywallNetwork: 'spark',
       paywallAsset: 'USDB',
       runtimePotIdEnv: 'ZAPPI_POT_ID',
+      attachDenyLive: false,
+      receiveRequiresLinkedWallet: true,
+      accountFirstNoMnemonicQuiz: true,
     },
   }
 }

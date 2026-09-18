@@ -5,6 +5,8 @@ import {
   type JudgeSpendMode,
   type JudgeState,
   type PrepareJudgeStateInput,
+  type EvalLane,
+  type HumanUiTrace,
 } from './judge-state.js'
 import {
   decideHybridEval,
@@ -57,6 +59,8 @@ export async function runHybridEvalJudge(input: {
   transcript: string
   userTurn?: string
   spendMode?: JudgeSpendMode
+  lane?: EvalLane
+  ui?: HumanUiTrace
   focus: JudgeFocus
   expect: JudgeExpect
   client: TypeSafeClient
@@ -65,12 +69,22 @@ export async function runHybridEvalJudge(input: {
     transcript: input.transcript,
     userTurn: input.userTurn,
     spendMode: input.spendMode,
+    lane: input.lane,
+    ui: input.ui,
   } satisfies PrepareJudgeStateInput)
   const questions = hybridEvalQuestions()
   const response = await input.client.systemOne({
     state: {
       transcript: state.transcript,
       userTurn: state.userTurn,
+      lane: state.lane,
+      ui: state.ui
+        ? {
+            url: state.ui.url,
+            panel: state.ui.panel,
+            action: state.ui.action,
+          }
+        : null,
       policy: { ...state.policy },
     },
     questions,

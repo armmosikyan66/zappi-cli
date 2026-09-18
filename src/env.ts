@@ -16,8 +16,10 @@ export type PotSpendModeEnv = 'free' | 'auth_required'
 
 export const DEFAULT_ZAPPI_API_URL = 'https://api.zappi.money'
 export const STAGING_ZAPPI_API_URL = 'https://api-dev.zappi.money'
-/** Local / staging web — production override: `ZAPPI_APP_ORIGIN=https://zappi.money`. */
-export const DEFAULT_ZAPPI_APP_ORIGIN = 'http://dev.zappi.money'
+/** Production web. Staging dogfood must set this with `ZAPPI_API_URL`. */
+export const DEFAULT_ZAPPI_APP_ORIGIN = 'https://zappi.money'
+/** Staging web — pair with `STAGING_ZAPPI_API_URL`. */
+export const STAGING_ZAPPI_APP_ORIGIN = 'http://dev.zappi.money'
 
 export function resolvePaywallBase(env: PotEnv = process.env): string {
   const base =

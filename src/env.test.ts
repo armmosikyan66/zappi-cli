@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   DEFAULT_ZAPPI_API_URL,
+  DEFAULT_ZAPPI_APP_ORIGIN,
   STAGING_ZAPPI_API_URL,
   parsePositiveUnits,
   requirePotId,
@@ -60,8 +61,8 @@ describe('resolveUnlockToken', () => {
 })
 
 describe('resolveAppOrigin + spark network + units', () => {
-  it('defaults app origin to local / staging web', () => {
-    assert.equal(resolveAppOrigin({}), 'http://dev.zappi.money')
+  it('defaults app origin to production web', () => {
+    assert.equal(resolveAppOrigin({}), DEFAULT_ZAPPI_APP_ORIGIN)
   })
 
   it('treats REGTEST as the only non-mainnet spark network', () => {

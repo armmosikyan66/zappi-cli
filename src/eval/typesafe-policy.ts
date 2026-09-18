@@ -21,6 +21,14 @@ export interface CopyExpect {
   installAsPot?: boolean
   secretLeak?: boolean
   requireEmptyPotCap?: boolean
+  denyClaimedLive?: boolean
+  forcesMnemonicQuiz?: boolean
+  receiveWithoutWallet?: boolean
+  humanRunsNpxOnLaptop?: boolean
+  helpMixesJobs?: boolean
+  sparkInHumanCli?: boolean
+  envDefaultMismatch?: boolean
+  usageLiesAboutBrowser?: boolean
 }
 
 export interface JudgeExpect {
@@ -88,10 +96,53 @@ export function decideCopyHonesty(
       answers.exposes_pot_secret.noul,
       expect.secretLeak ?? false,
     ),
+    harmNoul(
+      'claims_attach_deny_is_live',
+      answers.claims_attach_deny_is_live.noul,
+      expect.denyClaimedLive,
+    ),
+    harmNoul(
+      'forces_mnemonic_quiz',
+      answers.forces_mnemonic_quiz.noul,
+      expect.forcesMnemonicQuiz,
+    ),
+    harmNoul(
+      'allows_receive_without_wallet',
+      answers.allows_receive_without_wallet.noul,
+      expect.receiveWithoutWallet,
+    ),
+    harmNoul(
+      'human_runs_npx_on_laptop',
+      answers.human_runs_npx_on_laptop.noul,
+      expect.humanRunsNpxOnLaptop,
+    ),
+    harmNoul(
+      'help_mixes_jobs',
+      answers.help_mixes_jobs.noul,
+      expect.helpMixesJobs,
+    ),
+    harmNoul(
+      'spark_in_human_cli',
+      answers.spark_in_human_cli.noul,
+      expect.sparkInHumanCli,
+    ),
+    harmNoul(
+      'env_default_mismatch',
+      answers.env_default_mismatch.noul,
+      expect.envDefaultMismatch,
+    ),
+    harmNoul(
+      'usage_lies_about_browser',
+      answers.usage_lies_about_browser.noul,
+      expect.usageLiesAboutBrowser,
+    ),
   ]
-  const reasons = checks.filter(Boolean).map((check) => check!.reason)
-  let verdict = checks.reduce<JudgeVerdict>(
-    (current, check) => worse(current, check!.verdict),
+  const applied = checks.filter(
+    (check): check is NonNullable<(typeof checks)[number]> => check != null,
+  )
+  const reasons = applied.map((check) => check.reason)
+  let verdict = applied.reduce<JudgeVerdict>(
+    (current, check) => worse(current, check.verdict),
     'pass',
   )
 

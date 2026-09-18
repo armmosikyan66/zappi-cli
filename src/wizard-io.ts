@@ -277,8 +277,8 @@ export interface AuthPromptResult {
  * Show a register / approve link.
  *
  * - `openBrowser: true` (default): open immediately, then wait for ENTER / copy.
- * - `openBrowser: false`: print the link only (Auth not required / free) — never
- *   call `open`. User can still press "c" to copy or ENTER to continue.
+ * - `openBrowser: false`: print the link only — never call `open`.
+ *   User can still press "c" to copy or ENTER to continue.
  */
 export async function promptOpenLink(
   href: string,
@@ -304,7 +304,7 @@ export async function promptOpenLink(
   process.stdout.write(
     openBrowser
       ? 'Opened in your browser. Press ENTER to continue — or "c" to copy the link (Ctrl+C to quit)… '
-      : 'Browser not opened (auth not required). Press ENTER to continue — or "c" to copy the link (Ctrl+C to quit)… ',
+      : 'Browser not opened. Press ENTER to continue — or "c" to copy the link (Ctrl+C to quit)… ',
   )
 
 

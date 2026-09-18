@@ -18,7 +18,6 @@ import {
   select,
   generatePotLabel,
   promptOpenLink,
-  closeWizardReadline,
   type SelectOption,
 } from './wizard-io.js'
 import { infoLine, kv, successLine } from './ui.js'
@@ -35,7 +34,7 @@ export const WIZARD_MODE_OPTIONS: SelectOption[] = [
 /** Matches web pots chooser: Auth not required vs Auth required. */
 export const AUTH_MODE_OPTIONS: SelectOption[] = [
   {
-    label: 'Auth not required — agent can spend without approval (free)',
+    label: 'Auth not required — the agent can spend without asking you',
     value: 'free',
   },
   {
@@ -44,14 +43,17 @@ export const AUTH_MODE_OPTIONS: SelectOption[] = [
   },
 ]
 
-const AUTH_MODE_PROMPT = 'How should this pot spend when you test it?'
+const AUTH_MODE_PROMPT = 'How should this pot spend?'
 
-/** Success summary for free (auth not required) — no browser prompt. */
+const REGISTER_HEADLINE = 'Register this pot in Zappi:'
+
+/** Success summary for free (auth not required). */
 function formatFreeSuccess(input: {
   sparkAddress: string
   label: string
   href: string
   keyFile?: string
+  openResult?: { action: string; auto: boolean }
 }): string {
   const lines = [
     successLine('Pot created successfully (auth not required)'),
@@ -65,13 +67,19 @@ function formatFreeSuccess(input: {
     lines.push(infoLine('Store the pot key as ZAPPI_POT_SEED or a mode 0600 file.'))
   }
   lines.push(kv('register', input.href))
-  lines.push(infoLine('Open the register link in Zappi when you are ready.'))
+  if (input.openResult?.action === 'copied') {
+    lines.push(infoLine('Link copied to clipboard.'))
+  } else if (input.openResult?.action === 'skipped') {
+    lines.push(infoLine('Could not open the browser — open the register link in Zappi now.'))
+  } else {
+    lines.push(infoLine('Sign in to Zappi and tap Register.'))
+  }
   lines.push(
     infoLine(
       'Disconnect cannot stop on-chain spend. Empty pot is the cap.',
     ),
   )
-  lines.push(infoLine('Never print, email, or paste the mnemonic into chat or this link.'))
+  lines.push(infoLine('Never print, email, or paste the pot key into chat or this link.'))
   return lines.join('\n')
 }
 
@@ -138,14 +146,12 @@ export async function runProposeWizard(
   const rawSpend = await d.select(AUTH_MODE_PROMPT, AUTH_MODE_OPTIONS)
   const spendMode: PotSpendMode = parsePotSpendMode(rawSpend) ?? 'free'
 
-  const lines: string[] = []
-
   if (mode === 'existing') {
     // Step 2 — address (validated, re-ask until valid, blank exits).
     let sparkAddress = ''
     for (;;) {
       const answer = await d.ask(
-        'Existing pot public address (spark1… or sparkrt1…) [blank = cancel]:',
+        'Public pot address from your agent [blank = cancel]:',
       )
       const trimmed = answer.trim()
       if (!trimmed) {
@@ -161,12 +167,12 @@ export async function runProposeWizard(
       }
       if (parsed.status === 'mnemonic') {
         process.stdout.write(
-          'That looks like a recovery phrase — never paste it here. Pass the public spark1 address only.\n',
+          'That looks like a recovery phrase — never paste it here. Pass the public pot address only.\n',
         )
         continue
       }
       process.stdout.write(
-        'Invalid address for this network — expected a Bech32m spark address with a valid checksum.\n',
+        'That address is not valid for this network. Use the public pot address from your agent.\n',
       )
     }
 
@@ -176,26 +182,24 @@ export async function runProposeWizard(
     const href = buildRegisterDeepLink({ sparkAddress, label, origin, network, mode: spendMode })
     if (!href) throw new Error('Could not build the register deep link.')
 
-    // free: success summary only (no browser, no ENTER prompt).
-    // auth_required: open browser for approve/authenticate.
+    const openResult = await d.promptOpenLink(href, {
+      headline: spendMode === 'free' ? REGISTER_HEADLINE : 'Approve / authenticate this pot at:',
+      openBrowser: true,
+    })
     if (spendMode === 'free') {
-      closeWizardReadline()
-      const output = formatFreeSuccess({ sparkAddress, label, href })
+      const output = formatFreeSuccess({ sparkAddress, label, href, openResult })
       return {
         mode,
         spendMode,
         label,
         sparkAddress,
         href,
-        openResult: { action: 'skipped', auto: true },
+        openResult,
         output,
       }
     }
 
-    const openResult = await d.promptOpenLink(href, {
-      headline: 'Approve / authenticate this pot at:',
-      openBrowser: true,
-    })
+    const lines: string[] = []
     if (openResult.action === 'copied') {
       lines.push('Link copied to clipboard.')
     } else if (openResult.action === 'skipped') {
@@ -208,7 +212,7 @@ export async function runProposeWizard(
       href,
       '',
       'Store the pot key as ZAPPI_POT_SEED or a mode 0600 file.',
-      'Never print, email, or paste the mnemonic into chat or this link.',
+      'Never print, email, or paste the pot key into chat or this link.',
     )
     return { mode, spendMode, label, sparkAddress, href, openResult, output: lines.join('\n') }
   }
@@ -221,7 +225,7 @@ export async function runProposeWizard(
   // the suggested filename inside it so we never EISDIR after generating.
   const suggested = d.defaultKeyFile(label)
   const keyFileAnswer = await d.ask(
-    `Key file for the pot mnemonic [${suggested}]:`,
+    `Pot key file [${suggested}]:`,
   )
   const keyFile = resolveKeyFilePath(keyFileAnswer, suggested)
 
@@ -233,9 +237,12 @@ export async function runProposeWizard(
   const href = buildRegisterDeepLink({ sparkAddress, label, origin, network, mode: spendMode })
   if (!href) throw new Error('Could not build the deep link for the new pot.')
 
+  const openResult = await d.promptOpenLink(href, {
+    headline: spendMode === 'free' ? REGISTER_HEADLINE : 'Approve / authenticate this pot at:',
+    openBrowser: true,
+  })
   if (spendMode === 'free') {
-    closeWizardReadline()
-    const output = formatFreeSuccess({ sparkAddress, label, href, keyFile })
+    const output = formatFreeSuccess({ sparkAddress, label, href, keyFile, openResult })
     return {
       mode,
       spendMode,
@@ -243,16 +250,12 @@ export async function runProposeWizard(
       sparkAddress,
       keyFile,
       href,
-      openResult: { action: 'skipped', auto: true },
+      openResult,
       output,
     }
   }
 
-  const openResult = await d.promptOpenLink(href, {
-    headline: 'Approve / authenticate this pot at:',
-    openBrowser: true,
-  })
-  lines.push(
+  const lines: string[] = [
     `Pot address: ${sparkAddress}`,
     'Spend mode: auth required',
     `Key file written (mode 0600): ${keyFile}`,
@@ -260,8 +263,8 @@ export async function runProposeWizard(
     'Approve in Zappi (sign in / authenticate):',
     href,
     '',
-    'Never print, email, or paste the mnemonic into chat or this link.',
-  )
+    'Never print, email, or paste the pot key into chat or this link.',
+  ]
   if (openResult.action === 'copied') {
     lines.push('Link copied to clipboard.')
   } else if (openResult.action === 'skipped') {

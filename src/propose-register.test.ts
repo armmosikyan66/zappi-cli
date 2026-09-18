@@ -4,6 +4,7 @@ import {
   parseProposeRegisterArgs,
   printRegisterDeepLink,
 } from './propose-register.js'
+import { renderHelp } from './ui.js'
 
 const ADDRESS =
   'spark1pgssyele0qrcjdheeq2a0zmpwdwvj3r4f4stkuju0fp36g6grapv2w7l8am2cp'
@@ -31,9 +32,9 @@ describe('parseProposeRegisterArgs', () => {
     assert.equal(parsed.generate, false)
   })
 
-  it('defaults origin to local / staging web', () => {
+  it('defaults origin to production web', () => {
     const parsed = parseProposeRegisterArgs(['--generate'], {})
-    assert.equal(parsed.origin, 'http://dev.zappi.money')
+    assert.equal(parsed.origin, 'https://zappi.money')
     assert.equal(parsed.generate, true)
     assert.equal(parsed.mode, 'free')
   })
@@ -81,5 +82,19 @@ describe('printRegisterDeepLink', () => {
     })
     assert.match(printed, /mode=auth_required/)
     assert.match(printed, /pots=mine/)
+  })
+})
+
+describe('renderHelp', () => {
+  it('splits host setup from agent spend and names matching production defaults', () => {
+    const help = renderHelp('plain')
+    assert.match(help, /Host setup/)
+    assert.match(help, /Agent spend/)
+    assert.match(help, /agent host/)
+    assert.match(help, /ZAPPI_APP_ORIGIN.*https:\/\/zappi\.money/)
+    assert.match(help, /ZAPPI_API_URL.*https:\/\/api\.zappi\.money/)
+    assert.doesNotMatch(help, /402 → settle/)
+    assert.doesNotMatch(help, /Bech32m|spark1|Spark/)
+    assert.match(help, /Staging dogfood: set ZAPPI_API_URL and ZAPPI_APP_ORIGIN together/)
   })
 })
