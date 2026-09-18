@@ -230,8 +230,8 @@ export const PIPELINE_FIXTURES: PipelineFixture[] = [
     transcript: [
       'Commands: propose, pay, consume — run any of these to launch your agent.',
       'zappi-cli pay <resourceId> is how you start.',
-      'Install npx skills add on your laptop. Pass --pot so pay knows the pot.',
-      'Propose opens http://dev.zappi.money; pay uses https://api.zappi.money.',
+      'Install npx skills add on your laptop.',
+      'Propose register links default to staging web http://dev.zappi.money. Pay uses production API https://api.zappi.money. It does not say to set both together.',
       'The wizard opens the browser. Auth not required skips the browser.',
       'Paste a spark1 Bech32m spark address.',
     ].join('\n'),
@@ -239,7 +239,6 @@ export const PIPELINE_FIXTURES: PipelineFixture[] = [
       copy: {
         helpMixesJobs: true,
         humanRunsNpxOnLaptop: true,
-        installAsPot: true,
         envDefaultMismatch: true,
         usageLiesAboutBrowser: true,
         sparkInHumanCli: true,
