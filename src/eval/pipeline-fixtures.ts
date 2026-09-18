@@ -183,7 +183,7 @@ export const PIPELINE_FIXTURES: PipelineFixture[] = [
       action: 'role=button name=Copy On the agent machine',
     },
     transcript: [
-      'On the agent machine: npx skills add https://zappi.money --skill zappi-agent-pot',
+      'On the agent machine: npx @zappimoney/zappi-cli propose',
       'Then tell your agent: Set up a Zappi pot on this host and send me a register link. Do not print the key.',
       'Copy the command onto the agent machine, then paste the prompt into the agent chat. No key and no sign-in.',
       'The agent already holds the key and can spend the full balance, including later top-ups. Empty balance is the limit. Disconnecting does not stop spend.',
