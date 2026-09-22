@@ -41,6 +41,8 @@ describe('cli dispatcher: new wallet commands', () => {
     for (const key of ENV_VARS) savedEnv[key] = process.env[key]
     process.env.ZAPPI_ACCESS_TOKEN = 'jwt'
     process.env.ZAPPI_API_URL = 'https://api.test'
+    delete process.env.ZAPPI_POT_ID
+    delete process.env.ZAPPI_POT_SEED
   })
 
   afterEach(() => {
