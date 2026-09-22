@@ -21,7 +21,6 @@ export interface LoginDeps {
 
 interface DeviceStart {
   deviceCode: string
-  userCode: string
   verificationUriComplete: string
   expiresIn: number
   interval: number
@@ -37,8 +36,8 @@ interface TokenGrant {
 /**
  * `zappi-cli login [--no-browser]`
  *
- * RFC 8628 device flow. Optional. The human approves in the browser; this
- * terminal stores a user session and never prints it.
+ * Opens the Zappi sign-in screen (email or passkey). Signing in there saves
+ * a session on this terminal. The session is never printed.
  */
 export async function runLogin(
   argv: string[],
@@ -58,13 +57,12 @@ export async function runLogin(
     `${apiUrl}/api/auth/cli/device`,
     {},
   )
-  if (!started.deviceCode || !started.userCode || !started.verificationUriComplete) {
+  if (!started.deviceCode || !started.verificationUriComplete) {
     throw new Error('Zappi did not start a login. Try again.')
   }
 
-  writeErr(`Code: ${started.userCode}${NL}`)
+  writeErr(`Sign in with your email or a passkey.${NL}`)
   writeErr(`${started.verificationUriComplete}${NL}`)
-  writeErr(`Approve this code in Zappi only if it matches the page.${NL}`)
   if (!booleans['no-browser']) {
     try {
       open(started.verificationUriComplete)

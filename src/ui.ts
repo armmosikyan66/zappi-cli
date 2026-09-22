@@ -133,7 +133,7 @@ export function renderHelp(mode: OutputMode = 'pretty'): string {
     c.bold('Account (optional)'),
     c.dim('  Sign this terminal into your Zappi account before wallet commands.'),
     c.dim('  Propose and pay do not need it — they use the pot key.'),
-    `  ${c.cyan('login')}                 Approve in the browser, then save a session here`,
+    `  ${c.cyan('login')}                 Sign in with email or a passkey, then save a session here`,
     `  ${c.cyan('whoami')}                Show the signed-in account`,
     `  ${c.cyan('logout')}                Revoke this terminal's session`,
     '',
