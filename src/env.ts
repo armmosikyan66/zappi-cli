@@ -10,6 +10,16 @@ export interface PotEnv {
   ZAPPI_POT_SPEND_MODE?: string
   NEXT_PUBLIC_SITE_URL?: string
   SPARK_NETWORK?: string
+  /** Project API key for server-to-server nest calls (projectKey auth). */
+  ZAPPI_PROJECT_API_KEY?: string
+  /** User access JWT for session-scoped nest calls (pots, ledger, send). */
+  ZAPPI_ACCESS_TOKEN?: string
+  /** Optional cookie header to forward for session auth. */
+  ZAPPI_COOKIE?: string
+  /** Optional user-agent to forward for session auth. */
+  ZAPPI_USER_AGENT?: string
+  /** Override for `zappi-cli login` credential file. Default `~/.zappi/credentials.json`. */
+  ZAPPI_CREDENTIALS_FILE?: string
 }
 
 export type PotSpendModeEnv = 'free' | 'auth_required'
