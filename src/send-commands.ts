@@ -138,6 +138,10 @@ export async function runSend(
   const route = classifySendTarget(to, strings)
   const idempotencyKey = strings['idempotency-key']
   const potId = strings['pot-id'] ?? env.ZAPPI_POT_ID
+  const potEnv: NodeJS.ProcessEnv =
+    strings['pot-id'] != null && strings['pot-id'] !== ''
+      ? { ...env, ZAPPI_POT_ID: strings['pot-id'] }
+      : env
 
   if (booleans['dry-run']) {
     const plan = {
@@ -176,7 +180,7 @@ export async function runSend(
   }
 
   if (route === 'spark') {
-    return runSendSparkUsdb(to, amountCents, mode, env)
+    return runSendSparkUsdb(to, amountCents, mode, potEnv)
   }
 
   if (route === 'internal') {
@@ -189,7 +193,7 @@ export async function runSend(
       ...(strings.auth ? ['--auth', strings.auth] : []),
       ...(idempotencyKey ? ['--idempotency-key', idempotencyKey] : []),
     ]
-    return runSendInternal(forwarded, mode, env)
+    return runSendInternal(forwarded, mode, potEnv)
   }
 
   if (!strings.asset || !strings.network) {
@@ -204,7 +208,7 @@ export async function runSend(
 
   // Don't invent Orchestra labels for Spark USDB — redirect spark destinations.
   if (looksLikeSparkAddress(to) || /^(usdb|spark)$/i.test(strings.asset) || /^spark$/i.test(strings.network)) {
-    return runSendSparkUsdb(to, amountCents, mode, env)
+    return runSendSparkUsdb(to, amountCents, mode, potEnv)
   }
 
   const forwarded = [
@@ -219,7 +223,7 @@ export async function runSend(
     ...(strings.auth ? ['--auth', strings.auth] : []),
     ...(idempotencyKey ? ['--idempotency-key', idempotencyKey] : []),
   ]
-  return runSendExternal(forwarded, mode, env)
+  return runSendExternal(forwarded, mode, potEnv)
 }
 
 export { runSendSparkUsdb }

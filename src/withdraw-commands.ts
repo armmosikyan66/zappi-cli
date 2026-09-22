@@ -4,6 +4,12 @@ import {
   type WithdrawalRequest,
 } from '@zappimoney/zappi-sdk'
 import { resolveZappiClient } from './client.js'
+import {
+  potResolveSendTarget,
+  potSendExternal,
+  potSendInternal,
+  requirePotId,
+} from './pot-send.js'
 import { parseArgs, parseIntFlag } from './args.js'
 import { loadPotSeed } from './load-pot-seed.js'
 import { resolveSparkNetwork, type PotEnv } from './env.js'
@@ -228,7 +234,8 @@ export async function runWithdrawStatus(
   ].join(NL)
 }
 
-/** `zappi-cli send internal --to <userId> --amount <cents> [--memo L] [--auth <token>]` */
+
+/** `zappi-cli send internal --to <userId> --amount <cents>` — Nest pot-scoped P2P (1-315). */
 export async function runSendInternal(
   argv: string[],
   mode: OutputMode,
@@ -237,21 +244,41 @@ export async function runSendInternal(
   const { strings } = parseArgs(argv)
   const recipientUserId = strings.to
   if (!recipientUserId || !strings.amount) {
-    throw new Error('Usage: zappi-cli send internal --to <userId> --amount <cents> [--memo L] [--auth <token>]')
+    throw new Error(
+      'Usage: zappi-cli send internal --to <userId> --amount <cents> [--memo L] [--auth <token>]',
+    )
   }
   const amountCents = parseIntFlag(strings.amount, 'amount')
+  const potId = requirePotId(env)
   const client = await resolveZappiClient(env)
   const authorizationToken = strings.auth ?? null
+  const idempotencyKey =
+    strings['idempotency-key'] ??
+    ('cli:send:' + recipientUserId + ':' + amountCents + ':' + Date.now())
 
-  // 1. Resolve the recipient's destination Spark address.
-  const target = await client.resolveSendTarget(recipientUserId)
+  const target = await potResolveSendTarget(client, potId, recipientUserId)
   if (!target.destinationSparkAddress) {
     throw new Error(
-      'Recipient ' + recipientUserId + ' has no destination Spark address (custody: ' + target.recipientCustody + ').',
+      'Recipient ' +
+        recipientUserId +
+        ' has no destination Spark address (custody: ' +
+        String(target.recipientCustody ?? 'unknown') +
+        ').',
     )
   }
 
-  // 2. Sign the on-chain USDB transfer from the host pot.
+  await potSendInternal(
+    client,
+    potId,
+    {
+      recipientUserId,
+      amountCents,
+      idempotencyKey,
+      ...(strings.memo ? { memo: strings.memo } : {}),
+    },
+    authorizationToken,
+  )
+
   const tokenIdentifier = await readPotTokenIdentifier(env)
   const mnemonic = loadPotSeed(env)
   const network = resolveSparkNetwork(env)
@@ -264,35 +291,24 @@ export async function runSendInternal(
     amountCents,
   })
 
-  // 3. Record the send with nest (complete the pending transfer). Use the
-  // generic `request` escape hatch because the two-phase send-internal body
-  // needs `recipientUserId` + `sparkTxHash` (the nest DTO shape), which the
-  // clean `sendInternal(ContactTransferInput)` helper does not carry.
-  const idempotencyKey =
-    strings['idempotency-key'] ??
-    ('cli:send:' + recipientUserId + ':' + amountCents + ':' + Date.now())
-  const confirmation = await client.request<{
-    ok: true
-    transferId: string
-    transactionId: string
-    status: 'completed' | 'pending' | 'failed'
-  }>('wallet/send/internal', {
-    method: 'POST',
-    body: {
+  const confirmation = await potSendInternal(
+    client,
+    potId,
+    {
       recipientUserId,
       amountCents,
-      destinationType: 'internal',
       idempotencyKey,
       sparkTxHash,
       destinationSparkAddress: target.destinationSparkAddress,
       ...(strings.memo ? { memo: strings.memo } : {}),
     },
     authorizationToken,
-  })
+  )
 
   const result = {
     ok: true as const,
     command: 'send internal' as const,
+    potId,
     recipientUserId,
     amountCents,
     sparkTxHash,
@@ -300,19 +316,31 @@ export async function runSendInternal(
   }
   if (mode === 'json') return jsonOut(result)
   if (mode === 'plain') {
-    return 'transferId: ' + confirmation.transferId + ' status: ' + confirmation.status + ' tx: ' + sparkTxHash
+    return (
+      'transferId: ' +
+      String(confirmation.transferId ?? '-') +
+      ' status: ' +
+      String(confirmation.status ?? '-') +
+      ' tx: ' +
+      sparkTxHash
+    )
   }
   return [
     successLine('Internal send complete', mode),
+    kv('pot', potId, mode),
     kv('to', recipientUserId, mode),
     kv('amount', amountCents + '¢', mode),
     kv('tx', sparkTxHash, mode),
-    kv('transferId', confirmation.transferId, mode),
-    kv('status', confirmation.status, mode),
+    ...(confirmation.transferId
+      ? [kv('transferId', String(confirmation.transferId), mode)]
+      : []),
+    ...(confirmation.status
+      ? [kv('status', String(confirmation.status), mode)]
+      : []),
   ].join(NL)
 }
 
-/** `zappi-cli send external --asset --network --address --amount [--auth <token>]` */
+/** `zappi-cli send external` — Nest pot-scoped catalog withdraw (1-315). */
 export async function runSendExternal(
   argv: string[],
   mode: OutputMode,
@@ -324,17 +352,21 @@ export async function runSendExternal(
   const address = strings.address
   const amount = strings.amount
   if (!asset || !network || !address || !amount) {
-    throw new Error('Usage: zappi-cli send external --asset <a> --network <n> --address <addr> --amount <cents> [--auth <token>]')
+    throw new Error(
+      'Usage: zappi-cli send external --asset <a> --network <n> --address <addr> --amount <cents> [--auth <token>]',
+    )
   }
   const amountCents = parseIntFlag(amount, 'amount')
+  const potId = requirePotId(env)
   const client = await resolveZappiClient(env)
   const authorizationToken = strings.auth ?? null
   const idempotencyKey =
     strings['idempotency-key'] ??
     ('cli:sendext:' + asset + ':' + network + ':' + amountCents + ':' + Date.now())
 
-  // Phase 1: request the quote deposit address.
-  const first = await client.sendExternal(
+  const first = await potSendExternal(
+    client,
+    potId,
     {
       asset,
       networkId: network,
@@ -345,23 +377,30 @@ export async function runSendExternal(
     authorizationToken,
   )
 
-  // Phase 2: if nest needs a signature, sign from the pot and retry.
   let final = first
-  if (first.needsSignature && first.depositAddress && first.tokenIdentifier && first.sendAmount) {
-    const tokenIdentifier = first.tokenIdentifier
+  if (
+    first.needsSignature &&
+    first.depositAddress &&
+    first.tokenIdentifier &&
+    first.sendAmount
+  ) {
     const mnemonic = loadPotSeed(env)
     const sparkNetwork = resolveSparkNetwork(env)
     const sendAmountUnits = BigInt(first.sendAmount)
-    const amountCentsFromUnits = Number(sendAmountUnits / USDB_MICRO_UNITS_PER_CENT)
+    const amountCentsFromUnits = Number(
+      sendAmountUnits / USDB_MICRO_UNITS_PER_CENT,
+    )
     const { sparkTxHash } = await sendUsdbFromPot({
       mnemonic,
-      accountNumber: 0,
+      accountNumber: first.accountNumber ?? 0,
       network: sparkNetwork,
-      tokenIdentifier,
+      tokenIdentifier: first.tokenIdentifier,
       receiverSparkAddress: first.depositAddress,
       amountCents: amountCentsFromUnits,
     })
-    final = await client.sendExternal(
+    final = await potSendExternal(
+      client,
+      potId,
       {
         asset,
         networkId: network,
@@ -377,6 +416,7 @@ export async function runSendExternal(
   const result = {
     ok: true as const,
     command: 'send external' as const,
+    potId,
     asset,
     network,
     address,
@@ -386,15 +426,23 @@ export async function runSendExternal(
   }
   if (mode === 'json') return jsonOut(result)
   if (mode === 'plain') {
-    return 'withdrawId: ' + (final.withdrawId ?? '-') + ' status: ' + final.status
+    return (
+      'withdrawId: ' +
+      (final.withdrawId ?? '-') +
+      ' status: ' +
+      String(final.status ?? '-')
+    )
   }
   return [
     successLine('External send submitted', mode),
+    kv('pot', potId, mode),
     kv('asset', asset, mode),
     kv('network', network, mode),
     kv('amount', amountCents + '¢', mode),
-    kv('status', final.status, mode),
-    ...(final.withdrawId ? [kv('withdrawId', final.withdrawId, mode)] : []),
+    kv('status', String(final.status ?? '-'), mode),
+    ...(final.withdrawId
+      ? [kv('withdrawId', String(final.withdrawId), mode)]
+      : []),
   ].join(NL)
 }
 
