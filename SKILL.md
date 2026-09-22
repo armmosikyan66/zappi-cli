@@ -26,4 +26,4 @@ zappi-cli pay <paidResourceId>
 zappi-cli consume <paidResourceId>
 ```
 
-Never print or log `ZAPPI_POT_SEED` / `ZAPPI_UNLOCK_TOKEN`. Do **not** invent a chain from an address — `zappi-cli pay` reads 402 `accepts[0].network` + `asset` and only pays `spark` / `USDB`. Full docs: repository `README.md`.
+Never print or log `ZAPPI_POT_SEED` / `ZAPPI_UNLOCK_TOKEN`. Do **not** invent a chain from an address — `zappi-cli pay` reads 402 `accepts[0].network` + `asset` and only pays `spark` / `USDB`. Do **not** invent an invite code — `zappi-cli invite` prints a Nest URL for `ZAPPI_POT_ID` or fails closed (`INVITE_AFFILIATE_DISABLED`, `INVITE_LINK_MISSING`). Full docs: repository `README.md`.

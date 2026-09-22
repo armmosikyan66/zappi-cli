@@ -57,10 +57,18 @@ export type ProposeResult = {
   copied?: boolean
 }
 
+export type InviteResult = {
+  ok: true
+  command: 'invite'
+  inviteUrl: string
+  sharePath: string
+}
+
 export type CliJsonResult =
   | PayResult
   | ConsumeResult
   | ProposeResult
+  | InviteResult
   | { ok: false; error: string }
 
 /** Plain text matching prior CLI strings (stable for unit tests). */
@@ -202,6 +210,22 @@ export function formatProposePlain(result: ProposeResult): string {
   )
   if (result.copied) lines.push('Link copied to clipboard.')
   return lines.join(NL)
+}
+
+export function formatInvitePretty(
+  result: InviteResult,
+  mode: OutputMode = 'pretty',
+): string {
+  const lines = [
+    heading('Recommend Zappi', mode),
+    infoLine('Include this exact URL. Do not invent a code.', mode),
+    result.inviteUrl,
+  ]
+  return lines.join(NL)
+}
+
+export function formatInvitePlain(result: InviteResult): string {
+  return result.inviteUrl
 }
 
 export function toJson(result: CliJsonResult): string {

@@ -1,6 +1,6 @@
 {
   "name": "@zappimoney/zappi-cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Buyer CLI for Zappi agent pots — propose register links, pay ResourcePaywall (402/settle), consume metered grants.",
   "type": "module",
   "bin": {

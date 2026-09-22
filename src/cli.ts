@@ -9,6 +9,7 @@ import {
   payResourceResult,
 } from './paywall.js'
 import { runProposeRegister } from './propose-register.js'
+import { runInviteLink } from './invite-link.js'
 import {
   createSpinner,
   renderHelp,
@@ -18,9 +19,12 @@ import {
 import {
   formatConsumePretty,
   formatError,
+  formatInvitePlain,
+  formatInvitePretty,
   formatPayPretty,
   formatProposePretty,
   toJson,
+  type InviteResult,
   type ProposeResult,
 } from './results.js'
 
@@ -129,6 +133,22 @@ export async function runCli(
       }
     }
     return output
+  }
+
+  if (command === 'invite') {
+    if (rest.includes('--help') || rest.includes('-h')) {
+      return renderHelp(mode === 'json' ? 'plain' : mode)
+    }
+    const link = await runInviteLink(rest)
+    const result: InviteResult = {
+      ok: true,
+      command: 'invite',
+      inviteUrl: link.inviteUrl,
+      sharePath: link.sharePath,
+    }
+    if (mode === 'json') return toJson(result)
+    if (mode === 'plain') return formatInvitePlain(result)
+    return formatInvitePretty(result, mode)
   }
 
   if (command === 'pay') {
