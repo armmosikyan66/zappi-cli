@@ -18,6 +18,33 @@ export interface SendUsdbFromPotResult {
   sparkTxHash: string
 }
 
+/**
+ * First `btkn…` identifier in a Spark token-balance Map or plain object.
+ * Spark SDK returns a Map on REGTEST/MAINNET; Object.keys alone misses those.
+ */
+export function pickUsdbTokenIdentifier(tokenBalances: unknown): string | null {
+  if (!tokenBalances || typeof tokenBalances !== 'object') return null
+  const keys =
+    tokenBalances instanceof Map
+      ? [...tokenBalances.keys()].map(String)
+      : Object.keys(tokenBalances as Record<string, unknown>)
+  for (const tokenIdentifier of keys) {
+    if (tokenIdentifier.startsWith('btkn')) return tokenIdentifier
+  }
+  return null
+}
+
+/** Normalize Spark tokenBalances (Map or record) to string entries. */
+export function tokenBalanceEntries(
+  tokenBalances: unknown,
+): Array<[string, unknown]> {
+  if (!tokenBalances || typeof tokenBalances !== 'object') return []
+  if (tokenBalances instanceof Map) {
+    return [...tokenBalances.entries()].map(([k, v]) => [String(k), v])
+  }
+  return Object.entries(tokenBalances as Record<string, unknown>)
+}
+
 export async function sendUsdbFromPot(
   input: SendUsdbFromPotInput,
 ): Promise<SendUsdbFromPotResult> {
@@ -60,11 +87,9 @@ export async function readUsdbTokenIdentifier(
 
   try {
     const balance = await wallet.getBalance()
-    const tokenBalances = balance.tokenBalances ?? {}
-    for (const tokenIdentifier of Object.keys(tokenBalances)) {
-      if (tokenIdentifier.startsWith('btkn')) return tokenIdentifier
-    }
-    throw new Error(EMPTY_POT_ERROR)
+    const tokenIdentifier = pickUsdbTokenIdentifier(balance.tokenBalances)
+    if (!tokenIdentifier) throw new Error(EMPTY_POT_ERROR)
+    return tokenIdentifier
   } finally {
     await wallet.cleanupConnections()
   }
