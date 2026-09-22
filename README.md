@@ -44,6 +44,7 @@ Global flag: `--json` prints machine-readable JSON (never includes pot seeds or 
 
 
 ```bash
+zappi-cli login                       # optional: sign this terminal into Zappi
 zappi-cli propose                     # on the agent host (wizard)
 zappi-cli pay <resourceId>            # agent, after the pot is funded
 zappi-cli consume <resourceId> [--units N]
@@ -52,6 +53,9 @@ zappi-cli invite                      # Nest invite URL for this pot
 
 | Command   | What it does                                                                                                                                                                                                                                              |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `login`   | **Optional, human.** Opens the Zappi sign-in screen (email or passkey). Saves a user session in `~/.zappi/credentials.json` (`0600`). Wallet commands use it when `ZAPPI_ACCESS_TOKEN` is unset. **Never prints the session.** Propose and pay do not need it. |
+| `whoami`  | **Human.** Prints the email of the saved login. |
+| `logout`  | **Human.** Revokes that session and deletes the credentials file. |
 | `propose` | **Host setup** on the agent host. Wizard: existing or generate → how the pot should spend → label → **opens the register link**. Writes a mode `0600` key file when generating. **Never prints the pot key.** |
 | `pay`     | **Agent spend** after fund. `GET` resource → 402 → `accepts[0].network` + `asset` must be `spark` / `USDB` → sign pot USDB → settle `{ sparkTxHash, potId }`. Other rails fail closed. Metered auto-consumes one unit (`--no-consume` to skip). |
 | `consume` | **Agent spend.** `POST …/consume` with `X-Zappi-Unlock-Token` and `{ units }` (default `1`). |
@@ -73,6 +77,37 @@ Do you already have a pot, or should this host generate a new one?
 - Key file prompt: blank uses `~/.zappi/…txt`. If you paste a **folder** (e.g. `~/Documents/zappi/packages`), the CLI writes the `.txt` **inside** that folder instead of crashing with `EISDIR`.
 - The browser step opens **`https://zappi.money`** by default (ENTER / auto-open / `c` to copy). Staging: `ZAPPI_APP_ORIGIN=http://dev.zappi.money` with `ZAPPI_API_URL=https://api-dev.zappi.money`. Ctrl+C quits cleanly.
 - Bare `propose` without a terminal (no TTY) falls back to the flag usage instead of hanging.
+
+### Wallet & pots commands
+
+In addition to the agent-spend flow, the CLI mirrors the `@zappimoney/zappi-sdk` wallet surface so a developer can drive nest wallet routes from the terminal. Auth is `ZAPPI_PROJECT_API_KEY` (server-to-server), `ZAPPI_ACCESS_TOKEN` (one-off user JWT), or a session saved by `zappi-cli login`. Signing routes also use `ZAPPI_POT_SEED`.
+
+`login` opens the same Zappi sign-in screen as the app: email code or passkey. The terminal never asks for a password and never shows a code to approve. The access token lasts about 15 minutes; the CLI refreshes it from the saved refresh token. Env `ZAPPI_ACCESS_TOKEN` still wins, so CI does not need a browser.
+
+```bash
+zappi-cli balance [--pot <id>]                 # wallet balance, or a pot balance with --pot
+zappi-cli transactions [<id>]                   # ledger activity, or a receipt by id
+zappi-cli deposit-options                       # deposit asset/network catalog
+zappi-cli deposit-address --asset <a> --network <n>
+zappi-cli withdraw-options
+zappi-cli withdraw estimate  --asset <a> --network <n> --address <addr> --amount <cents>
+zappi-cli withdraw quote     --asset <a> --network <n> --address <addr> --amount <cents>
+zappi-cli withdraw confirm  <quoteId> [--auth <token>]
+zappi-cli withdraw status   <id>
+zappi-cli send internal --to <userId> --amount <cents> [--memo L] [--auth <token>]
+zappi-cli send external --asset <a> --network <n> --address <addr> --amount <cents> [--auth <token>]
+
+zappi-cli pots [--origin user|agent|unknown] [--spend-mode free|auth_required|unknown]
+zappi-cli pots register <sparkAddress> [--label L] [--spend-mode free|auth_required]
+zappi-cli pots deposit-address <id> [--source-chain base]
+zappi-cli pots grants <id> [--create --scopes read,deposit] [--revoke <grantId>]
+zappi-cli pots spend-gate <id> [--action withdraw|internal_send|sweep]
+zappi-cli pots spend-approvals <id> [--create --action withdraw --amount 100 --destination 0x] [--approve <id>] [--reject <id>] [--auth <token>]
+zappi-cli pots attach [--spend-mode free|auth_required] [--spark-address <addr>] [--no-poll]
+zappi-cli pots attach-status <requestId>
+```
+
+`withdraw confirm` and `send internal`/`send external` sign Spark USDB from the host pot seed (`ZAPPI_POT_SEED`) via the two-phase orchestrator — the pot key never leaves the host; only the resulting `sparkTxHash` is sent to nest.
 
 ## Flow (propose → fund → pay → consume)
 
@@ -96,6 +131,11 @@ Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest return
 | `ZAPPI_POT_SPEND_MODE` | Runtime spend mode. `auth_required` refuses `pay` free-sign (approve in Zappi). Unset / `free` for agent-held pots. |
 | `ZAPPI_APP_ORIGIN`   | Web origin for `propose` links. **Default `https://zappi.money`.** Staging: `http://dev.zappi.money`. |
 | `SPARK_NETWORK`      | `MAINNET` (default) or `REGTEST`.                               |
+| `ZAPPI_PROJECT_API_KEY` | Project API key for server-to-server wallet routes (`balance`, `pots`, `withdraw`, …). |
+| `ZAPPI_ACCESS_TOKEN`    | User access JWT. Wins over `zappi-cli login`. |
+| `ZAPPI_CREDENTIALS_FILE` | Override for the login file. Default `~/.zappi/credentials.json` (`0600`). |
+| `ZAPPI_COOKIE`         | Optional cookie header forwarded for session auth (e.g. `zappi_access=…`). |
+| `ZAPPI_USER_AGENT`     | Optional user-agent forwarded for session auth. |
 
 `--unlock-token` exists for one-off calls. Scripts should use `ZAPPI_UNLOCK_TOKEN` so the bearer does not land in `ps` / shell history. Env wins when both are set.
 
