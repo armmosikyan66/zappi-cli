@@ -137,6 +137,7 @@ export function renderHelp(mode: OutputMode = 'pretty'): string {
     c.bold('Examples'),
     `  ${c.dim('zappi-cli propose')}`,
     `  ${c.dim('zappi-cli propose --generate --label Research --open')}`,
+    `  ${c.dim('zappi-cli propose --address <pot-address> --ref <invite-code>')}`,
     `  ${c.dim('zappi-cli request --amount-cents 100 --to <spark-address>')}`,
     `  ${c.dim('zappi-cli pay <resourceId>')}`,
     `  ${c.dim('zappi-cli pay <resourceId> --no-consume')}`,

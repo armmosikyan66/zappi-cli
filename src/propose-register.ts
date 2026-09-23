@@ -3,6 +3,7 @@ import {
   buildRegisterDeepLink,
   parseRegisterDeepLinkQuery,
   parsePotSpendMode,
+  requireInviteRef,
   type PotSpendMode,
 } from './register-deep-link.js'
 import {
@@ -31,12 +32,14 @@ export interface ProposeRegisterArgs {
   keyFile?: string
   /** free (default) | auth_required — sets deep-link mode tab */
   mode: PotSpendMode
+  /** Invite code the caller already has. Propose does not mint one. */
+  ref?: string
 }
 
 const USAGE = `Usage:
   zappi-cli propose                                  # interactive wizard — run on the agent host
-  zappi-cli propose --address <pot-address> [--label Research] [--mode free|auth_required] [--open]
-  zappi-cli propose --generate [--label Research] [--mode free|auth_required] [--key-file …] [--open]
+  zappi-cli propose --address <pot-address> [--label Research] [--mode free|auth_required] [--ref CODE] [--open]
+  zappi-cli propose --generate [--label Research] [--mode free|auth_required] [--ref CODE] [--key-file …] [--open]
 
 The wizard asks: existing pot or generate new → how the pot should spend
 → pot label (blank = auto pot_<id>) → opens the Zappi register link in your browser
@@ -80,6 +83,13 @@ export function parseProposeRegisterArgs(
       }
       parsed.mode = mode
       index += 1
+    } else if (arg === '--ref' && next && !next.startsWith('--')) {
+      parsed.ref = requireInviteRef(next)
+      index += 1
+    } else if (arg === '--ref') {
+      throw new Error(
+        'Pass an invite code you already have as --ref. Propose does not invent one.',
+      )
     } else if (arg === '--help' || arg === '-h') {
       throw new Error(USAGE)
     }
@@ -94,6 +104,7 @@ export function printRegisterDeepLink(input: {
   origin?: string
   network?: 'MAINNET' | 'REGTEST'
   mode?: PotSpendMode
+  ref?: string
 }): string {
   const parsed = parseRegisterDeepLinkQuery(
     {
@@ -113,12 +124,14 @@ export function printRegisterDeepLink(input: {
     )
   }
 
+  const inviteRef = input.ref ? requireInviteRef(input.ref) : undefined
   const href = buildRegisterDeepLink({
     sparkAddress: parsed.sparkAddress,
     label: parsed.label,
     origin: input.origin,
     network: input.network,
     mode: input.mode ?? 'free',
+    ref: inviteRef,
   })
   if (!href) {
     throw new Error('Could not build the register deep link.')
@@ -177,6 +190,7 @@ export async function runProposeRegister(
       origin: args.origin,
       network,
       mode: args.mode,
+      ref: args.ref,
     })
     const output = [
       printed,
@@ -190,6 +204,7 @@ export async function runProposeRegister(
         origin: args.origin,
         network,
         mode: args.mode,
+        ref: args.ref,
       })
       if (href) openUrl(href)
     }
@@ -202,6 +217,7 @@ export async function runProposeRegister(
     origin: args.origin,
     network,
     mode: args.mode,
+    ref: args.ref,
   })
   if (args.open) {
     const href = buildRegisterDeepLink({
@@ -210,6 +226,7 @@ export async function runProposeRegister(
       origin: args.origin,
       network,
       mode: args.mode,
+      ref: args.ref,
     })
     if (href) openUrl(href)
   }
