@@ -8,7 +8,6 @@ describe('eval pipeline catalog', () => {
     const lanes = new Set(PIPELINE_FIXTURES.map((fixture) => fixture.lane))
     assert.deepEqual([...lanes].sort(), ['agent-agent', 'human-ui'])
     assert.ok(PIPELINE_FIXTURES.some((fixture) => fixture.pass3))
-    assert.ok(BLOCKED_PIPELINE.some((row) => row.blockedBy === '1-231'))
     assert.ok(BLOCKED_PIPELINE.some((row) => row.blockedBy === '1-203'))
     assert.equal(
       PIPELINE_FIXTURES.some((fixture) => fixture.id.includes('attach-deny-terminal')),

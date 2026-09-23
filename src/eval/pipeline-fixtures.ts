@@ -16,14 +16,10 @@ export interface PipelineFixture {
 
 export const BLOCKED_PIPELINE = [
   {
-    id: 'human-ui.attach-deny-terminal',
-    blockedBy: '1-231',
-    reason: 'Nest POST attach/:id/deny is not shipped. Do not encode Deny 404 as success.',
-  },
-  {
     id: 'human-ui.two-owner-isolation',
     blockedBy: '1-203',
-    reason: 'Public approveUrl is the poll id; poll can return potClientToken. Two-owner factory is 1-232.',
+    reason:
+      'Public approveUrl is still the poll id. Nest poll no longer returns potClientToken, and dogfood has a two-owner factory (1-232), but credential crossing is not honest until 1-203.',
   },
   {
     id: 'agent-agent.auth-required-receipt',

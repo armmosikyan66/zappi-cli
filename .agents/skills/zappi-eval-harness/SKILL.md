@@ -38,11 +38,11 @@ npm run test:pipeline   # live TypeSafe; TYPESAFE_API_KEY + TYPESAFE_JUDGE=1
 
 That is `tsc` then `node --test dist/*.test.js dist/eval/*.test.js`. Mocked HTTP + mocked Spark + mocked TypeSafe. No live Spark.
 
-Nest oracle (sibling, read-only unless Arman): `cd ../zappi-nest && npm run test:dogfood`.
+Nest dogfood (sibling): `cd ../zappi-nest && npm run test:dogfood`. It exercises attach deny, spend deny, and a two-owner factory. Public poll does not return `potClientToken`.
 
 ## Do not fake
 
-1-203 pairing secret vs public `approveUrl` · 1-231 attach deny + poll identity · 1-205 `zpc_` grant · 1-200 auth-required receipt · 1-232 two-owner factory · 1-228 standing deposit maps.
+1-203 pairing secret vs public `approveUrl` · 1-205 `zpc_` grant · 1-200 auth-required receipt · 1-228 standing deposit maps.
 
 ## Trace NEVER
 
