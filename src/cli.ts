@@ -162,6 +162,19 @@ export async function runCli(
     return output
   }
 
+  if (command === 'invite') {
+    const link = await runInviteLink(rest)
+    const result: InviteResult = {
+      ok: true,
+      command: 'invite',
+      inviteUrl: link.inviteUrl,
+      sharePath: link.sharePath,
+    }
+    if (mode === 'json') return toJson(result)
+    if (mode === 'plain') return formatInvitePlain(result)
+    return formatInvitePretty(result, mode)
+  }
+
   if (command === 'request') {
     const args = parseRequestCliArgs(rest)
     const spinner = createSpinner('Requesting approval…', mode)

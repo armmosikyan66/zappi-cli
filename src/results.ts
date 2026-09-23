@@ -58,12 +58,21 @@ export type ProposeResult = {
   copied?: boolean
 }
 
+/** Nest-issued invite URL. Never a synthesized code. */
+export type InviteResult = {
+  ok: true
+  command: 'invite'
+  inviteUrl: string
+  sharePath: string
+}
+
 export type { SpendRequestResult }
 
 export type CliJsonResult =
   | PayResult
   | ConsumeResult
   | ProposeResult
+  | InviteResult
   | SpendRequestResult
   | { ok: false; error: string }
 
