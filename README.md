@@ -38,21 +38,23 @@ Requires **Node.js ≥ 20.9**. The package compiles TypeScript to `dist/` on ins
 
 ## Commands
 
-Global flag: `--json` prints machine-readable JSON (never includes pot seeds or unlock tokens).
+Global flag: `--json` prints machine-readable JSON (never includes pot seeds, pot client tokens, or unlock tokens).
 
 `propose` wizard asks **Auth not required** vs **Auth required** (sets deep-link `mode=free|auth_required`). Flags: `--mode free|auth_required`.
 
 
 ```bash
 zappi-cli propose                     # on the agent host (wizard)
-zappi-cli pay <resourceId>            # agent, after the pot is funded
+zappi-cli pay <resourceId>            # free pot: agent signs after the pot is funded
+zappi-cli request --amount-cents 100 --to <spark-address>
 zappi-cli consume <resourceId> [--units N]
 ```
 
 | Command   | What it does                                                                                                                                                                                                                                              |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `propose` | **Host setup** on the agent host. Wizard: existing or generate → how the pot should spend → label → **opens the register link**. Writes a mode `0600` key file when generating. **Never prints the pot key.** |
-| `pay`     | **Agent spend** after fund. `GET` resource → 402 → `accepts[0].network` + `asset` must be `spark` / `USDB` → sign pot USDB → settle `{ sparkTxHash, potId }`. Other rails fail closed. Metered auto-consumes one unit (`--no-consume` to skip). |
+| `pay`     | **Free pot.** `GET` resource → 402 → `accepts[0].network` + `asset` must be `spark` / `USDB` → sign pot USDB → settle `{ sparkTxHash, potId }`. Other rails fail closed. Metered auto-consumes one unit (`--no-consume` to skip). `ZAPPI_POT_SPEND_MODE=auth_required` refuses this and points at `request`. |
+| `request` | **Auth-required pot.** No TTY. `POST …/spend-requests` with `x-zappi-pot-client` and prints **only** the approve URL (`?panel=pots&spend=`, no `code=`). `--json` includes that URL and never the `zpc_` token. Does not sign. |
 | `consume` | **Agent spend.** `POST …/consume` with `X-Zappi-Unlock-Token` and `{ units }` (default `1`). |
 
 ### The `propose` wizard
@@ -72,12 +74,13 @@ Do you already have a pot, or should this host generate a new one?
 - The browser step opens **`https://zappi.money`** by default (ENTER / auto-open / `c` to copy). Staging: `ZAPPI_APP_ORIGIN=http://dev.zappi.money` with `ZAPPI_API_URL=https://api-dev.zappi.money`. Ctrl+C quits cleanly.
 - Bare `propose` without a terminal (no TTY) falls back to the flag usage instead of hanging.
 
-## Flow (propose → fund → pay → consume)
+## Flow (propose → fund → pay or request → consume)
 
 1. **Propose** — run on the **agent host**. The CLI generates the pot key there and opens a register URL. Human signs in to Zappi and taps Register.
 2. **Fund** — human funds the pot in the Zappi app. The CLI does not call deposit APIs.
-3. **Pay** — after `ZAPPI_POT_ID` + `ZAPPI_POT_SEED` (or key file) are set, pay a PaidResource. Nest returns an unlock bearer once on first settle. The CLI withholds that token from stdout/logs. Metered resources auto-consume one unit in the same `pay` (opt out with `--no-consume`).
-4. **Consume** — further metered units: `zappi-cli consume <id>` with `ZAPPI_UNLOCK_TOKEN` set as a host secret.
+3. **Pay** (free pot) — after `ZAPPI_POT_ID` + `ZAPPI_POT_SEED` (or key file) are set, pay a PaidResource. Nest returns an unlock bearer once on first settle. The CLI withholds that token from stdout/logs. Metered resources auto-consume one unit in the same `pay` (opt out with `--no-consume`).
+4. **Request** (auth-required pot) — `ZAPPI_POT_CLIENT_TOKEN` + `zappi-cli request` prints one approve URL. The human approves in Zappi. This command does not sign and does not ask for a session token.
+5. **Consume** — further metered units on a free pot: `zappi-cli consume <id>` with `ZAPPI_UNLOCK_TOKEN` set as a host secret.
 
 Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest returns it. Empty pot = stop. Do not fall back to the main wallet.
 
@@ -85,13 +88,14 @@ Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest return
 
 | Variable             | Role                                                            |
 | -------------------- | --------------------------------------------------------------- |
-| `ZAPPI_POT_ID`       | Required for `pay`. Public pot id from the Zappi prompt.        |
-| `ZAPPI_POT_SEED`     | Preferred pot spend key (host secret).                          |
+| `ZAPPI_POT_ID`       | Required for `pay` and `request`. Public pot id from the Zappi prompt. |
+| `ZAPPI_POT_CLIENT_TOKEN` | `zpc_` for `request` (host secret). Not a session token. Never a CLI flag. |
+| `ZAPPI_POT_SEED`     | Preferred pot spend key for free `pay` (host secret).           |
 | `ZAPPI_POT_KEY_FILE` | Fallback mode-`0600` key file if the seed env is unset.         |
 | `ZAPPI_API_URL`      | Nest origin. **Production default:** `https://api.zappi.money`. |
 | `ZAPPI_PAYWALL_BASE` | Optional paywall origin override (wins over `ZAPPI_API_URL`).   |
 | `ZAPPI_UNLOCK_TOKEN` | Unlock bearer for `consume` (preferred over `--unlock-token`).  |
-| `ZAPPI_POT_SPEND_MODE` | Runtime spend mode. `auth_required` refuses `pay` free-sign (approve in Zappi). Unset / `free` for agent-held pots. |
+| `ZAPPI_POT_SPEND_MODE` | Runtime spend mode. `auth_required` refuses `pay` and tells the agent to run `request`. Unset / `free` for agent-held pots. |
 | `ZAPPI_APP_ORIGIN`   | Web origin for `propose` links. **Default `https://zappi.money`.** Staging: `http://dev.zappi.money`. |
 | `SPARK_NETWORK`      | `MAINNET` (default) or `REGTEST`.                               |
 
@@ -103,7 +107,7 @@ Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest return
 export ZAPPI_API_URL=https://api-dev.zappi.money
 export ZAPPI_APP_ORIGIN=http://dev.zappi.money   # must pair with staging API
 export ZAPPI_POT_ID='<pot id>'
-# set ZAPPI_POT_SEED / ZAPPI_UNLOCK_TOKEN as host secrets — never echo / never commit
+# set ZAPPI_POT_SEED / ZAPPI_POT_CLIENT_TOKEN / ZAPPI_UNLOCK_TOKEN as host secrets — never echo / never commit
 
 zappi-cli propose --generate --label Staging --open
 # human registers + funds in the staging app
@@ -116,10 +120,10 @@ Production paywall is the default (`https://api.zappi.money`).
 
 ## CI vs live dogfood
 
-- **CI** (`npm test`): mocked HTTP + mocked Spark. Covers 402 → settle `{ sparkTxHash, potId }` → consume, empty pot fail-closed, **402 `network`/`asset` required** (refuse non-`spark`/`USDB` before sign), secret redaction (including BIP-39), `ZAPPI_POT_SPEND_MODE=auth_required` refusing CLI free-sign, and a **mocked TypeSafe judge** (copy honesty / skill / route). **No live Spark spend / no paywall network / no TypeSafe API.**
+- **CI** (`npm test`): mocked HTTP + mocked Spark. Covers 402 → settle `{ sparkTxHash, potId }` → consume, empty pot fail-closed, **402 `network`/`asset` required** (refuse non-`spark`/`USDB` before sign), secret redaction (including BIP-39), `ZAPPI_POT_SPEND_MODE=auth_required` refusing CLI free-sign, `request` printing a bare approve URL (no `code=`, no `zpc_`), and a **mocked TypeSafe judge** (copy honesty / skill / route). **No live Spark spend / no paywall network / no TypeSafe API.**
 - **Optional TypeSafe pipeline** (`npm run test:pipeline`): agent-agent + human-ui fixtures, paraphrases, Pass^3 on copy. Requires `TYPESAFE_API_KEY` in `.env`. Not GitHub Actions.
 - **Staging dogfood** (this section): human registers + funds in the app, then `pay` / `consume` against `api-dev`. Never commit seeds.
-- `--json` is the CLI trace contract: `command`, `potId`, `sparkTxHash`, `network`, `asset`, `unlockTokenReceived` (boolean). It never includes the mnemonic, `ZAPPI_POT_SEED`, or `zpu_…` / `zpc_…` values.
+- `--json` is the CLI trace contract: `command`, `potId`, `sparkTxHash`, `network`, `asset`, `unlockTokenReceived` (boolean). `request --json` adds `approveUrl`, `requestId`, `amountCents`, and `destinationAddress`. It never includes the mnemonic, `ZAPPI_POT_SEED`, or `zpu_…` / `zpc_…` values.
 
 Install has **no `--pot` flag**. Runtime pot id is `ZAPPI_POT_ID` after the human registers.
 
@@ -137,7 +141,8 @@ npm run build
 
 ## Hard rules
 
-- **Never** print, log, `echo`, or `set -x` `ZAPPI_POT_SEED`, the key file, or `ZAPPI_UNLOCK_TOKEN`.
+- **Never** print, log, `echo`, or `set -x` `ZAPPI_POT_SEED`, `ZAPPI_POT_CLIENT_TOKEN`, the key file, or `ZAPPI_UNLOCK_TOKEN`.
+- **Never** ask for `ZAPPI_ACCESS_TOKEN`, `zappi_access`, the pot seed, or a recovery phrase to approve a spend. Paste the `request` URL.
 - **Never** pass a recovery phrase as `--address` or put one in a deep link.
 - Nest never holds the pot key. Cap v1 is an empty pot.
 - Do **not** invent a payment chain from an address. Paywall 402 must include `accepts[0].network` and `accepts[0].asset`; this CLI only pays `spark` / `USDB`.

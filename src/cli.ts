@@ -10,6 +10,11 @@ import {
 } from './paywall.js'
 import { runProposeRegister } from './propose-register.js'
 import {
+  createSpendRequestResult,
+  formatSpendRequestOutput,
+  parseRequestCliArgs,
+} from './spend-request.js'
+import {
   createSpinner,
   renderHelp,
   stripJsonFlag,
@@ -129,6 +134,20 @@ export async function runCli(
       }
     }
     return output
+  }
+
+  if (command === 'request') {
+    const args = parseRequestCliArgs(rest)
+    const spinner = createSpinner('Requesting approval…', mode)
+    spinner.start()
+    try {
+      const result = await createSpendRequestResult({ input: args })
+      spinner.stop()
+      return formatSpendRequestOutput(result, mode === 'json' ? 'json' : 'plain')
+    } catch (error) {
+      spinner.fail('Request failed')
+      throw error
+    }
   }
 
   if (command === 'pay') {

@@ -1,3 +1,4 @@
+import type { SpendRequestResult } from './spend-request.js'
 import {
   errorLine,
   heading,
@@ -57,10 +58,13 @@ export type ProposeResult = {
   copied?: boolean
 }
 
+export type { SpendRequestResult }
+
 export type CliJsonResult =
   | PayResult
   | ConsumeResult
   | ProposeResult
+  | SpendRequestResult
   | { ok: false; error: string }
 
 /** Plain text matching prior CLI strings (stable for unit tests). */

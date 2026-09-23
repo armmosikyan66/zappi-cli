@@ -48,7 +48,12 @@ export function redactSecrets(text: string): string {
     .replace(/zpu_[A-Za-z0-9]+/g, 'zpu_[redacted]')
     .replace(/zpc_[A-Za-z0-9_-]+/g, 'zpc_[redacted]')
     .replace(/ZAPPI_POT_SEED=\S+/g, 'ZAPPI_POT_SEED=[redacted]')
+    .replace(/ZAPPI_POT_CLIENT_TOKEN=\S+/g, 'ZAPPI_POT_CLIENT_TOKEN=[redacted]')
     .replace(/ZAPPI_UNLOCK_TOKEN=\S+/g, 'ZAPPI_UNLOCK_TOKEN=[redacted]')
+    .replace(
+      /x-zappi-pot-client:\s*\S+/gi,
+      'x-zappi-pot-client: [redacted]',
+    )
     .replace(
       /X-Zappi-Unlock-Token:\s*\S+/gi,
       'X-Zappi-Unlock-Token: [redacted]',

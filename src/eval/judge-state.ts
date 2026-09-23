@@ -56,12 +56,13 @@ const PLACEHOLDERS = [
   /zpu_\[redacted\]/g,
   /zpc_\[redacted\]/g,
   /ZAPPI_POT_SEED=\[redacted\]/g,
+  /ZAPPI_POT_CLIENT_TOKEN=\[redacted\]/g,
   /ZAPPI_UNLOCK_TOKEN=\[redacted\]/g,
   /\[redacted mnemonic\]/g,
 ]
 
 const LIVE_SECRET =
-  /zpu_[A-Za-z0-9]+|zpc_[A-Za-z0-9_-]+|ZAPPI_POT_SEED=\S+|ZAPPI_UNLOCK_TOKEN=\S+/
+  /zpu_[A-Za-z0-9]+|zpc_[A-Za-z0-9_-]+|ZAPPI_POT_SEED=\S+|ZAPPI_POT_CLIENT_TOKEN=\S+|ZAPPI_UNLOCK_TOKEN=\S+/
 
 export function stripJudgePlaceholders(text: string): string {
   return PLACEHOLDERS.reduce((value, pattern) => value.replace(pattern, ' '), text)
