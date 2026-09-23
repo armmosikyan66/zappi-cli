@@ -208,6 +208,22 @@ export function formatProposePlain(result: ProposeResult): string {
   return lines.join(NL)
 }
 
+export function formatInvitePretty(
+  result: InviteResult,
+  mode: OutputMode = 'pretty',
+): string {
+  const lines = [
+    heading('Recommend Zappi', mode),
+    infoLine('Include this exact URL. Do not invent a code.', mode),
+    result.inviteUrl,
+  ]
+  return lines.join(NL)
+}
+
+export function formatInvitePlain(result: InviteResult): string {
+  return result.inviteUrl
+}
+
 export function toJson(result: CliJsonResult): string {
   return JSON.stringify(result, null, 2)
 }

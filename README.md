@@ -44,18 +44,24 @@ Global flag: `--json` prints machine-readable JSON (never includes pot seeds, po
 
 
 ```bash
+zappi-cli login                       # optional: sign this terminal into Zappi
 zappi-cli propose                     # on the agent host (wizard)
 zappi-cli pay <resourceId>            # free pot: agent signs after the pot is funded
 zappi-cli request --amount-cents 100 --to <spark-address>
 zappi-cli consume <resourceId> [--units N]
+zappi-cli invite                      # Nest invite URL for this pot
 ```
 
 | Command   | What it does                                                                                                                                                                                                                                              |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `login`   | **Optional, human.** Opens the Zappi sign-in screen (email or passkey). Saves a user session in `~/.zappi/credentials.json` (`0600`). Wallet commands use it when `ZAPPI_ACCESS_TOKEN` is unset. **Never prints the session.** Propose and pay do not need it. |
+| `whoami`  | **Human.** Prints the email of the saved login. |
+| `logout`  | **Human.** Revokes that session and deletes the credentials file. |
 | `propose` | **Host setup** on the agent host. Wizard: existing or generate → how the pot should spend → label → **opens the register link**. Writes a mode `0600` key file when generating. **Never prints the pot key.** |
 | `pay`     | **Free pot.** `GET` resource → 402 → `accepts[0].network` + `asset` must be `spark` / `USDB` → sign pot USDB → settle `{ sparkTxHash, potId }`. Other rails fail closed. Metered auto-consumes one unit (`--no-consume` to skip). `ZAPPI_POT_SPEND_MODE=auth_required` refuses this and points at `request`. |
 | `request` | **Auth-required pot.** No TTY. `POST …/spend-requests` with `x-zappi-pot-client` and prints **only** the approve URL (`?panel=pots&spend=`, no `code=`). `--json` includes that URL and never the `zpc_` token. Does not sign. |
 | `consume` | **Agent spend.** `POST …/consume` with `X-Zappi-Unlock-Token` and `{ units }` (default `1`). |
+| `invite`  | **Recommend Zappi.** `GET /api/invite/pots/$ZAPPI_POT_ID/link` (no session, no pot key). Prints the Nest invite URL. Fails closed if the flag is off or the pot has no code — it never invents one. |
 
 ### The `propose` wizard
 
@@ -98,6 +104,11 @@ Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest return
 | `ZAPPI_POT_SPEND_MODE` | Runtime spend mode. `auth_required` refuses `pay` and tells the agent to run `request`. Unset / `free` for agent-held pots. |
 | `ZAPPI_APP_ORIGIN`   | Web origin for `propose` links. **Default `https://zappi.money`.** Staging: `http://dev.zappi.money`. |
 | `SPARK_NETWORK`      | `MAINNET` (default) or `REGTEST`.                               |
+| `ZAPPI_PROJECT_API_KEY` | Project API key for server-to-server wallet routes (`balance`, `pots`, `withdraw`, …). |
+| `ZAPPI_ACCESS_TOKEN`    | User access JWT. Wins over `zappi-cli login`. |
+| `ZAPPI_CREDENTIALS_FILE` | Override for the login file. Default `~/.zappi/credentials.json` (`0600`). |
+| `ZAPPI_COOKIE`         | Optional cookie header forwarded for session auth (e.g. `zappi_access=…`). |
+| `ZAPPI_USER_AGENT`     | Optional user-agent forwarded for session auth. |
 
 `--unlock-token` exists for one-off calls. Scripts should use `ZAPPI_UNLOCK_TOKEN` so the bearer does not land in `ps` / shell history. Env wins when both are set.
 
@@ -146,6 +157,7 @@ npm run build
 - **Never** pass a recovery phrase as `--address` or put one in a deep link.
 - Nest never holds the pot key. Cap v1 is an empty pot.
 - Do **not** invent a payment chain from an address. Paywall 402 must include `accepts[0].network` and `accepts[0].asset`; this CLI only pays `spark` / `USDB`.
+- Do **not** invent an invite code. `zappi-cli invite` prints a Nest URL or fails closed.
 - Seller / project API is out of scope for this package.
 - `@typesafe-ai/sdk` is a **devDependency** for `src/eval/` only. Do not import it from the buyer CLI. `dist/eval/` is not published. This is not `@zappimoney/zappi-sdk`.
 - Do not add `@zappimoney/zappi-sdk` to this package unless intentionally migrating off the Nest HTTP + Spark path.

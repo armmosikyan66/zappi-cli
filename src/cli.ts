@@ -9,6 +9,29 @@ import {
   payResourceResult,
 } from './paywall.js'
 import { runProposeRegister } from './propose-register.js'
+import { runInviteLink } from './invite-link.js'
+import { runBalance, runTransactions } from './wallet-commands.js'
+import {
+  runPotsList,
+  runPotRegister,
+  runPotDepositAddress,
+  runPotGrants,
+  runPotSpendGate,
+  runPotSpendApprovals,
+} from './pots-commands.js'
+import { runPotAttach, runPotAttachStatus } from './attach-commands.js'
+import { runLogin, runLogout, runWhoami } from './login-commands.js'
+import { runDepositOptions, runDepositAddress } from './deposit-commands.js'
+import {
+  runWithdrawOptions,
+  runWithdrawEstimate,
+  runWithdrawQuote,
+  runWithdrawConfirm,
+  runWithdrawStatus,
+  runSendInternal,
+  runSendExternal,
+} from './withdraw-commands.js'
+import { runSend } from './send-commands.js'
 import {
   createSpendRequestResult,
   formatSpendRequestOutput,
@@ -23,9 +46,12 @@ import {
 import {
   formatConsumePretty,
   formatError,
+  formatInvitePlain,
+  formatInvitePretty,
   formatPayPretty,
   formatProposePretty,
   toJson,
+  type InviteResult,
   type ProposeResult,
 } from './results.js'
 
@@ -208,6 +234,82 @@ export async function runCli(
       spinner.fail('Consume failed')
       throw error
     }
+  }
+
+  if (command === 'login') {
+    return runLogin(rest, mode)
+  }
+
+  if (command === 'logout') {
+    return runLogout(rest, mode)
+  }
+
+  if (command === 'whoami') {
+    return runWhoami(rest, mode)
+  }
+
+  /* ----------------------------- wallet routes ----------------------------- */
+
+  if (command === 'balance') {
+    return runBalance(rest, mode)
+  }
+
+  if (command === 'transactions') {
+    return runTransactions(rest, mode)
+  }
+
+  if (command === 'deposit-options') {
+    return runDepositOptions(rest, mode)
+  }
+
+  if (command === 'deposit-address') {
+    return runDepositAddress(rest, mode)
+  }
+
+  if (command === 'withdraw-options') {
+    return runWithdrawOptions(rest, mode)
+  }
+
+  if (command === 'withdraw') {
+    const sub = rest.find((a) => !a.startsWith('-')) ?? rest[0]
+    const subRest = rest.filter((a) => a !== sub)
+    if (sub === 'estimate') return runWithdrawEstimate(subRest, mode)
+    if (sub === 'quote') return runWithdrawQuote(subRest, mode)
+    if (sub === 'confirm') return runWithdrawConfirm(subRest, mode)
+    if (sub === 'status') return runWithdrawStatus(subRest, mode)
+    throw new Error(
+      `Usage: zappi-cli withdraw <estimate|quote|confirm|status> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
+    )
+  }
+
+  if (command === 'send') {
+    const sub = rest.find((a) => !a.startsWith('-'))
+    if (sub === 'internal' || sub === 'external') {
+      const subRest = rest.filter((a) => a !== sub)
+      if (sub === 'internal') return runSendInternal(subRest, mode)
+      return runSendExternal(subRest, mode)
+    }
+    // Unified: zappi-cli send --to <address|@user> --amount-cents <n> ...
+    return runSend(rest, mode)
+  }
+
+  /* -------------------------------- pots ---------------------------------- */
+
+  if (command === 'pots') {
+    // First non-flag arg is the subcommand; flags-only (e.g. `pots --json`) means `list`.
+    const sub = rest.find((a) => !a.startsWith('-'))
+    const subRest = sub ? rest.filter((a) => a !== sub) : rest
+    if (!sub || sub === 'list') return runPotsList(subRest, mode)
+    if (sub === 'register') return runPotRegister(subRest, mode)
+    if (sub === 'deposit-address') return runPotDepositAddress(subRest, mode)
+    if (sub === 'grants') return runPotGrants(subRest, mode)
+    if (sub === 'spend-gate') return runPotSpendGate(subRest, mode)
+    if (sub === 'spend-approvals') return runPotSpendApprovals(subRest, mode)
+    if (sub === 'attach') return runPotAttach(subRest, mode)
+    if (sub === 'attach-status') return runPotAttachStatus(subRest, mode)
+    throw new Error(
+      `Usage: zappi-cli pots <list|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
+    )
   }
 
   throw new Error(`Unknown command: ${command}\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`)

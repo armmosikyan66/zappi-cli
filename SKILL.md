@@ -12,6 +12,11 @@ npm i -g github:armmosikyan66/zappi-cli
 zappi-cli propose --open
 ```
 
+`zappi-cli login` is optional and only when the human asks to sign **this**
+terminal into their Zappi account. It opens the normal Zappi sign-in screen
+(email or passkey). Do not run it for an agent host, and never print
+`~/.zappi/credentials.json`.
+
 The wizard asks whether the pot already exists or should be generated, prompts
 for a label (blank auto-names it `pot_<unique-id>`), then opens the register
 link in your browser (ENTER to open, auto-opens after 5s, `c` to copy).
