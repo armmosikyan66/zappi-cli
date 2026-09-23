@@ -101,6 +101,29 @@ describe('runProposeWizard', () => {
     assert.ok(!humanPrompts.some((p) => /Bech32m|when you test it|spark1…|sparkrt1/i.test(p)))
   })
 
+  it('puts a passed --ref on the register link and refuses a mnemonic', async () => {
+    const { deps } = makeDeps({
+      select: ['existing', 'free'],
+      ask: [ADDRESS, 'Research'],
+      promptOpenLink: { action: 'opened', auto: false },
+    })
+    const result = await runProposeWizard(['--ref', 'abcd2345'], {}, deps)
+    assert.match(result.href!, /ref=ABCD2345/)
+
+    await assert.rejects(
+      () =>
+        runProposeWizard(
+          [
+            '--ref',
+            'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+          ],
+          {},
+          deps,
+        ),
+      /recovery phrase/,
+    )
+  })
+
   it('existing mode: blank label auto-generates pot_<id>', async () => {
     const { deps } = makeDeps({
       select: ['existing', 'free'],

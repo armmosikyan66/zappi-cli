@@ -46,6 +46,28 @@ describe('parseProposeRegisterArgs', () => {
     )
     assert.equal(parsed.mode, 'auth_required')
   })
+
+  it('reads a Crockford --ref and does not invent one', () => {
+    const parsed = parseProposeRegisterArgs(
+      ['--address', ADDRESS, '--ref', 'abcd2345'],
+      {},
+    )
+    assert.equal(parsed.ref, 'ABCD2345')
+  })
+
+  it('refuses a recovery phrase as --ref', () => {
+    assert.throws(
+      () => parseProposeRegisterArgs(['--address', ADDRESS, '--ref', MNEMONIC], {}),
+      /recovery phrase/,
+    )
+  })
+
+  it('refuses a --ref that is not an invite code', () => {
+    assert.throws(
+      () => parseProposeRegisterArgs(['--address', ADDRESS, '--ref', 'not a code'], {}),
+      /does not invent one/,
+    )
+  })
 })
 
 describe('printRegisterDeepLink', () => {
@@ -64,6 +86,17 @@ describe('printRegisterDeepLink', () => {
     assert.doesNotMatch(printed, /abandon/)
     assert.match(printed, /Never print/)
     assert.doesNotMatch(printed, /--pot/)
+    assert.doesNotMatch(printed, /[?&]ref=/)
+  })
+
+  it('prints ref on the register link when the caller passes a code', () => {
+    const printed = printRegisterDeepLink({
+      sparkAddress: ADDRESS,
+      origin: 'https://zappi.money',
+      ref: 'ABCD2345',
+    })
+    assert.match(printed, /ref=ABCD2345/)
+    assert.doesNotMatch(printed, /abandon/)
   })
 
   it('refuses a recovery phrase as --address', () => {

@@ -21,7 +21,7 @@ describe('eval pipeline live (agent-agent + human-ui)', { skip: !live }, () => {
         .map((row) => `${row.fixtureId}#${row.trial} ${row.verdict}: ${row.reasons.join('; ')}`)
         .join('\n'),
     )
-    assert.ok(report.blocked.some((row) => row.blockedBy === '1-231'))
+    assert.ok(report.blocked.some((row) => row.blockedBy === '1-203'))
   })
 
   it('Pass^3 on copy paraphrases (all three trials pass)', async () => {

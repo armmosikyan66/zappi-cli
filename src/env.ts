@@ -6,6 +6,8 @@ export interface PotEnv {
   ZAPPI_PAYWALL_BASE?: string
   ZAPPI_APP_ORIGIN?: string
   ZAPPI_UNLOCK_TOKEN?: string
+  /** Pot client token (`zpc_`) for auth-required spend tickets. Host secret. */
+  ZAPPI_POT_CLIENT_TOKEN?: string
   /** Runtime spend mode. `auth_required` refuses CLI free-sign (1-200). */
   ZAPPI_POT_SPEND_MODE?: string
   NEXT_PUBLIC_SITE_URL?: string
@@ -70,7 +72,32 @@ export function resolvePotSpendMode(
 }
 
 export const AUTH_REQUIRED_PAY_ERROR =
-  'This pot is auth_required. Do not free-sign from the CLI. Approve each payment in Zappi. Unset ZAPPI_POT_SPEND_MODE for a free pot.'
+  'This pot is auth_required. Do not free-sign with pay. Run `zappi-cli request --amount-cents <cents> --to <spark-address>` and paste the approve URL. Do not ask for a session token, the pot seed, or a recovery phrase.'
+
+const POT_CLIENT_TOKEN_HINT =
+  'Set ZAPPI_POT_CLIENT_TOKEN (the zpc_ from attach approve) as a host secret. Do not ask for a session token, the pot seed, or a recovery phrase.'
+
+/**
+ * Pot client token for `request`. Env only — never a CLI flag (it would show in `ps`).
+ * Does not read `ZAPPI_ACCESS_TOKEN`.
+ */
+export function resolvePotClientToken(env: PotEnv = process.env): string {
+  const token = env.ZAPPI_POT_CLIENT_TOKEN?.trim()
+  if (!token) {
+    throw new Error(POT_CLIENT_TOKEN_HINT)
+  }
+  if (token.startsWith('<') && token.endsWith('>')) {
+    throw new Error(
+      'Pot client token is still a placeholder. Set ZAPPI_POT_CLIENT_TOKEN as a host secret — do not paste it into chat.',
+    )
+  }
+  if (!token.startsWith('zpc_')) {
+    throw new Error(
+      'ZAPPI_POT_CLIENT_TOKEN must be a pot client token (zpc_). Do not pass a session token, pot seed, or recovery phrase.',
+    )
+  }
+  return token
+}
 
 export function requirePotId(env: PotEnv = process.env): string {
   const potId = env.ZAPPI_POT_ID?.trim()

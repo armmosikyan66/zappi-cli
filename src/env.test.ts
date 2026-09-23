@@ -8,6 +8,7 @@ import {
   requirePotId,
   resolveAppOrigin,
   resolvePaywallBase,
+  resolvePotClientToken,
   resolvePotSpendMode,
   resolveSparkNetwork,
   resolveUnlockToken,
@@ -74,6 +75,29 @@ describe('resolveAppOrigin + spark network + units', () => {
     assert.equal(parsePositiveUnits(undefined), 1)
     assert.equal(parsePositiveUnits('3'), 3)
     assert.throws(() => parsePositiveUnits('0'), /positive integer/)
+  })
+
+  it('requires a zpc_ pot client token and never echoes a bad value', () => {
+    assert.equal(
+      resolvePotClientToken({ ZAPPI_POT_CLIENT_TOKEN: 'zpc_live' }),
+      'zpc_live',
+    )
+    assert.throws(() => resolvePotClientToken({}), /ZAPPI_POT_CLIENT_TOKEN/)
+    assert.throws(
+      () => resolvePotClientToken({ ZAPPI_POT_CLIENT_TOKEN: '<zpc_…>' }),
+      /placeholder/,
+    )
+    assert.throws(
+      () =>
+        resolvePotClientToken({
+          ZAPPI_POT_CLIENT_TOKEN: 'eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1c2VyIn0.',
+        }),
+      (error: Error) => {
+        assert.match(error.message, /pot client token/)
+        assert.doesNotMatch(error.message, /eyJ/)
+        return true
+      },
+    )
   })
 
   it('defaults spend mode to free and treats auth_required as a pay gate', () => {

@@ -354,14 +354,25 @@ describe('cli flags', () => {
 
 describe('package isolation', () => {
   it('does not import examples/ from the CLI or paywall modules', () => {
-    for (const file of ['cli.js', 'paywall.js', 'propose-register.js']) {
+    for (const file of [
+      'cli.js',
+      'paywall.js',
+      'propose-register.js',
+      'spend-request.js',
+    ]) {
       const source = readFileSync(join(here, file), 'utf8')
       assert.doesNotMatch(source, /examples\//)
     }
   })
 
   it('keeps TypeSafe eval out of the buyer CLI runtime', () => {
-    for (const file of ['cli.js', 'paywall.js', 'propose-register.js', 'env.js']) {
+    for (const file of [
+      'cli.js',
+      'paywall.js',
+      'propose-register.js',
+      'spend-request.js',
+      'env.js',
+    ]) {
       const source = readFileSync(join(here, file), 'utf8')
       assert.doesNotMatch(source, /@typesafe-ai\/sdk/)
       assert.doesNotMatch(source, /eval\/typesafe/)

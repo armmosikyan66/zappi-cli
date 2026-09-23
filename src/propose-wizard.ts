@@ -1,5 +1,6 @@
 import {
   buildRegisterDeepLink,
+  inviteRefFromArgv,
   parseRegisterDeepLinkQuery,
   parsePotSpendMode,
   type PotSpendMode,
@@ -134,6 +135,7 @@ export async function runProposeWizard(
 
   const network = resolveSparkNetwork(env)
   const origin = resolveAppOrigin(env)
+  const inviteRef = inviteRefFromArgv(argv)
 
   // Step 1 — existing or new? (arrow-key menu, generate first = default)
   const rawMode = WIZARD_MODES.includes(argv[0] as WizardMode)
@@ -179,7 +181,14 @@ export async function runProposeWizard(
     // Step 3 — label (blank = pot_<unique>).
     const label = generatePotLabel(await d.ask(`Label for this pot ${LABEL_HINT}:`))
 
-    const href = buildRegisterDeepLink({ sparkAddress, label, origin, network, mode: spendMode })
+    const href = buildRegisterDeepLink({
+      sparkAddress,
+      label,
+      origin,
+      network,
+      mode: spendMode,
+      ref: inviteRef,
+    })
     if (!href) throw new Error('Could not build the register deep link.')
 
     const openResult = await d.promptOpenLink(href, {
@@ -234,7 +243,14 @@ export async function runProposeWizard(
   const sparkAddress = await d.deriveAddress(mnemonic, network)
   d.writeKeyFile(keyFile, mnemonic, sparkAddress, label)
 
-  const href = buildRegisterDeepLink({ sparkAddress, label, origin, network, mode: spendMode })
+  const href = buildRegisterDeepLink({
+    sparkAddress,
+    label,
+    origin,
+    network,
+    mode: spendMode,
+    ref: inviteRef,
+  })
   if (!href) throw new Error('Could not build the deep link for the new pot.')
 
   const openResult = await d.promptOpenLink(href, {

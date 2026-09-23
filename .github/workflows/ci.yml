@@ -29,8 +29,8 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Test (no live Spark / no paywall network)
-        run: node --test dist/*.test.js
+      - name: Test (no live Spark / mocked eval, no TypeSafe network)
+        run: node --test dist/*.test.js dist/eval/*.test.js
         env:
           # Guardrails: tests must not rely on real secrets or spend
           ZAPPI_POT_SEED: ''

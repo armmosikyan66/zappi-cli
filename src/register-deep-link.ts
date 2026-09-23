@@ -40,6 +40,8 @@ export type RegisterDeepLinkParse =
 export interface RegisterDeepLinkQuery {
   register?: string | null
   label?: string | null
+  ref?: string | null
+  invite?: string | null
 }
 
 export interface BuildRegisterDeepLinkInput {
@@ -49,6 +51,54 @@ export interface BuildRegisterDeepLinkInput {
   network?: SparkNetworkEnv
   /** `free` (default) = auth not required; `auth_required` = approve in Zappi. */
   mode?: PotSpendMode
+  /** Crockford invite code the caller already has. Propose does not mint one. */
+  ref?: string | null
+}
+
+/** Nest Crockford alphabet, length 4–16. Same shape as the web invite parser. */
+const INVITE_CODE_RE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4,16}$/i
+
+/**
+ * Invite code for a register link. Empty, mnemonic, or non-Crockford → null.
+ * Does not invent a code.
+ */
+export function parseInviteRef(raw?: string | null): string | null {
+  if (raw == null) return null
+  const trimmed = raw.trim()
+  if (!trimmed || looksLikeMnemonicPhrase(trimmed)) return null
+  if (!INVITE_CODE_RE.test(trimmed)) return null
+  return trimmed.toUpperCase()
+}
+
+/** `--ref` must be a code the caller already has. Mnemonic or junk throws. */
+export function requireInviteRef(raw: string): string {
+  if (looksLikeMnemonicPhrase(raw.trim())) {
+    throw new Error(
+      'Do not pass a recovery phrase as --ref. Pass the invite code you already have.',
+    )
+  }
+  const code = parseInviteRef(raw)
+  if (!code) {
+    throw new Error(
+      'Pass an invite code you already have as --ref. Propose does not invent one.',
+    )
+  }
+  return code
+}
+
+/** Read `--ref <code>` from argv. Missing flag → undefined. Bad code throws. */
+export function inviteRefFromArgv(argv: string[]): string | undefined {
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] !== '--ref') continue
+    const next = argv[index + 1]
+    if (!next || next.startsWith('--')) {
+      throw new Error(
+        'Pass an invite code you already have as --ref. Propose does not invent one.',
+      )
+    }
+    return requireInviteRef(next)
+  }
+  return undefined
 }
 
 function isLikelySparkAddress(
@@ -108,8 +158,9 @@ export function parseRegisterDeepLinkQuery(
  * Register deep link for an agent-held pot address.
  * - `mode=free` (default): `/?panel=pots&pots=agent&mode=free&register=…`
  * - `mode=auth_required`: `/?panel=pots&pots=mine&mode=auth_required&register=…`
- * Optional `&label=`. Returns null when the address is missing, invalid, or a
- * recovery phrase. Never puts a mnemonic in the URL.
+ * Optional `&label=` and `&ref=` (Crockford invite code only). Returns null
+ * when the address is missing, invalid, or a recovery phrase. Never puts a
+ * mnemonic or an invented code in the URL.
  */
 export function buildRegisterDeepLink(
   input: BuildRegisterDeepLinkInput,
@@ -127,5 +178,7 @@ export function buildRegisterDeepLink(
   url.searchParams.set('register', sparkAddress)
   const label = sanitizeLabel(input.label)
   if (label) url.searchParams.set('label', label)
+  const ref = parseInviteRef(input.ref)
+  if (ref) url.searchParams.set('ref', ref)
   return url.toString()
 }

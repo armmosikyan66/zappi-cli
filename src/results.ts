@@ -1,3 +1,4 @@
+import type { SpendRequestResult } from './spend-request.js'
 import {
   errorLine,
   heading,
@@ -57,18 +58,13 @@ export type ProposeResult = {
   copied?: boolean
 }
 
-export type InviteResult = {
-  ok: true
-  command: 'invite'
-  inviteUrl: string
-  sharePath: string
-}
+export type { SpendRequestResult }
 
 export type CliJsonResult =
   | PayResult
   | ConsumeResult
   | ProposeResult
-  | InviteResult
+  | SpendRequestResult
   | { ok: false; error: string }
 
 /** Plain text matching prior CLI strings (stable for unit tests). */

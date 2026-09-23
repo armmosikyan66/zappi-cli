@@ -33,6 +33,11 @@ import {
 } from './withdraw-commands.js'
 import { runSend } from './send-commands.js'
 import {
+  createSpendRequestResult,
+  formatSpendRequestOutput,
+  parseRequestCliArgs,
+} from './spend-request.js'
+import {
   createSpinner,
   renderHelp,
   stripJsonFlag,
@@ -157,20 +162,18 @@ export async function runCli(
     return output
   }
 
-  if (command === 'invite') {
-    if (rest.includes('--help') || rest.includes('-h')) {
-      return renderHelp(mode === 'json' ? 'plain' : mode)
+  if (command === 'request') {
+    const args = parseRequestCliArgs(rest)
+    const spinner = createSpinner('Requesting approval…', mode)
+    spinner.start()
+    try {
+      const result = await createSpendRequestResult({ input: args })
+      spinner.stop()
+      return formatSpendRequestOutput(result, mode === 'json' ? 'json' : 'plain')
+    } catch (error) {
+      spinner.fail('Request failed')
+      throw error
     }
-    const link = await runInviteLink(rest)
-    const result: InviteResult = {
-      ok: true,
-      command: 'invite',
-      inviteUrl: link.inviteUrl,
-      sharePath: link.sharePath,
-    }
-    if (mode === 'json') return toJson(result)
-    if (mode === 'plain') return formatInvitePlain(result)
-    return formatInvitePretty(result, mode)
   }
 
   if (command === 'pay') {
