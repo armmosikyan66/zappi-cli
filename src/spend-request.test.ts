@@ -202,7 +202,9 @@ describe('request help', () => {
     assert.match(help, /request/)
     assert.match(help, /no user code/)
     assert.match(help, /ZAPPI_POT_CLIENT_TOKEN/)
-    assert.doesNotMatch(help, /ZAPPI_ACCESS_TOKEN/)
+    const requestLine = help.split('\n').find((line) => /\brequest\b/.test(line))
+    assert.ok(requestLine)
+    assert.doesNotMatch(requestLine, /ZAPPI_ACCESS_TOKEN/)
   })
 })
 

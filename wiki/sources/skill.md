@@ -15,8 +15,8 @@ Ingest of `packages/zappi-cli/SKILL.md` (`name: zappi-agent-pot`). This is the s
 
 ## Takeaways
 
-- Install line the skill gives agents: `npm i -g github:armmosikyan66/zappi-cli`, then `zappi-cli propose --open`.
-- Wizard: existing pot or generate, label (blank → `pot_<unique-id>`), then open the register link (ENTER, auto-open after 5s, `c` to copy).
+- Propose line the skill gives agents: `npx @zappimoney/zappi-cli propose` (no global install).
+- Wizard: existing pot or generate, spend mode, network (unless `SPARK_NETWORK` is set), app origin (unless origin env is set), label (blank confirms auto `pot_<unique>` vs a custom name), then open the register link.
 - After the human registers and funds: set `ZAPPI_POT_ID`, keep `ZAPPI_POT_SEED` and `ZAPPI_UNLOCK_TOKEN` as host secrets, then `pay` and `consume`.
 - `pay` reads 402 `accepts[0].network` + `asset` and only pays `spark` / `USDB`.
 - `invite` prints a Nest URL or fails closed (`INVITE_AFFILIATE_DISABLED`, `INVITE_LINK_MISSING`).

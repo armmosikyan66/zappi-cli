@@ -12,7 +12,11 @@ import {
   resolveKeyFilePath,
   writeKeyFile,
 } from './pot-key-file.js'
-import { runProposeWizard } from './propose-wizard.js'
+import {
+  hasAppOriginEnv,
+  runProposeWizard,
+  type WizardPresets,
+} from './propose-wizard.js'
 import { resolveAppOrigin, resolveSparkNetwork, type PotEnv } from './env.js'
 
 export {
@@ -27,24 +31,35 @@ export interface ProposeRegisterArgs {
   address?: string
   label?: string
   origin: string
+  /** True when `--origin` was passed. Env origin is tracked separately. */
+  originExplicit: boolean
   generate: boolean
   open: boolean
   keyFile?: string
   /** free (default) | auth_required — sets deep-link mode tab */
   mode: PotSpendMode
+  /** True when `--mode` was passed. The free default is not an explicit choice. */
+  modeExplicit: boolean
   /** Invite code the caller already has. Propose does not mint one. */
   ref?: string
 }
 
 const USAGE = `Usage:
   zappi-cli propose                                  # interactive wizard — run on the agent host
-  zappi-cli propose --address <pot-address> [--label Research] [--mode free|auth_required] [--ref CODE] [--open]
-  zappi-cli propose --generate [--label Research] [--mode free|auth_required] [--ref CODE] [--key-file …] [--open]
+  zappi-cli propose --address <pot-address> [--label Research] [--mode free|auth_required] [--origin <url>] [--ref CODE] [--open]
+  zappi-cli propose --generate [--label Research] [--mode free|auth_required] [--origin <url>] [--ref CODE] [--key-file …] [--open]
 
-The wizard asks: existing pot or generate new → how the pot should spend
-→ pot label (blank = auto pot_<id>) → opens the Zappi register link in your browser
-(ENTER to open, auto-opens after a few seconds, or "c" to copy it). Never prints
-the pot key. Do not pass a recovery phrase as --address.`
+On a terminal, bare propose asks before it generates or registers:
+existing pot or generate new → how the pot should spend
+→ Spark network (skipped when SPARK_NETWORK is set)
+→ app origin (skipped when --origin, ZAPPI_APP_ORIGIN, or NEXT_PUBLIC_SITE_URL is set)
+→ pot label (blank asks you to confirm auto pot_<unique> or type a custom name)
+→ opens the Zappi register link.
+
+Flags are for CI and non-interactive shells. When flags and env fully set the
+pot source, spend mode, label, network, and origin, the CLI does not prompt.
+A non-TTY bare propose prints this usage instead of hanging. Never prints the
+pot key. Do not pass a recovery phrase as --address.`
 
 export function parseProposeRegisterArgs(
   argv: string[],
@@ -52,9 +67,11 @@ export function parseProposeRegisterArgs(
 ): ProposeRegisterArgs {
   const parsed: ProposeRegisterArgs = {
     origin: resolveAppOrigin(env),
+    originExplicit: false,
     generate: false,
     open: false,
     mode: 'free',
+    modeExplicit: false,
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -68,6 +85,7 @@ export function parseProposeRegisterArgs(
       index += 1
     } else if (arg === '--origin' && next) {
       parsed.origin = next
+      parsed.originExplicit = true
       index += 1
     } else if (arg === '--key-file' && next) {
       parsed.keyFile = next
@@ -82,6 +100,7 @@ export function parseProposeRegisterArgs(
         throw new Error('Use --mode free or --mode auth_required')
       }
       parsed.mode = mode
+      parsed.modeExplicit = true
       index += 1
     } else if (arg === '--ref' && next && !next.startsWith('--')) {
       parsed.ref = requireInviteRef(next)
@@ -96,6 +115,39 @@ export function parseProposeRegisterArgs(
   }
 
   return parsed
+}
+
+/**
+ * Flags + env fully name the pot source, spend mode, label, network, and origin.
+ * Anything missing on a TTY is asked. Non-TTY flag runs keep the previous defaults.
+ */
+export function isProposeFullySpecified(
+  args: ProposeRegisterArgs,
+  env: PotEnv,
+): boolean {
+  const hasPot = args.generate || Boolean(args.address?.trim())
+  const hasLabel = Boolean(args.label?.trim())
+  const hasNetwork = Boolean(env.SPARK_NETWORK?.trim())
+  const hasOrigin = args.originExplicit || hasAppOriginEnv(env)
+  return hasPot && args.modeExplicit && hasLabel && hasNetwork && hasOrigin
+}
+
+/** Map explicit flags onto wizard presets. Unset fields stay unset so the wizard asks. */
+export function wizardPresetsFromArgs(
+  args: ProposeRegisterArgs,
+  _env: PotEnv,
+): WizardPresets {
+  const presets: WizardPresets = {}
+  if (args.generate) presets.mode = 'generate'
+  else if (args.address?.trim()) {
+    presets.mode = 'existing'
+    presets.sparkAddress = args.address.trim()
+  }
+  if (args.modeExplicit) presets.spendMode = args.mode
+  if (args.label?.trim()) presets.label = args.label.trim()
+  if (args.keyFile?.trim()) presets.keyFile = args.keyFile.trim()
+  if (args.originExplicit) presets.origin = args.origin
+  return presets
 }
 
 export function printRegisterDeepLink(input: {
@@ -153,24 +205,16 @@ function openUrl(href: string) {
   child.unref()
 }
 
-export async function runProposeRegister(
-  argv: string[],
-  env: PotEnv = process.env,
-): Promise<string> {
-  // Bare `zappi-cli propose` on a TTY → interactive wizard:
-  // existing vs new pot → label (blank = pot_<unique>) → auth/browser prompt.
-  if (argv.length === 0) {
-    if (process.stdin.isTTY) {
-      const result = await runProposeWizard(argv, env)
-      return result.output
-    }
-    throw new Error(
-      'Interactive wizard needs a terminal (TTY). Run from a shell, or use flags:\n\n' +
-        USAGE,
-    )
-  }
+export interface ProposeRegisterDeps {
+  /** Override TTY detection. Production uses `process.stdin.isTTY`. */
+  isTTY?: boolean
+  runWizard?: typeof runProposeWizard
+}
 
-  const args = parseProposeRegisterArgs(argv, env)
+async function executeFlagPropose(
+  args: ProposeRegisterArgs,
+  env: PotEnv,
+): Promise<string> {
   const network = resolveSparkNetwork(env)
   let sparkAddress = args.address?.trim()
 
@@ -178,14 +222,14 @@ export async function runProposeRegister(
     const { generateMnemonic } = await import('@scure/bip39')
     const { wordlist } = await import('@scure/bip39/wordlists/english.js')
     const mnemonic = generateMnemonic(wordlist, 128)
-    sparkAddress = await deriveSparkAddress(mnemonic, network)
+    const generatedAddress = await deriveSparkAddress(mnemonic, network)
     const keyFile = resolveKeyFilePath(
       args.keyFile,
       defaultKeyFile(args.label),
     )
-    writeKeyFile(keyFile, mnemonic, sparkAddress, args.label)
+    writeKeyFile(keyFile, mnemonic, generatedAddress, args.label)
     const printed = printRegisterDeepLink({
-      sparkAddress,
+      sparkAddress: generatedAddress,
       label: args.label,
       origin: args.origin,
       network,
@@ -199,7 +243,7 @@ export async function runProposeRegister(
     ].join('\n')
     if (args.open) {
       const href = buildRegisterDeepLink({
-        sparkAddress,
+        sparkAddress: generatedAddress,
         label: args.label,
         origin: args.origin,
         network,
@@ -231,4 +275,36 @@ export async function runProposeRegister(
     if (href) openUrl(href)
   }
   return printed
+}
+
+export async function runProposeRegister(
+  argv: string[],
+  env: PotEnv = process.env,
+  deps: ProposeRegisterDeps = {},
+): Promise<string> {
+  const tty = deps.isTTY ?? Boolean(process.stdin.isTTY)
+  const wizard = deps.runWizard ?? runProposeWizard
+
+  // Bare `propose` on a TTY walks every missing question before generate/register.
+  // Non-TTY bare propose fails with usage so a pipe cannot hang.
+  if (argv.length === 0) {
+    if (!tty) {
+      throw new Error(
+        'Interactive wizard needs a terminal (TTY). Run from a shell, or use flags:\n\n' +
+          USAGE,
+      )
+    }
+    const result = await wizard(argv, env)
+    return result.output
+  }
+
+  const args = parseProposeRegisterArgs(argv, env)
+  // Incomplete flags on a TTY ask only for what is still unset.
+  // Fully specified flags, and any non-TTY flag run, stay non-interactive.
+  if (tty && !isProposeFullySpecified(args, env)) {
+    const result = await wizard(argv, env, {}, wizardPresetsFromArgs(args, env))
+    return result.output
+  }
+
+  return executeFlagPropose(args, env)
 }
