@@ -40,7 +40,7 @@ Requires **Node.js ≥ 20.9**. The package compiles TypeScript to `dist/` on ins
 
 Global flag: `--json` prints machine-readable JSON (never includes pot seeds, pot client tokens, or unlock tokens).
 
-`propose` wizard asks **Auth not required** vs **Auth required** (sets deep-link `mode=free|auth_required`). Flags: `--mode free|auth_required`.
+`propose` on a terminal asks before it generates or registers: existing vs new, spend mode, Spark network (unless `SPARK_NETWORK` is set), app origin (unless `ZAPPI_APP_ORIGIN` / `NEXT_PUBLIC_SITE_URL` / `--origin` is set), and a label. A blank label asks you to confirm auto `pot_<unique>` or type a custom name. Flags: `--mode free|auth_required`, `--origin`, `--label`.
 
 
 ```bash
@@ -57,7 +57,7 @@ zappi-cli invite                      # Nest invite URL for this pot
 | `login`   | **Optional, human.** Opens the Zappi sign-in screen (email or passkey). Saves a user session in `~/.zappi/credentials.json` (`0600`). Wallet commands use it when `ZAPPI_ACCESS_TOKEN` is unset. **Never prints the session.** Propose and pay do not need it. |
 | `whoami`  | **Human.** Prints the email of the saved login. |
 | `logout`  | **Human.** Revokes that session and deletes the credentials file. |
-| `propose` | **Host setup** on the agent host. Wizard: existing or generate → how the pot should spend → label → **opens the register link**. Writes a mode `0600` key file when generating. **Never prints the pot key.** |
+| `propose` | **Host setup** on the agent host. Wizard: existing or generate → spend mode → network → app origin → label (blank confirms auto `pot_<unique>`) → **opens the register link**. Writes a mode `0600` key file when generating. **Never prints the pot key.** |
 | `pay`     | **Free pot.** `GET` resource → 402 → `accepts[0].network` + `asset` must be `spark` / `USDB` → sign pot USDB → settle `{ sparkTxHash, potId }`. Other rails fail closed. Metered auto-consumes one unit (`--no-consume` to skip). `ZAPPI_POT_SPEND_MODE=auth_required` refuses this and points at `request`. |
 | `request` | **Auth-required pot.** No TTY. `POST …/spend-requests` with `x-zappi-pot-client` and prints **only** the approve URL (`?panel=pots&spend=`, no `code=`). `--json` includes that URL and never the `zpc_` token. Does not sign. |
 | `consume` | **Agent spend.** `POST …/consume` with `X-Zappi-Unlock-Token` and `{ units }` (default `1`). |
@@ -65,20 +65,29 @@ zappi-cli invite                      # Nest invite URL for this pot
 
 ### The `propose` wizard
 
+```bash
+npx @zappimoney/zappi-cli propose
+```
+
 ```text
-$ zappi-cli propose
 Do you already have a pot, or should this host generate a new one?
 ◉ Generate a new pot (create a fresh key on this host)
 ○ Use an existing pot (I already registered one)
 (↑/↓ to move, ENTER to select)
 ```
 
+With no flags and no `SPARK_NETWORK` / app-origin env, the same run then asks spend mode, network, app origin, and label before it generates a key or opens the register link.
+
 - Radio-circle menu: the selected row shows a **green ◉**, others a hollow `○`; **↑/↓ move**, ENTER confirms — *Generate a new pot* is the default. Digits (`1`/`2`) and `j`/`k` also work. (Set `NO_COLOR=1` to disable the green.)
-- Existing pot → paste the public pot address from your agent (validated per network; blank cancels).
-- Label question appears in both modes; a blank answer auto-generates `pot_<8-hex-id>`.
+- **Spend mode** — Auth not required (`free`) vs Auth required (`auth_required`).
+- **Network** — MAINNET or REGTEST, only when `SPARK_NETWORK` is unset. It must match the app you register in. MAINNET is the first row. The CLI does not invent a network when that question is shown.
+- **App origin** — production `https://zappi.money`, staging `http://dev.zappi.money` (pair with `https://api-dev.zappi.money`), local `http://localhost:3000`, or a custom http(s) URL. Asked only when `ZAPPI_APP_ORIGIN`, `NEXT_PUBLIC_SITE_URL`, and `--origin` are all unset. Production is the first row.
+- Existing pot → paste the public pot address from your agent (validated for the network you chose; blank cancels).
+- **Label** — both modes. A name you type is used as-is. A blank answer asks you to confirm **auto `pot_<8-hex>`** or enter a custom name. Auto, or a custom name left blank, accepts `pot_<unique>`.
 - Key file prompt: blank uses `~/.zappi/…txt`. If you paste a **folder** (e.g. `~/Documents/zappi/packages`), the CLI writes the `.txt` **inside** that folder instead of crashing with `EISDIR`.
-- The browser step opens **`https://zappi.money`** by default (ENTER / auto-open / `c` to copy). Staging: `ZAPPI_APP_ORIGIN=http://dev.zappi.money` with `ZAPPI_API_URL=https://api-dev.zappi.money`. Ctrl+C quits cleanly.
-- Bare `propose` without a terminal (no TTY) falls back to the flag usage instead of hanging.
+- The browser step opens the origin you chose (ENTER / auto-open / `c` to copy). Ctrl+C quits cleanly.
+- Bare `propose` without a terminal (no TTY) prints flag usage instead of hanging.
+- Flags (`--generate`, `--address`, `--mode`, `--origin`, `--label`, …) are for CI. When those flags plus `SPARK_NETWORK` fully specify the run, nothing is prompted. A non-TTY flag run keeps the previous defaults (`free`, MAINNET, `https://zappi.money`) and does not hang.
 
 ## Flow (propose → fund → pay or request → consume)
 
@@ -120,7 +129,8 @@ export ZAPPI_APP_ORIGIN=http://dev.zappi.money   # must pair with staging API
 export ZAPPI_POT_ID='<pot id>'
 # set ZAPPI_POT_SEED / ZAPPI_POT_CLIENT_TOKEN / ZAPPI_UNLOCK_TOKEN as host secrets — never echo / never commit
 
-zappi-cli propose --generate --label Staging --open
+npx @zappimoney/zappi-cli propose --generate --label Staging --mode free --origin http://dev.zappi.money
+# SPARK_NETWORK unset on a terminal: the wizard still asks MAINNET vs REGTEST before generating
 # human registers + funds in the staging app
 zappi-cli pay '<paidResourceId>'
 # metered: pay already consumed one unit; more:

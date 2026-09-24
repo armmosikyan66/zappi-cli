@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  isProposeFullySpecified,
   parseProposeRegisterArgs,
   printRegisterDeepLink,
+  runProposeRegister,
+  wizardPresetsFromArgs,
 } from './propose-register.js'
 import { renderHelp } from './ui.js'
 
@@ -45,6 +48,99 @@ describe('parseProposeRegisterArgs', () => {
       {},
     )
     assert.equal(parsed.mode, 'auth_required')
+    assert.equal(parsed.modeExplicit, true)
+    assert.equal(parsed.originExplicit, false)
+  })
+
+  it('treats a full flag set as specified only when network is set too', () => {
+    const argv = [
+      '--generate',
+      '--label',
+      'Research',
+      '--mode',
+      'free',
+      '--origin',
+      'https://zappi.money',
+    ]
+    const parsed = parseProposeRegisterArgs(argv, {})
+    assert.equal(parsed.originExplicit, true)
+    assert.equal(isProposeFullySpecified(parsed, {}), false)
+    assert.equal(isProposeFullySpecified(parsed, { SPARK_NETWORK: 'MAINNET' }), true)
+    assert.equal(
+      isProposeFullySpecified(parseProposeRegisterArgs(['--generate', '--label', 'Research', '--mode', 'free'], {}), {
+        SPARK_NETWORK: 'MAINNET',
+        NEXT_PUBLIC_SITE_URL: 'http://localhost:3000',
+      }),
+      true,
+    )
+  })
+
+  it('presets keep unset spend mode and origin so the wizard can ask', () => {
+    const parsed = parseProposeRegisterArgs(
+      ['--generate', '--label', 'Research', '--key-file', '/tmp/pot.txt'],
+      { SPARK_NETWORK: 'REGTEST' },
+    )
+    const presets = wizardPresetsFromArgs(parsed, { SPARK_NETWORK: 'REGTEST' })
+    assert.equal(presets.mode, 'generate')
+    assert.equal(presets.label, 'Research')
+    assert.equal(presets.keyFile, '/tmp/pot.txt')
+    assert.equal(presets.spendMode, undefined)
+    assert.equal(presets.origin, undefined)
+    assert.equal(presets.sparkAddress, undefined)
+  })
+
+  it('non-TTY bare propose fails with flag usage', async () => {
+    await assert.rejects(
+      () => runProposeRegister([], {}, { isTTY: false }),
+      /Interactive wizard needs a terminal/,
+    )
+  })
+
+  it('TTY bare propose runs the wizard before generate', async () => {
+    let argvSeen: string[] | undefined
+    const output = await runProposeRegister([], {}, {
+      isTTY: true,
+      runWizard: async (argv) => {
+        argvSeen = argv
+        return {
+          mode: 'generate',
+          spendMode: 'free',
+          label: 'pot_abc',
+          network: 'MAINNET',
+          origin: 'https://zappi.money',
+          output: 'wizard-out',
+        }
+      },
+    })
+    assert.deepEqual(argvSeen, [])
+    assert.equal(output, 'wizard-out')
+  })
+
+  it('TTY incomplete flags ask through the wizard and keep explicit answers', async () => {
+    let presets: ReturnType<typeof wizardPresetsFromArgs> | undefined
+    await runProposeRegister(
+      ['--address', ADDRESS, '--mode', 'auth_required'],
+      {},
+      {
+        isTTY: true,
+        runWizard: async (_argv, _env, _deps, preset) => {
+          presets = preset
+          return {
+            mode: 'existing',
+            spendMode: 'auth_required',
+            label: 'pot_abc',
+            network: 'MAINNET',
+            origin: 'https://zappi.money',
+            output: 'asked',
+          }
+        },
+      },
+    )
+    assert.equal(presets?.mode, 'existing')
+    assert.equal(presets?.sparkAddress, ADDRESS)
+    assert.equal(presets?.spendMode, 'auth_required')
+    assert.equal(presets?.label, undefined)
+    assert.equal(presets?.origin, undefined)
   })
 
   it('reads a Crockford --ref and does not invent one', () => {

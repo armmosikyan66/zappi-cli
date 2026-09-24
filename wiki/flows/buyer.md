@@ -32,4 +32,4 @@ Production paywall is the default (`https://api.zappi.money`) when those exports
 
 ## Agent card
 
-The short version agents should follow is [[sources/skill]]: install, `propose --open`, then pay/consume without echoing secrets. Invite is optional and fail-closed ([[commands/invite]]).
+The short version agents should follow is [[sources/skill]]: `npx @zappimoney/zappi-cli propose` (the wizard asks for missing settings), then pay/consume without echoing secrets. Invite is optional and fail-closed ([[commands/invite]]).

@@ -5,11 +5,10 @@ description: Spend a prepaid Zappi pot to unlock a PaidResource. Install zappi-c
 
 # Zappi agent pot (buyer)
 
-Install the CLI:
+Propose a pot (no global install):
 
 ```bash
-npm i -g github:armmosikyan66/zappi-cli
-zappi-cli propose --open
+npx @zappimoney/zappi-cli propose
 ```
 
 `zappi-cli login` is optional and only when the human asks to sign **this**
@@ -17,9 +16,14 @@ terminal into their Zappi account. It opens the normal Zappi sign-in screen
 (email or passkey). Do not run it for an agent host, and never print
 `~/.zappi/credentials.json`.
 
-The wizard asks whether the pot already exists or should be generated, prompts
-for a label (blank auto-names it `pot_<unique-id>`), then opens the register
-link in your browser (ENTER to open, auto-opens after 5s, `c` to copy).
+The wizard asks whether the pot already exists or should be generated, how it
+should spend (`free` or `auth_required`), which Spark network matches the app
+(MAINNET or REGTEST, skipped when `SPARK_NETWORK` is set), and which app origin
+to open (local, staging, production, or a custom URL — skipped when
+`ZAPPI_APP_ORIGIN` or `NEXT_PUBLIC_SITE_URL` is set). A label you type is kept.
+A blank label asks you to confirm auto `pot_<unique>` or a custom name. It then
+opens the register link in your browser (ENTER to continue, `c` to copy). Do not
+invent a pot id, seed, or invite code. Never print the pot key.
 
 After the human registers and funds the pot, branch on spend mode.
 

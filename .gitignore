@@ -11,7 +11,10 @@ coverage/
 *.pem
 *.key
 .zappi/
+# Key material. The source module is not a key — keep it tracked.
 pot-key*
+!src/pot-key-file.ts
+!src/pot-key-file.test.ts
 **/pot.key
 **/keys/
 **/secrets/
