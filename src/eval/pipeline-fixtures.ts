@@ -19,7 +19,7 @@ export const BLOCKED_PIPELINE = [
     id: 'human-ui.two-owner-isolation',
     blockedBy: '1-203',
     reason:
-      'Public approveUrl is still the poll id. Nest poll no longer returns potClientToken, and dogfood has a two-owner factory (1-232), but credential crossing is not honest until 1-203.',
+      'CLI/SDK wire deviceCode + POST …/credentials reclaim (provisional). Full two-owner isolation eval still waits on Nest tip confirmation + live dogfood crossing proof (1-232 factory exists).',
   },
   {
     id: 'agent-agent.auth-required-receipt',

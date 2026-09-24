@@ -105,6 +105,7 @@ Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest return
 | -------------------- | --------------------------------------------------------------- |
 | `ZAPPI_POT_ID`       | Required for `pay` and `request`. Public pot id from the Zappi prompt. |
 | `ZAPPI_POT_CLIENT_TOKEN` | `zpc_` for `request` (host secret). Not a session token. Never a CLI flag. |
+| `ZAPPI_ATTACH_DEVICE_CODE` | Attach reclaim secret (RFC 8628 device_code) from `pots attach` create (host secret). Wins over `~/.zappi/attach-device-<requestId>.txt`. **Never print.** |
 | `ZAPPI_POT_SEED`     | Preferred pot spend key for free `pay` (host secret).           |
 | `ZAPPI_POT_KEY_FILE` | Fallback mode-`0600` key file if the seed env is unset.         |
 | `ZAPPI_API_URL`      | Nest origin. **Production default:** `https://api.zappi.money`. |
@@ -144,7 +145,7 @@ Production paywall is the default (`https://api.zappi.money`).
 - **CI** (`npm test`): mocked HTTP + mocked Spark. Covers 402 → settle `{ sparkTxHash, potId }` → consume, empty pot fail-closed, **402 `network`/`asset` required** (refuse non-`spark`/`USDB` before sign), secret redaction (including BIP-39), `ZAPPI_POT_SPEND_MODE=auth_required` refusing CLI free-sign, `request` printing a bare approve URL (no `code=`, no `zpc_`), and a **mocked TypeSafe judge** (copy honesty / skill / route). **No live Spark spend / no paywall network / no TypeSafe API.**
 - **Optional TypeSafe pipeline** (`npm run test:pipeline`): agent-agent + human-ui fixtures, paraphrases, Pass^3 on copy. Requires `TYPESAFE_API_KEY` in `.env`. Not GitHub Actions.
 - **Staging dogfood** (this section): human registers + funds in the app, then `pay` / `consume` against `api-dev`. Never commit seeds.
-- `--json` is the CLI trace contract: `command`, `potId`, `sparkTxHash`, `network`, `asset`, `unlockTokenReceived` (boolean). `request --json` adds `approveUrl`, `requestId`, `amountCents`, and `destinationAddress`. It never includes the mnemonic, `ZAPPI_POT_SEED`, or `zpu_…` / `zpc_…` values.
+- `--json` is the CLI trace contract: `command`, `potId`, `sparkTxHash`, `network`, `asset`, `unlockTokenReceived` (boolean). `request --json` adds `approveUrl`, `requestId`, `amountCents`, and `destinationAddress`. `pots attach` / `attach-status` JSON uses `deviceCodeReceived` / `potClientTokenReceived` booleans — never raw `deviceCode` or `zpc_`. It never includes the mnemonic, `ZAPPI_POT_SEED`, or `zpu_…` / `zpc_…` values.
 
 Install has **no `--pot` flag**. Runtime pot id is `ZAPPI_POT_ID` after the human registers.
 
@@ -160,9 +161,23 @@ npm run build
 
 **Labels:** active pot names are unique per Zappi project (case-insensitive). Nest returns `409 AGENT_POT_LABEL_EXISTS` if the name is taken when you register in the app.
 
+
+## Pot attach (device code / 1-203)
+
+`zappi-cli pots attach` creates a pending pairing. Nest returns `deviceCode` **once** to the agent host and an `approveUrl` that carries only `requestId` + `userCode` for the human.
+
+- **Host secret:** the CLI writes `deviceCode` to `~/.zappi/attach-device-<requestId>.txt` (mode `0600`). You can also set `ZAPPI_ATTACH_DEVICE_CODE` for reclaim. **Never echo / never commit.**
+- **Human:** open/print `approveUrl` only.
+- **Poll:** public `GET …/pots/attach/:requestId` is status-only (never `zpc_`).
+- **Reclaim:** after `approved`, the CLI calls `POST …/pots/attach/:requestId/credentials` with header `X-Zappi-Device-Code` and stores `zpc_` under `~/.zappi/pot-client-<requestId>.txt` (`0600`). Set `ZAPPI_POT_CLIENT_TOKEN` from that file.
+- **Output:** pretty/plain show `zpc_… (withheld)`. JSON uses `deviceCodeReceived` / `potClientTokenReceived` booleans — never raw secrets.
+- `attach-status <requestId>` reclaims the same way when a device code is available from env or file.
+
+Reclaim path locked to Nest tip `df7aafc` / zappi-nest#82: `POST …/pots/attach/:requestId/credentials` + `X-Zappi-Device-Code`.
+
 ## Hard rules
 
-- **Never** print, log, `echo`, or `set -x` `ZAPPI_POT_SEED`, `ZAPPI_POT_CLIENT_TOKEN`, the key file, or `ZAPPI_UNLOCK_TOKEN`.
+- **Never** print, log, `echo`, or `set -x` `ZAPPI_POT_SEED`, `ZAPPI_POT_CLIENT_TOKEN`, `ZAPPI_ATTACH_DEVICE_CODE`, the key file, attach-device / pot-client files under `~/.zappi/`, or `ZAPPI_UNLOCK_TOKEN`.
 - **Never** ask for `ZAPPI_ACCESS_TOKEN`, `zappi_access`, the pot seed, or a recovery phrase to approve a spend. Paste the `request` URL.
 - **Never** pass a recovery phrase as `--address` or put one in a deep link.
 - Nest never holds the pot key. Cap v1 is an empty pot.

@@ -22,6 +22,13 @@ export interface PotEnv {
   ZAPPI_USER_AGENT?: string
   /** Override for `zappi-cli login` credential file. Default `~/.zappi/credentials.json`. */
   ZAPPI_CREDENTIALS_FILE?: string
+  /**
+   * Attach deviceCode (RFC 8628) for reclaim after approve (1-203).
+   * Host secret — never print. Wins over `~/.zappi/attach-device-<requestId>.txt`.
+   */
+  ZAPPI_ATTACH_DEVICE_CODE?: string
+  /** Override home for `~/.zappi` host-secret files (tests / custom hosts). */
+  ZAPPI_HOME?: string
 }
 
 export type PotSpendModeEnv = 'free' | 'auth_required'
