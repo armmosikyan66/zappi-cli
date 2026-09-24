@@ -25,6 +25,7 @@ Fail closed:
 | `INVITE_AFFILIATE_DISABLED` | Nest says the affiliate flag is off. |
 | `INVITE_LINK_MISSING` | No URL/path, or the path is not `/invite/…`. |
 | `RATE_LIMITED` | Nest rate-limits the lookup. |
+| not attached | `ZAPPI_POT_SPEND_MODE=auth_required` and this host has no `zpc_` (env or `~/.zappi/pot-client-*.txt`). Run [[commands/pots]] `attach`. |
 
 If Nest returns a path because the app URL is unset, the CLI qualifies it with `ZAPPI_APP_ORIGIN` (default `https://zappi.money`). It does not add query params.
 

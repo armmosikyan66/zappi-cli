@@ -1,7 +1,7 @@
 ---
 type: command
 tags: [cli, paywall, spend]
-updated: 2026-09-22
+updated: 2026-09-24
 ---
 
 # pay
@@ -18,7 +18,7 @@ zappi-cli pay <resourceIdOrUrl> [--no-consume] [--units N] [--json]
 
 - `ZAPPI_POT_ID` — missing → `Set ZAPPI_POT_ID (from the Zappi pot install snippet).`
 - `ZAPPI_POT_SEED` or `ZAPPI_POT_KEY_FILE` — loaded by [[reference/auth]]. Placeholders wrapped in `<…>` are rejected.
-- `ZAPPI_POT_SPEND_MODE=auth_required` refuses before any sign: `This pot is auth_required. Do not free-sign from the CLI. Approve each payment in Zappi.`
+- `ZAPPI_POT_SPEND_MODE=auth_required` refuses before any sign: `This pot is auth_required. Do not free-sign with pay. Run \`zappi-cli request --amount-cents <cents> --to <spark-address>\` and paste the approve URL.` See [[commands/request]] and [[sources/skill]].
 
 Paywall origin: `ZAPPI_PAYWALL_BASE`, else `ZAPPI_API_URL`, else `https://api.zappi.money`.
 

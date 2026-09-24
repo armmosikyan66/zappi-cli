@@ -98,6 +98,16 @@ export const PIPELINE_FIXTURES: PipelineFixture[] = [
     expect: { skill: 'none' },
   },
   {
+    id: 'agent-agent.skill.spend-auth-required',
+    lane: 'agent-agent',
+    focus: 'skill',
+    spendMode: 'auth_required',
+    userTurn: 'Send 200 cents to spark1abc from my auth-required pot.',
+    transcript:
+      'ZAPPI_POT_SPEND_MODE=auth_required. User asked to send 200 cents to a spark address from the approval-required pot.',
+    expect: { skill: 'zappi_agent_pot' },
+  },
+  {
     id: 'agent-agent.route.auth-required',
     lane: 'agent-agent',
     focus: 'route',

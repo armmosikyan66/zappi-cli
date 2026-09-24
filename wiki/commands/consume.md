@@ -18,6 +18,8 @@ zappi-cli consume <resourceIdOrUrl> [--units N] [--unlock-token <token>] [--json
 
 `ZAPPI_UNLOCK_TOKEN` wins over `--unlock-token` when both are set, so scripts keep the bearer out of `ps` and shell history. Missing token, or a `<placeholder>`, throws and tells you not to paste it into chat.
 
+On `ZAPPI_POT_SPEND_MODE=auth_required`, consume also requires this host to be attached (`zpc_` env or `~/.zappi/pot-client-*.txt`). Otherwise it fails closed with the not-attached error — run [[commands/pots]] `attach`. Do not ask the human to paste `zpc_`.
+
 `--units` must be a positive integer. Default `1`.
 
 ## Output

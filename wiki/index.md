@@ -1,10 +1,10 @@
 ---
 type: index
 tags: [meta, cli]
-updated: 2026-09-22
+updated: 2026-09-24
 source_count: 3
-page_count: 20
-last_change: 2026-09-22 Bootstrap zappi-cli wiki from README, SKILL, and command source.
+page_count: 21
+last_change: 2026-09-24 Combined spend-ticket rules into SKILL.md; one published skill zappi-agent-pot.
 ---
 
 # zappi-cli Wiki
@@ -31,7 +31,7 @@ LLM-maintained knowledge base for `@zappimoney/zappi-cli` (`zappi-cli`). The age
 ## Sources
 
 - [[sources/readme]] — package README: install, command table, env, staging, hard rules.
-- [[sources/skill]] — agent skill `zappi-agent-pot`: propose, pay, consume, invite, wallet sketch.
+- [[sources/skill]] — agent skill `zappi-agent-pot` (the only published buyer skill): propose, pay, consume, auth-required `request`.
 - [[sources/command-source]] — `src/` dispatch, help text, and per-command flags (source of truth when README lags).
 
 ## Overview
@@ -46,6 +46,7 @@ LLM-maintained knowledge base for `@zappimoney/zappi-cli` (`zappi-cli`). The age
 
 - [[commands/propose]] — host setup wizard and non-interactive register link.
 - [[commands/pay]] — HTTP 402 → sign Spark USDB → settle; metered auto-consume.
+- [[commands/request]] — auth-required spend ticket; stdout is one approve URL.
 - [[commands/consume]] — further metered grant units with the unlock bearer.
 - [[commands/invite]] — Nest invite URL for `ZAPPI_POT_ID`; fail closed.
 - [[commands/wallet]] — balance, transactions, deposit, withdraw, send.
@@ -62,4 +63,4 @@ LLM-maintained knowledge base for `@zappimoney/zappi-cli` (`zappi-cli`). The age
 
 ## Flows
 
-- [[flows/buyer]] — propose → human fund → pay → consume, plus staging dogfood.
+- [[flows/buyer]] — propose → human fund → pay / request → consume, plus staging dogfood.

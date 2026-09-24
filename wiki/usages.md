@@ -1,7 +1,7 @@
 ---
 type: reference
 tags: [cli, usage]
-updated: 2026-09-22
+updated: 2026-09-24
 ---
 
 # Usages
@@ -27,13 +27,15 @@ Bare `propose` on a TTY runs the wizard. No TTY falls back to this usage text. `
 
 ```bash
 zappi-cli pay <resourceIdOrUrl> [--no-consume] [--units N] [--json]
+zappi-cli request --amount-cents <cents> --to <spark-address> [--chain <chain>] [--memo <text>] [--json]
 zappi-cli consume <resourceIdOrUrl> [--units N] [--unlock-token <token>] [--json]
 zappi-cli invite [--json]
 ```
 
 | Command | Required env | Notes |
 | --- | --- | --- |
-| [[commands/pay]] | `ZAPPI_POT_ID` plus `ZAPPI_POT_SEED` or `ZAPPI_POT_KEY_FILE` | `ZAPPI_POT_SPEND_MODE=auth_required` refuses. Resource may be an id or `…/api/paywall/resources/:id`. |
+| [[commands/pay]] | `ZAPPI_POT_ID` plus `ZAPPI_POT_SEED` or `ZAPPI_POT_KEY_FILE` | `ZAPPI_POT_SPEND_MODE=auth_required` refuses and points at `request`. Resource may be an id or `…/api/paywall/resources/:id`. |
+| [[commands/request]] | `ZAPPI_POT_ID` plus attached host (`ZAPPI_POT_CLIENT_TOKEN` or `~/.zappi/pot-client-*.txt`) | Auth-required send. Fails closed until attached. Stdout is one approve URL. Never a session token or seed. |
 | [[commands/consume]] | `ZAPPI_UNLOCK_TOKEN` (env wins over `--unlock-token`) | `--units` default `1`, positive integer. |
 | [[commands/invite]] | `ZAPPI_POT_ID` (UUID) | Extra args fail. Do not pass an invite code. |
 
@@ -89,6 +91,7 @@ zappi-cli propose
 zappi-cli propose --generate --label Research --open
 zappi-cli pay <resourceId>
 zappi-cli pay <resourceId> --no-consume
+zappi-cli request --amount-cents 100 --to <spark-address>
 zappi-cli consume <resourceId> --units 1
 zappi-cli invite --json
 zappi-cli pay <resourceId> --json

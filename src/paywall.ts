@@ -1,7 +1,8 @@
 import {
   AUTH_REQUIRED_PAY_ERROR,
-  parsePositiveUnits,
   requirePotId,
+  parsePositiveUnits,
+  requireAuthRequiredPotAttached,
   resolvePaywallBase,
   resolvePotSpendMode,
   resolveSparkNetwork,
@@ -260,6 +261,7 @@ export async function consumeResourceResult(
   options: ConsumeResourceOptions = {},
 ): Promise<ConsumeResult> {
   const env = options.env ?? process.env
+  requireAuthRequiredPotAttached(env)
   const units = parsePositiveUnits(
     options.units == null ? undefined : String(options.units),
     1,

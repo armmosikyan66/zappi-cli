@@ -6,6 +6,7 @@ import {
   INVITE_LINK_MISSING,
   InviteLinkError,
   qualifyInviteUrl,
+  runInviteLink,
 } from './invite-link.js'
 
 const potId = '11111111-1111-4111-8111-111111111111'
@@ -92,5 +93,28 @@ describe('fetchPotInviteLink', () => {
       (error: unknown) =>
         error instanceof InviteLinkError && error.code === INVITE_LINK_MISSING,
     )
+  })
+})
+
+describe('runInviteLink attach gate', () => {
+  it('refuses invite on an auth-required pot that is not attached', async () => {
+    let fetched = false
+    await assert.rejects(
+      () =>
+        runInviteLink(
+          [],
+          {
+            ZAPPI_POT_ID: potId,
+            ZAPPI_POT_SPEND_MODE: 'auth_required',
+            ZAPPI_HOME: '/tmp/zappi-cli-no-attach-home',
+          },
+          async () => {
+            fetched = true
+            throw new Error('must not fetch')
+          },
+        ),
+      /not attached/,
+    )
+    assert.equal(fetched, false)
   })
 })

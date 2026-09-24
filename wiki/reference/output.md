@@ -1,7 +1,7 @@
 ---
 type: reference
 tags: [cli, json, output]
-updated: 2026-09-22
+updated: 2026-09-24
 ---
 
 # Output
@@ -24,6 +24,8 @@ Process failures: stderr gets `formatError` of the redacted message, exit code `
 
 **pay** (settle): `command`, `potId`, `sparkTxHash`, `network`, `asset`, `unlockTokenReceived` (boolean), plus `status`, `resourceId`, `priceCents`, `metered`, `autoConsume`, optional `unlockUrl`, `consume`, `notes`. Already unlocked: `status: "already_unlocked"`, `resourceId`, `potId`.
 
+**request**: pretty/plain is the approve URL alone. `--json`: `ok`, `command`, `potId`, `requestId`, `approveUrl`, `amountCents`, `destinationAddress`. Never `zpc_`, never `code=` on the URL.
+
 **consume**: `command`, `resourceId`, `units`, optional `grantRemaining`.
 
 **propose**: `command`, `mode` (`generate` if a key-file line was parsed, else `flags`), `sparkAddress`, `href`, optional `keyFile`, `copied`.
@@ -32,6 +34,6 @@ Process failures: stderr gets `formatError` of the redacted message, exit code `
 
 **wallet / pots**: `{ ok: true, command, ...payload }`. Command string includes the subcommand when there is one (`"withdraw estimate"`, `"send internal"`, `"pots register"`).
 
-Never included: mnemonic, `ZAPPI_POT_SEED`, unlock token values (`zpu_…`). 
+Never included: mnemonic, `ZAPPI_POT_SEED`, unlock token values (`zpu_…`), pot client tokens (`zpc_…`) on `request` / `pay` / `consume`. 
 
 > ⚠️ `pots attach` JSON includes `potClientToken` (`zpc_…`) when the poll returns one. Pretty mode prints `zpc_… (withheld)` instead. See [[commands/pots]].

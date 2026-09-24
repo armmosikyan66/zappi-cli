@@ -104,7 +104,7 @@ Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest return
 | Variable             | Role                                                            |
 | -------------------- | --------------------------------------------------------------- |
 | `ZAPPI_POT_ID`       | Required for `pay` and `request`. Public pot id from the Zappi prompt. |
-| `ZAPPI_POT_CLIENT_TOKEN` | `zpc_` for `request` (host secret). Not a session token. Never a CLI flag. |
+| `ZAPPI_POT_CLIENT_TOKEN` | `zpc_` for `request` (host secret), or `~/.zappi/pot-client-*.txt` after attach. Missing = not attached. Never a CLI flag. |
 | `ZAPPI_ATTACH_DEVICE_CODE` | Attach reclaim secret (RFC 8628 device_code) from `pots attach` create (host secret). Wins over `~/.zappi/attach-device-<requestId>.txt`. **Never print.** |
 | `ZAPPI_POT_SEED`     | Preferred pot spend key for free `pay` (host secret).           |
 | `ZAPPI_POT_KEY_FILE` | Fallback mode-`0600` key file if the seed env is unset.         |
@@ -178,7 +178,8 @@ Reclaim path locked to Nest tip `df7aafc` / zappi-nest#82: `POST …/pots/attach
 ## Hard rules
 
 - **Never** print, log, `echo`, or `set -x` `ZAPPI_POT_SEED`, `ZAPPI_POT_CLIENT_TOKEN`, `ZAPPI_ATTACH_DEVICE_CODE`, the key file, attach-device / pot-client files under `~/.zappi/`, or `ZAPPI_UNLOCK_TOKEN`.
-- **Never** ask for `ZAPPI_ACCESS_TOKEN`, `zappi_access`, the pot seed, or a recovery phrase to approve a spend. Paste the `request` URL.
+- **Never** ask for `ZAPPI_ACCESS_TOKEN`, `zappi_access`, a `zpc_` paste, the pot seed, or a recovery phrase. Pair with `pots attach` (URL + user code). Paste the `request` approve URL for a send.
+- Until an auth-required pot is attached, `request`, `pay`, `consume`, and `invite` fail closed. The only bot command is `pots attach`.
 - **Never** pass a recovery phrase as `--address` or put one in a deep link.
 - Nest never holds the pot key. Cap v1 is an empty pot.
 - Do **not** invent a payment chain from an address. Paywall 402 must include `accepts[0].network` and `accepts[0].asset`; this CLI only pays `spark` / `USDB`.

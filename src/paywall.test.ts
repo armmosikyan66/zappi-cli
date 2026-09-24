@@ -11,7 +11,7 @@ import {
   payResourceResult,
 } from './paywall.js'
 import { parseConsumeCliArgs, parsePayCliArgs } from './cli.js'
-import { AUTH_REQUIRED_PAY_ERROR } from './env.js'
+import { AUTH_REQUIRED_PAY_ERROR, POT_NOT_ATTACHED_ERROR } from './env.js'
 import { EMPTY_POT_ERROR } from './spark-send.js'
 import { toJson } from './results.js'
 
@@ -264,6 +264,27 @@ describe('pay + consume request shaping (mock fetch, no Spark)', () => {
           },
         }),
       new RegExp(AUTH_REQUIRED_PAY_ERROR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    )
+    assert.equal(fetched, false)
+  })
+
+  it('refuses consume on an auth-required pot that is not attached', async () => {
+    let fetched = false
+    await assert.rejects(
+      () =>
+        consumeResource('res_1', {
+          env: {
+            ZAPPI_API_URL: 'https://api.example.test',
+            ZAPPI_POT_SPEND_MODE: 'auth_required',
+            ZAPPI_UNLOCK_TOKEN: 'zpu_env_token',
+            ZAPPI_HOME: '/tmp/zappi-cli-no-attach-home',
+          },
+          fetch: async () => {
+            fetched = true
+            throw new Error('must not hit paywall')
+          },
+        }),
+      new RegExp(POT_NOT_ATTACHED_ERROR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
     )
     assert.equal(fetched, false)
   })

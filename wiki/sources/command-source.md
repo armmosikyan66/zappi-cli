@@ -6,7 +6,7 @@ date_published: 2026-09-22
 date_ingested: 2026-09-22
 source_path: packages/zappi-cli/src
 tags: [cli, source]
-updated: 2026-09-22
+updated: 2026-09-24
 ---
 
 # Command source
@@ -19,6 +19,7 @@ Ingest of the dispatch and flag parsers. This page is the source of truth when [
 | Help | `src/ui.ts` `renderHelp` |
 | Propose | `src/propose-register.ts`, `src/propose-wizard.ts`, `src/register-deep-link.ts`, `src/pot-key-file.ts` |
 | Pay / consume | `src/paywall.ts`, `src/paywall-accept.ts`, `src/paywall-http.ts` |
+| Request (auth-required ticket) | `src/spend-request.ts` |
 | Invite | `src/invite-link.ts` |
 | Wallet / withdraw / send | `src/wallet-commands.ts`, `src/deposit-commands.ts`, `src/withdraw-commands.ts` |
 | Pots / attach | `src/pots-commands.ts`, `src/attach-commands.ts` |
@@ -26,11 +27,12 @@ Ingest of the dispatch and flag parsers. This page is the source of truth when [
 | Env | `src/env.ts` |
 | Nest client | `src/client.ts` |
 | Pot key load | `src/load-pot-seed.ts` |
-| JSON shapes | `src/results.ts` (pay, consume, propose, invite) |
+| JSON shapes | `src/results.ts` (pay, consume, propose, invite, request) |
 
 ## Dispatch facts not obvious from the README
 
 - `--json` is stripped in `main` before `runCli`. Help with `--json` is plain text, not a JSON blob.
+- `request` is dispatched in `src/cli.ts` from `src/spend-request.ts`. Pretty stdout is the approve URL alone. `--json` never includes `zpc_`. Secret flags (`--seed`, `--client-token`, …) throw. Missing `zpc_` (env and `~/.zappi/pot-client-*.txt`) throws `POT_NOT_ATTACHED_ERROR` and tells the agent to run `pots attach`.
 - `balance` treats a set `ZAPPI_POT_ID` as pot scope even when `--pot` is omitted (`src/wallet-commands.ts`).
 - `withdraw estimate` and `quote` accept `--bolt11` instead of `--address`, and optional `--sats` beside `--amount` (`buildWithdrawalRequest`).
 - `pots` with no positional subcommand is `list`.

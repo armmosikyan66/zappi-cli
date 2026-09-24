@@ -1,4 +1,4 @@
-import { requirePotId, resolveAppOrigin, resolvePaywallBase, type PotEnv } from './env.js'
+import { requireAuthRequiredPotAttached, requirePotId, resolveAppOrigin, resolvePaywallBase, type PotEnv } from './env.js'
 import { paywallUrl } from './paywall-http.js'
 
 export const INVITE_DISABLED = 'INVITE_AFFILIATE_DISABLED'
@@ -134,6 +134,7 @@ export async function runInviteLink(
   fetchImpl?: typeof fetch,
 ): Promise<PotInviteLink> {
   parseInviteCliArgs(argv)
+  requireAuthRequiredPotAttached(env)
   return fetchPotInviteLink({
     potId: requirePotId(env),
     baseUrl: resolvePaywallBase(env),

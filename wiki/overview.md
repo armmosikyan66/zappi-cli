@@ -1,7 +1,7 @@
 ---
 type: overview
 tags: [cli, pots, paywall]
-updated: 2026-09-22
+updated: 2026-09-24
 ---
 
 # Overview
@@ -10,7 +10,7 @@ updated: 2026-09-22
 
 Two surfaces share one binary (from [[sources/readme]] and [[sources/command-source]]):
 
-1. **Buyer / agent spend** — `propose`, `pay`, `consume`, `invite`. The pot key is created on the agent host. A human registers and funds in the Zappi app. The agent later pays a nest `PaidResource` (HTTP 402 → sign USDB from the pot → settle) and consumes metered grant units.
+1. **Buyer / agent spend** — `propose`, `pay`, `request`, `consume`, `invite`. The pot key is created on the agent host. A human registers and funds in the Zappi app. The agent later pays a nest `PaidResource` (HTTP 402 → sign USDB from the pot → settle) and consumes metered grant units, **or** on an auth-required pot runs `request` and pastes one approve URL. One agent card: [[sources/skill]].
 2. **Wallet / pots (developer)** — `balance`, `transactions`, `deposit-options`, `deposit-address`, `withdraw-options`, `withdraw`, `send`, `pots`. These mirror `@zappimoney/zappi-sdk` nest routes. They need `ZAPPI_PROJECT_API_KEY` or `ZAPPI_ACCESS_TOKEN`. Signing routes also load `ZAPPI_POT_SEED` (or the key file). The pot key never leaves the host; only `sparkTxHash` is sent to nest.
 
 Help text groups the same way: Host setup, Agent spend, Wallet, Pots. Global flags: `--json`, `--help` / `-h`.

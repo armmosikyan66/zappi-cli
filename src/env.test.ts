@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, it } from 'node:test'
+import { writePotClientTokenFile } from './attach-device-secret.js'
 import {
   DEFAULT_ZAPPI_API_URL,
   DEFAULT_ZAPPI_APP_ORIGIN,
+  POT_NOT_ATTACHED_ERROR,
   STAGING_ZAPPI_API_URL,
   parsePositiveUnits,
+  requireAuthRequiredPotAttached,
   requirePotId,
   resolveAppOrigin,
   resolvePaywallBase,
@@ -78,11 +84,23 @@ describe('resolveAppOrigin + spark network + units', () => {
   })
 
   it('requires a zpc_ pot client token and never echoes a bad value', () => {
+    const emptyHome = mkdtempSync(join(tmpdir(), 'zappi-cli-empty-'))
     assert.equal(
       resolvePotClientToken({ ZAPPI_POT_CLIENT_TOKEN: 'zpc_live' }),
       'zpc_live',
     )
-    assert.throws(() => resolvePotClientToken({}), /ZAPPI_POT_CLIENT_TOKEN/)
+    assert.throws(
+      () => resolvePotClientToken({ ZAPPI_HOME: emptyHome }),
+      /not attached/,
+    )
+    assert.throws(
+      () => resolvePotClientToken({ ZAPPI_HOME: emptyHome }),
+      /pots attach/,
+    )
+    assert.throws(
+      () => resolvePotClientToken({ ZAPPI_HOME: emptyHome }),
+      /Do not ask for a zpc_/,
+    )
     assert.throws(
       () => resolvePotClientToken({ ZAPPI_POT_CLIENT_TOKEN: '<zpc_…>' }),
       /placeholder/,
@@ -97,6 +115,38 @@ describe('resolveAppOrigin + spark network + units', () => {
         assert.doesNotMatch(error.message, /eyJ/)
         return true
       },
+    )
+  })
+
+  it('treats a stored attach token as attached and does not ask to paste zpc_', () => {
+    const home = mkdtempSync(join(tmpdir(), 'zappi-cli-attached-'))
+    writePotClientTokenFile('req_1', 'zpc_fromfile', { ZAPPI_HOME: home })
+    assert.equal(resolvePotClientToken({ ZAPPI_HOME: home }), 'zpc_fromfile')
+    assert.equal(
+      resolvePotClientToken({
+        ZAPPI_HOME: home,
+        ZAPPI_POT_CLIENT_TOKEN: 'zpc_env',
+      }),
+      'zpc_env',
+    )
+  })
+
+  it('blocks auth-required consume/invite until attach, and skips free pots', () => {
+    const emptyHome = mkdtempSync(join(tmpdir(), 'zappi-cli-gate-'))
+    requireAuthRequiredPotAttached({ ZAPPI_HOME: emptyHome })
+    requireAuthRequiredPotAttached({
+      ZAPPI_POT_SPEND_MODE: 'auth_required',
+      ZAPPI_POT_CLIENT_TOKEN: 'zpc_live',
+    })
+    assert.throws(
+      () =>
+        requireAuthRequiredPotAttached({
+          ZAPPI_HOME: emptyHome,
+          ZAPPI_POT_SPEND_MODE: 'auth_required',
+        }),
+      new RegExp(
+        POT_NOT_ATTACHED_ERROR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+      ),
     )
   })
 

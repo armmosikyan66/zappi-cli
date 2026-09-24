@@ -100,9 +100,9 @@ export function hybridEvalQuestions() {
       },
     ),
     needs_buyer_skill: noul(
-      'Does `userTurn` require the published buyer skill zappi-agent-pot (propose, pay, or consume a PaidResource from an agent pot)?',
+      'Does `userTurn` require the published buyer skill zappi-agent-pot (propose, pay, consume a PaidResource, or auth-required send via zappi-cli request)?',
       {
-        true: 'The turn is buyer spend or pot install/runtime for a host agent.',
+        true: 'The turn is buyer spend, an auth-required send, or pot install/runtime for a host agent.',
         false:
           'The turn is coding-eval work, unrelated chat, or no Zappi skill is needed. The coding eval harness is not buyer spend.',
       },
@@ -111,7 +111,7 @@ export function hybridEvalQuestions() {
       'Which skill should handle `userTurn`? Use none when no Zappi skill is needed. Do not pick the coding eval harness for buyer spend.',
       {
         zappi_agent_pot:
-          'Buyer host installing or running propose/pay/consume against a PaidResource.',
+          'Buyer host installing or running propose/pay/consume, or an auth-required send (zappi-cli request → paste the approve URL). One published skill.',
         zappi_eval_harness:
           'Coding agent working on hybrid evals, traces, or Nest/CLI tests — not spending.',
         none: 'The turn is unrelated to Zappi pots, paywall, or eval harness work.',

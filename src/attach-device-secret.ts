@@ -1,4 +1,11 @@
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { PotEnv } from './env.js'
@@ -96,4 +103,34 @@ export function writePotClientTokenFile(
   const trimmed = potClientToken.trim()
   if (!trimmed) return null
   return writeSecretFile(potClientTokenPath(requestId, env), trimmed)
+}
+
+/**
+ * Newest `~/.zappi/pot-client-*.txt` that looks like `zpc_`.
+ * Env is not read here. Never print the value.
+ */
+export function readStoredPotClientToken(
+  env: PotEnv = process.env,
+): string | null {
+  const dir = zappiHomeDir(env)
+  let names: string[]
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return null
+  }
+  let newest: { mtime: number; value: string } | null = null
+  for (const name of names) {
+    if (!name.startsWith('pot-client-') || !name.endsWith('.txt')) continue
+    const path = join(dir, name)
+    try {
+      const value = readFileSync(path, 'utf8').trim()
+      if (!value.startsWith('zpc_')) continue
+      const mtime = statSync(path).mtimeMs
+      if (!newest || mtime > newest.mtime) newest = { mtime, value }
+    } catch {
+      continue
+    }
+  }
+  return newest?.value ?? null
 }

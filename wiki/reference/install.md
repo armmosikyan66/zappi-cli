@@ -1,7 +1,7 @@
 ---
 type: reference
 tags: [cli, install]
-updated: 2026-09-22
+updated: 2026-09-24
 ---
 
 # Install

@@ -154,14 +154,17 @@ describe('createSpendRequestResult', () => {
     await assert.rejects(
       () =>
         createSpendRequestResult({
-          env: { ZAPPI_POT_ID: 'pot_1' },
+          env: {
+            ZAPPI_POT_ID: 'pot_1',
+            ZAPPI_HOME: '/tmp/zappi-cli-no-attach-home',
+          },
           input: { amountCents: 100, destinationAddress: 'spark1dest' },
           fetch: async () => {
             fetched = true
             throw new Error('must not fetch')
           },
         }),
-      /ZAPPI_POT_CLIENT_TOKEN/,
+      /not attached/,
     )
     assert.equal(fetched, false)
   })

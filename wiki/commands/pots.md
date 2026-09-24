@@ -73,7 +73,7 @@ zappi-cli pots attach [--spend-mode free|auth_required] [--spark-address <addr>]
 zappi-cli pots attach-status <requestId>
 ```
 
-Device-code pairing (P1). `createPotAttach` returns `requestId`, `userCode`, and `approveUrl`.
+Device-code pairing (P1). `createPotAttach` returns `requestId`, `userCode`, and `approveUrl`. Until pairing is approved, an auth-required pot cannot `request`, `pay`, `consume`, or `invite` from the bot. Paste the pairing URL and user code — never a `zpc_` paste.
 
 - Pretty mode without `--no-poll`: opens the approve URL (headline “Approve this pot in Zappi”), then polls every 2 seconds until status is not `pending` or 15 minutes elapse.
 - `--no-poll`: prints request id, user code, approve URL, and `Poll with: zappi-cli pots attach-status <requestId>`. Does not open the browser.

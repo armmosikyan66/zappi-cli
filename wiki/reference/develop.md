@@ -1,7 +1,7 @@
 ---
 type: reference
 tags: [cli, test, develop]
-updated: 2026-09-22
+updated: 2026-09-24
 ---
 
 # Develop
@@ -16,7 +16,7 @@ npm run build
 
 ## What CI covers
 
-`npm test` does not hit live Spark, the paywall network, or the TypeSafe API. It covers 402 → settle `{ sparkTxHash, potId }` → consume, empty-pot fail-closed, 402 `network`/`asset` required (refuse non-`spark`/`USDB` before sign), secret redaction including BIP-39, `ZAPPI_POT_SPEND_MODE=auth_required` refusing CLI free-sign, and a mocked TypeSafe judge (copy honesty / skill / route).
+`npm test` does not hit live Spark, the paywall network, or the TypeSafe API. It covers 402 → settle `{ sparkTxHash, potId }` → consume, empty-pot fail-closed, 402 `network`/`asset` required (refuse non-`spark`/`USDB` before sign), secret redaction including BIP-39, `ZAPPI_POT_SPEND_MODE=auth_required` refusing CLI free-sign, `request` printing a bare approve URL (no `code=`, no `zpc_`), and a mocked TypeSafe judge (copy honesty / skill / route). `chosen_skill` options: `zappi_agent_pot`, `zappi_eval_harness`, `none`. Fixture `agent-agent.skill.spend-auth-required` expects `zappi_agent_pot`.
 
 `test:judge` and `test:pipeline` need `TYPESAFE_API_KEY` in `.env`. They are not GitHub Actions. Eval code is `src/eval/` and is excluded from the published tarball (`!dist/eval/**`).
 

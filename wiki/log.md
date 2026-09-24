@@ -1,10 +1,24 @@
 ---
 type: log
 tags: [meta]
-updated: 2026-09-22
+updated: 2026-09-24
 ---
 
 # Wiki Log
+
+## [2026-09-24] ingest | Unattached auth-required pot is fail-closed
+- touched: wiki/sources/skill.md, wiki/commands/request.md, wiki/commands/invite.md, wiki/reference/hard-rules.md, wiki/reference/environment.md, wiki/usages.md, wiki/flows/buyer.md, wiki/sources/command-source.md
+- notes: Until `pots attach` is approved, the bot cannot `request`, `pay`, `consume`, or `invite`. Missing `zpc_` means not attached — run attach (URL + user code), never ask for a paste. `request` also reads `~/.zappi/pot-client-*.txt` after reclaim.
+
+## [2026-09-24] ingest | Combine SKILL.md (one buyer skill)
+- deleted: wiki/sources/skill-spend.md, packages/zappi-cli/SKILL-spend.md, web/examples/agent-pot-spend/, web/public/.well-known/agent-skills/zappi-agent-pot-spend/
+- touched: wiki/index.md, wiki/overview.md, wiki/flows/buyer.md, wiki/sources/skill.md, wiki/sources/readme.md, wiki/commands/pay.md, wiki/commands/request.md, wiki/reference/hard-rules.md, wiki/reference/develop.md, wiki/reference/install.md
+- notes: Agents load one `SKILL.md` (`zappi-agent-pot`). Auth-required `request` + “ask for `zpc_` only after a missing-token send” live in that file. TypeSafe `chosen_skill` is `zappi_agent_pot` | `zappi_eval_harness` | `none`. npm `files` ships `SKILL.md` only.
+
+## [2026-09-24] ingest | SKILL-spend.md (zappi-agent-pot-spend)
+- new: wiki/sources/skill-spend.md, wiki/commands/request.md
+- touched: wiki/index.md, wiki/overview.md, wiki/usages.md, wiki/flows/buyer.md, wiki/sources/skill.md, wiki/sources/command-source.md, wiki/commands/pay.md, wiki/reference/hard-rules.md, wiki/reference/output.md, wiki/reference/environment.md, wiki/reference/develop.md, wiki/reference/install.md
+- notes: New published skill `zappi-agent-pot-spend` is only `zappi-cli request` (create ticket → paste bare approve URL). Existing `zappi-agent-pot` stays setup + free `pay` / `consume`. TypeSafe `chosen_skill` includes `zappi_agent_pot_spend`. npm `files` now ships `SKILL-spend.md`.
 
 ## [2026-09-22] bootstrap | zappi-cli wiki
 - new: wiki/index.md, wiki/overview.md, wiki/usages.md, wiki/log.md

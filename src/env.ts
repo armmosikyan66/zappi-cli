@@ -1,3 +1,5 @@
+import { readStoredPotClientToken } from './attach-device-secret.js'
+
 export interface PotEnv {
   ZAPPI_POT_ID?: string
   ZAPPI_POT_SEED?: string
@@ -81,29 +83,45 @@ export function resolvePotSpendMode(
 export const AUTH_REQUIRED_PAY_ERROR =
   'This pot is auth_required. Do not free-sign with pay. Run `zappi-cli request --amount-cents <cents> --to <spark-address>` and paste the approve URL. Do not ask for a session token, the pot seed, or a recovery phrase.'
 
-const POT_CLIENT_TOKEN_HINT =
-  'Set ZAPPI_POT_CLIENT_TOKEN (the zpc_ from attach approve) as a host secret. Do not ask for a session token, the pot seed, or a recovery phrase.'
+/** Fail closed: no attach → no request. Do not ask the human to paste zpc_. */
+export const POT_NOT_ATTACHED_ERROR =
+  'This pot is not attached to the account. The bot cannot request, pay, consume, or invite until pairing is approved. Run `zappi-cli pots attach --spend-mode auth_required` and paste the pairing URL and user code. Do not ask for a zpc_ token, session token, pot seed, or recovery phrase.'
 
 /**
- * Pot client token for `request`. Env only — never a CLI flag (it would show in `ps`).
- * Does not read `ZAPPI_ACCESS_TOKEN`.
+ * Pot client token for `request`. Env wins, else `~/.zappi/pot-client-*.txt`
+ * from attach reclaim. Never a CLI flag (`ps`). Does not read `ZAPPI_ACCESS_TOKEN`.
  */
 export function resolvePotClientToken(env: PotEnv = process.env): string {
-  const token = env.ZAPPI_POT_CLIENT_TOKEN?.trim()
-  if (!token) {
-    throw new Error(POT_CLIENT_TOKEN_HINT)
+  const fromEnv = env.ZAPPI_POT_CLIENT_TOKEN?.trim()
+  if (fromEnv) {
+    if (fromEnv.startsWith('<') && fromEnv.endsWith('>')) {
+      throw new Error(
+        'Pot client token is still a placeholder. Set ZAPPI_POT_CLIENT_TOKEN as a host secret — do not paste it into chat.',
+      )
+    }
+    if (!fromEnv.startsWith('zpc_')) {
+      throw new Error(
+        'ZAPPI_POT_CLIENT_TOKEN must be a pot client token (zpc_). Do not pass a session token, pot seed, or recovery phrase.',
+      )
+    }
+    return fromEnv
   }
-  if (token.startsWith('<') && token.endsWith('>')) {
-    throw new Error(
-      'Pot client token is still a placeholder. Set ZAPPI_POT_CLIENT_TOKEN as a host secret — do not paste it into chat.',
-    )
+  const fromFile = readStoredPotClientToken(env)
+  if (!fromFile) {
+    throw new Error(POT_NOT_ATTACHED_ERROR)
   }
-  if (!token.startsWith('zpc_')) {
-    throw new Error(
-      'ZAPPI_POT_CLIENT_TOKEN must be a pot client token (zpc_). Do not pass a session token, pot seed, or recovery phrase.',
-    )
-  }
-  return token
+  return fromFile
+}
+
+/**
+ * Auth-required pots cannot invite, consume, or request until attach is
+ * approved on this host. Free pots skip this check.
+ */
+export function requireAuthRequiredPotAttached(
+  env: PotEnv = process.env,
+): void {
+  if (resolvePotSpendMode(env) !== 'auth_required') return
+  resolvePotClientToken(env)
 }
 
 export function requirePotId(env: PotEnv = process.env): string {

@@ -1,7 +1,7 @@
 ---
 type: reference
 tags: [cli, env]
-updated: 2026-09-22
+updated: 2026-09-24
 ---
 
 # Environment
@@ -10,7 +10,9 @@ Resolvers live in `src/env.ts`. Defaults are production. Staging must set API an
 
 | Variable | Resolves to | Used by |
 | --- | --- | --- |
-| `ZAPPI_POT_ID` | Required string. Invite also requires a UUID. | [[commands/pay]], [[commands/invite]], and [[commands/wallet]] `balance` (pot scope when set). |
+| `ZAPPI_POT_ID` | Required string. Invite also requires a UUID. | [[commands/pay]], [[commands/request]], [[commands/invite]], and [[commands/wallet]] `balance` (pot scope when set). |
+| `ZAPPI_POT_CLIENT_TOKEN` | `zpc_` from attach approve, or `~/.zappi/pot-client-*.txt`. Host secret. Never a flag. Missing = not attached. | [[commands/request]]; also gates `auth_required` [[commands/invite]] and [[commands/consume]]. |
+| `ZAPPI_ATTACH_DEVICE_CODE` | Attach reclaim secret (RFC 8628 device_code). Wins over `~/.zappi/attach-device-<requestId>.txt`. Never print. | [[commands/pots]] attach / attach-status. |
 | `ZAPPI_POT_SEED` | Host spend key. Wins over the key file. `<placeholder>` rejected. | pay, withdraw confirm, send, any Spark sign. |
 | `ZAPPI_POT_KEY_FILE` | Fallback file if the seed env is unset. Phrase is the last non-comment line with 12–24 words. | Same as the seed. |
 | `ZAPPI_API_URL` | Nest origin. Default `https://api.zappi.money`. Staging `https://api-dev.zappi.money`. | Paywall base when `ZAPPI_PAYWALL_BASE` is unset. Also the SDK `apiUrl`. |
@@ -18,7 +20,7 @@ Resolvers live in `src/env.ts`. Defaults are production. Staging must set API an
 | `ZAPPI_APP_ORIGIN` | Web origin. Default `https://zappi.money`. Staging `http://dev.zappi.money`. | propose links, invite URL qualification. |
 | `NEXT_PUBLIC_SITE_URL` | Fallback app origin when `ZAPPI_APP_ORIGIN` is unset. | propose, invite. |
 | `ZAPPI_UNLOCK_TOKEN` | Unlock bearer. Wins over `--unlock-token`. | [[commands/consume]]. |
-| `ZAPPI_POT_SPEND_MODE` | `auth_required` or anything else → `free`. | [[commands/pay]] refuses free-sign when `auth_required`. |
+| `ZAPPI_POT_SPEND_MODE` | `auth_required` or anything else → `free`. | [[commands/pay]] refuses free-sign when `auth_required`. [[commands/invite]] and [[commands/consume]] fail closed until attached. |
 | `SPARK_NETWORK` | `REGTEST` if that exact word (case-insensitive); otherwise `MAINNET`. | Address checks, Spark sends. |
 | `ZAPPI_PROJECT_API_KEY` | Project key. Wins over the access token. | Wallet and pots. |
 | `ZAPPI_ACCESS_TOKEN` | User access JWT when no project key. | Wallet and pots. |
