@@ -173,7 +173,7 @@ npm run build
 - **Output:** pretty/plain show `zpc_… (withheld)`. JSON uses `deviceCodeReceived` / `potClientTokenReceived` booleans — never raw secrets.
 - `attach-status <requestId>` reclaims the same way when a device code is available from env or file.
 
-Provisional reclaim path pending Nest tip confirmation.
+Reclaim path locked to Nest tip `df7aafc` / zappi-nest#82: `POST …/pots/attach/:requestId/credentials` + `X-Zappi-Device-Code`.
 
 ## Hard rules
 

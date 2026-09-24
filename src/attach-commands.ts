@@ -77,7 +77,7 @@ async function reclaimIfPossible(
  *
  * Creates a pending attach (device-code P1), stores deviceCode as a host secret,
  * opens the approve URL for humans, polls public status, then reclaims
- * potClientToken with `X-Zappi-Device-Code` (1-203).
+ * potClientToken via POST …/credentials + `X-Zappi-Device-Code` (1-203, Nest tip df7aafc).
  */
 export async function runPotAttach(
   argv: string[],
