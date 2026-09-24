@@ -3,6 +3,11 @@ import { parseArgs } from './args.js'
 import { promptOpenLink } from './wizard-io.js'
 import { type PotEnv } from './env.js'
 import {
+  resolveAttachDeviceCode,
+  writeAttachDeviceCode,
+  writePotClientTokenFile,
+} from './attach-device-secret.js'
+import {
   errorLine,
   heading,
   infoLine,
@@ -17,11 +22,62 @@ function jsonOut(result: unknown): string {
   return JSON.stringify(result, null, 2)
 }
 
+/** Public create fields only — never deviceCode. */
+function publicPending(pending: {
+  requestId: string
+  userCode: string
+  approveUrl: string
+  expiresAt: string
+  spendMode?: 'auth_required' | 'free' | null
+  deviceCode?: string
+}) {
+  return {
+    requestId: pending.requestId,
+    userCode: pending.userCode,
+    approveUrl: pending.approveUrl,
+    expiresAt: pending.expiresAt,
+    ...(pending.spendMode !== undefined ? { spendMode: pending.spendMode } : {}),
+    deviceCodeReceived: Boolean(pending.deviceCode?.trim()),
+  }
+}
+
+async function reclaimIfPossible(
+  client: Awaited<ReturnType<typeof resolveZappiClient>>,
+  requestId: string,
+  env: PotEnv,
+): Promise<{
+  potId?: string | null
+  grantId?: string | null
+  potClientTokenReceived: boolean
+  potClientTokenPath: string | null
+  status?: string
+}> {
+  const deviceCode = resolveAttachDeviceCode(requestId, env)
+  if (!deviceCode) {
+    return { potClientTokenReceived: false, potClientTokenPath: null }
+  }
+  const creds = await client.reclaimPotAttachCredentials(requestId, deviceCode)
+  let potClientTokenPath: string | null = null
+  let potClientTokenReceived = false
+  if (creds.potClientToken?.trim()) {
+    potClientTokenPath = writePotClientTokenFile(requestId, creds.potClientToken, env)
+    potClientTokenReceived = true
+  }
+  return {
+    potId: creds.potId,
+    grantId: creds.grantId,
+    potClientTokenReceived,
+    potClientTokenPath,
+    status: creds.status,
+  }
+}
+
 /**
  * `zappi-cli pots attach [--spend-mode free|auth_required] [--spark-address <addr>] [--label L] [--no-poll]`
  *
- * Creates a pending attach (device-code P1), opens the approve URL in the
- * browser, and polls until the user approves (or the request expires).
+ * Creates a pending attach (device-code P1), stores deviceCode as a host secret,
+ * opens the approve URL for humans, polls public status, then reclaims
+ * potClientToken with `X-Zappi-Device-Code` (1-203).
  */
 export async function runPotAttach(
   argv: string[],
@@ -37,7 +93,12 @@ export async function runPotAttach(
 
   const pending = await client.createPotAttach(body)
 
+  if (pending.deviceCode?.trim()) {
+    writeAttachDeviceCode(pending.requestId, pending.deviceCode, env)
+  }
+
   // Open the approve URL in the browser unless --no-poll / non-interactive.
+  // Never put deviceCode in the human URL (Nest contract).
   if (!booleans['no-poll'] && mode === 'pretty') {
     await promptOpenLink(pending.approveUrl, {
       headline: 'Approve this pot in Zappi:',
@@ -46,7 +107,11 @@ export async function runPotAttach(
   }
 
   if (booleans['no-poll']) {
-    const result = { ok: true as const, command: 'pots attach' as const, pending }
+    const result = {
+      ok: true as const,
+      command: 'pots attach' as const,
+      pending: publicPending(pending),
+    }
     if (mode === 'json') return jsonOut(result)
     if (mode === 'plain') return `requestId: ${pending.requestId} approve: ${pending.approveUrl}`
     return [
@@ -54,19 +119,38 @@ export async function runPotAttach(
       kv('requestId', pending.requestId, mode),
       kv('userCode', pending.userCode, mode),
       kv('approve', pending.approveUrl, mode),
+      ...(pending.deviceCode?.trim()
+        ? [
+            kv('deviceCode', '… (withheld; host secret)', mode),
+            infoLine(
+              'Device code stored under ~/.zappi/attach-device-<requestId>.txt (0600). Or set ZAPPI_ATTACH_DEVICE_CODE. Never echo it.',
+              mode,
+            ),
+          ]
+        : []),
       infoLine('Poll with: zappi-cli pots attach-status <requestId>', mode),
     ].join(NL)
   }
 
-  // Poll until terminal.
+  // Poll public status until terminal (never expect potClientToken on poll).
   const deadline = Date.now() + 15 * 60 * 1000
   let poll = await client.pollPotAttach(pending.requestId)
-  while (
-    poll.status === 'pending' &&
-    Date.now() < deadline
-  ) {
+  while (poll.status === 'pending' && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 2000))
     poll = await client.pollPotAttach(pending.requestId)
+  }
+
+  let potId = poll.potId ?? null
+  let grantId = poll.grantId ?? null
+  let potClientTokenReceived = false
+  let potClientTokenPath: string | null = null
+
+  if (poll.status === 'approved') {
+    const reclaimed = await reclaimIfPossible(client, pending.requestId, env)
+    if (reclaimed.potId) potId = reclaimed.potId
+    if (reclaimed.grantId) grantId = reclaimed.grantId
+    potClientTokenReceived = reclaimed.potClientTokenReceived
+    potClientTokenPath = reclaimed.potClientTokenPath
   }
 
   const result = {
@@ -74,24 +158,39 @@ export async function runPotAttach(
     command: 'pots attach' as const,
     status: poll.status,
     requestId: pending.requestId,
-    potId: poll.potId ?? null,
-    grantId: poll.grantId ?? null,
-    potClientToken: poll.potClientToken ?? null,
+    potId,
+    grantId,
+    deviceCodeReceived: Boolean(pending.deviceCode?.trim()),
+    potClientTokenReceived,
   }
   if (mode === 'json') return jsonOut(result)
   if (mode === 'plain') {
-    return `status: ${poll.status} potId: ${poll.potId ?? '-'} grantId: ${poll.grantId ?? '-'}`
+    return `status: ${poll.status} potId: ${potId ?? '-'} grantId: ${grantId ?? '-'}`
   }
   const lines = [
     heading('Pot attach', mode),
     kv('requestId', pending.requestId, mode),
     successLine(`Status: ${poll.status}`, mode),
   ]
-  if (poll.potId) lines.push(kv('pot', poll.potId, mode))
-  if (poll.grantId) lines.push(kv('grant', poll.grantId, mode))
-  if (poll.potClientToken) {
+  if (potId) lines.push(kv('pot', potId, mode))
+  if (grantId) lines.push(kv('grant', grantId, mode))
+  if (potClientTokenReceived) {
     lines.push(kv('clientToken', 'zpc_… (withheld)', mode))
-    lines.push(infoLine('Store the pot client token as a host secret. Do not echo it.', mode))
+    lines.push(
+      infoLine(
+        potClientTokenPath
+          ? `Stored pot client token as host secret (${potClientTokenPath}). Set ZAPPI_POT_CLIENT_TOKEN from that file. Do not echo it.`
+          : 'Store the pot client token as ZAPPI_POT_CLIENT_TOKEN (host secret). Do not echo it.',
+        mode,
+      ),
+    )
+  } else if (poll.status === 'approved') {
+    lines.push(
+      infoLine(
+        'Approved but pot client token not reclaimed. Set ZAPPI_ATTACH_DEVICE_CODE or keep ~/.zappi/attach-device-<requestId>.txt, then run attach-status.',
+        mode,
+      ),
+    )
   }
   return lines.join(NL)
 }
@@ -107,18 +206,53 @@ export async function runPotAttachStatus(
   if (!requestId) throw new Error('Usage: zappi-cli pots attach-status <requestId>')
   const client = await resolveZappiClient(env)
   const poll = await client.pollPotAttach(requestId)
-  const result = { ok: true as const, command: 'pots attach-status' as const, ...poll }
+
+  let potId = poll.potId ?? null
+  let grantId = poll.grantId ?? null
+  let potClientTokenReceived = false
+  let potClientTokenPath: string | null = null
+
+  if (poll.status === 'approved') {
+    const reclaimed = await reclaimIfPossible(client, requestId, env)
+    if (reclaimed.potId) potId = reclaimed.potId
+    if (reclaimed.grantId) grantId = reclaimed.grantId
+    potClientTokenReceived = reclaimed.potClientTokenReceived
+    potClientTokenPath = reclaimed.potClientTokenPath
+  }
+
+  const result = {
+    ok: true as const,
+    command: 'pots attach-status' as const,
+    status: poll.status,
+    requestId: poll.requestId,
+    potId,
+    grantId,
+    potClientTokenReceived,
+    deviceCodeAvailable: Boolean(resolveAttachDeviceCode(requestId, env)),
+  }
   if (mode === 'json') return jsonOut(result)
   if (mode === 'plain') {
-    return `status: ${poll.status} potId: ${poll.potId ?? '-'} grantId: ${poll.grantId ?? '-'}`
+    return `status: ${poll.status} potId: ${potId ?? '-'} grantId: ${grantId ?? '-'}`
   }
-  return [
+  const lines = [
     heading('Pot attach status', mode),
     kv('requestId', poll.requestId, mode),
     kv('status', poll.status, mode),
-    ...(poll.potId ? [kv('pot', poll.potId, mode)] : []),
-    ...(poll.grantId ? [kv('grant', poll.grantId, mode)] : []),
-  ].join(NL)
+    ...(potId ? [kv('pot', potId, mode)] : []),
+    ...(grantId ? [kv('grant', grantId, mode)] : []),
+  ]
+  if (potClientTokenReceived) {
+    lines.push(kv('clientToken', 'zpc_… (withheld)', mode))
+    lines.push(
+      infoLine(
+        potClientTokenPath
+          ? `Stored as host secret (${potClientTokenPath}). Set ZAPPI_POT_CLIENT_TOKEN. Do not echo it.`
+          : 'Store as ZAPPI_POT_CLIENT_TOKEN (host secret). Do not echo it.',
+        mode,
+      ),
+    )
+  }
+  return lines.join(NL)
 }
 
 /** Shared error wrapper for attach commands. */
