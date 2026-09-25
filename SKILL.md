@@ -100,6 +100,28 @@ That command needs no TTY. Stdout is **one approve URL** and nothing else (`http
 
 If `request` fails because the pot is not attached, run `zappi-cli pots attach --spend-mode auth_required`. Do not open a paste field. Do not ask for `zpc_`.
 
+
+## Fail closed — never bypass the CLI
+
+When any `zappi-cli` command fails (apiUrl mismatch, not attached, network error, unknown command, etc.):
+
+1. **STOP and report** the CLI error to the human.
+2. Do **not** read `~/.zappi/pot-client-*`, `ZAPPI_POT_CLIENT_TOKEN`, device codes, or unlock tokens from disk.
+3. Do **not** invent `fetch` / `curl` / Node scripts that call Nest with `zpc_` or `x-zappi-pot-client`.
+4. Do **not** invent Nest routes. Pot ops go through the CLI only (or a documented curl example in this repo).
+
+Auth-required pot balance uses the attach token **inside** the CLI:
+
+```bash
+zappi-cli balance --pot <potId>
+# or ZAPPI_POT_ID set; uses x-zappi-pot-client against
+# GET /api/wallet/self-custody/pots/:potId/balance
+```
+
+Wallet-scope `balance` (no `--pot` / no pot id) still needs `zappi-cli login` or env session credentials. If login apiUrl mismatches the resolved API, run `zappi-cli login` again or `zappi-cli logout` — never bypass.
+
+`zappi-cli doctor` prints saved login apiUrl vs resolved API (no secrets).
+
 ### Never ask for `zpc_`
 
 Do not ask them to paste `zpc_` on connect, on send, or after a failed `request`. Pair with `pots attach` instead. This host reclaims the token after they approve. Do not mention a secret is missing after attach / “pot is set”.

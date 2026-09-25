@@ -99,6 +99,11 @@ With no flags and no `SPARK_NETWORK` / app-origin env, the same run then asks sp
 
 Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest returns it. Empty pot = stop. Do not fall back to the main wallet.
 
+
+## Fail closed (agents)
+
+If a CLI command fails (env / apiUrl mismatch, not attached, etc.): **stop and report**. Forbidden: reading `~/.zappi/pot-client-*`, inventing `fetch`/`curl`/Node with `zpc_`, or calling Nest with attach secrets. Pot balance for attached pots: `zappi-cli balance --pot <id>` (CLI sends `x-zappi-pot-client` to Nest). Use `zappi-cli doctor` to compare saved login apiUrl vs the resolved API — no secrets printed.
+
 ## Environment
 
 | Variable             | Role                                                            |
