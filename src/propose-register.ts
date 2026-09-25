@@ -189,13 +189,17 @@ export function printRegisterDeepLink(input: {
     throw new Error('Could not build the register deep link.')
   }
 
+  const keyLine =
+    input.mode === 'auth_required'
+      ? 'The key is created in Zappi on your device when you approve. This host does not store it.'
+      : 'Store the pot key as ZAPPI_POT_SEED or a mode 0600 file. Never print, email, or paste the pot key into chat or this link.'
+
   return [
     `Pot address: ${parsed.sparkAddress}`,
     'Approve in Zappi (human signs in and taps Register):',
     href,
     '',
-    'Store the pot key as ZAPPI_POT_SEED or a mode 0600 file.',
-    'Never print, email, or paste the pot key into chat or this link.',
+    keyLine,
   ].join('\n')
 }
 
@@ -219,6 +223,11 @@ async function executeFlagPropose(
   let sparkAddress = args.address?.trim()
 
   if (args.generate) {
+    if (args.mode === 'auth_required') {
+      throw new Error(
+        'Approval-required pots do not get a key on this host. Create the pot in Zappi, then run `zappi-cli pots attach --spend-mode auth_required`. Do not generate or store a pot key.',
+      )
+    }
     const { generateMnemonic } = await import('@scure/bip39')
     const { wordlist } = await import('@scure/bip39/wordlists/english.js')
     const mnemonic = generateMnemonic(wordlist, 128)

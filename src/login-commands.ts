@@ -7,7 +7,7 @@ import {
   writeCliCredentials,
   type CliCredentials,
 } from './credentials.js'
-import { resolvePaywallBase, type PotEnv } from './env.js'
+import { relocateAppLink, resolveLinkOrigin, resolvePaywallBase, type PotEnv } from './env.js'
 import { openUrl } from './wizard-io.js'
 
 const NL = '\n'
@@ -61,11 +61,15 @@ export async function runLogin(
     throw new Error('Zappi did not start a login. Try again.')
   }
 
+  const signInUrl = relocateAppLink(
+    started.verificationUriComplete,
+    resolveLinkOrigin(env),
+  )
   writeErr(`Sign in with your email or a passkey.${NL}`)
-  writeErr(`${started.verificationUriComplete}${NL}`)
+  writeErr(`${signInUrl}${NL}`)
   if (!booleans['no-browser']) {
     try {
-      open(started.verificationUriComplete)
+      open(signInUrl)
     } catch {
       writeErr(`Could not open a browser. Open the link above.${NL}`)
     }

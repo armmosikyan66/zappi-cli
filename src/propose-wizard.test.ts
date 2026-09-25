@@ -276,6 +276,21 @@ describe('runProposeWizard', () => {
     )
   })
 
+  it('refuses to generate a key for an approval-required pot', async () => {
+    let wrote = false
+    const { deps } = makeDeps({
+      select: ['generate', 'auth_required'],
+    })
+    deps.writeKeyFile = () => {
+      wrote = true
+    }
+    await assert.rejects(
+      () => runProposeWizard([], { SPARK_NETWORK: 'MAINNET' }, deps),
+      /do not get a key/,
+    )
+    assert.equal(wrote, false)
+  })
+
   it('auth_required tab sets mode=auth_required and pots=mine on the link', async () => {
     const { deps } = makeDeps({
       select: ['existing', 'auth_required'],

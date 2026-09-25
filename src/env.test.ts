@@ -12,7 +12,9 @@ import {
   parsePositiveUnits,
   requireAuthRequiredPotAttached,
   requirePotId,
+  relocateAppLink,
   resolveAppOrigin,
+  resolveLinkOrigin,
   resolvePaywallBase,
   resolvePotClientToken,
   resolvePotSpendMode,
@@ -21,8 +23,9 @@ import {
 } from './env.js'
 
 describe('resolvePaywallBase', () => {
-  it('defaults to production nest', () => {
+  it('defaults to the dev API', () => {
     assert.equal(resolvePaywallBase({}), DEFAULT_ZAPPI_API_URL)
+    assert.equal(DEFAULT_ZAPPI_API_URL, 'https://api-dev.zappi.money')
   })
 
   it('prefers ZAPPI_PAYWALL_BASE over ZAPPI_API_URL and strips trailing slashes', () => {
@@ -68,13 +71,49 @@ describe('resolveUnlockToken', () => {
 })
 
 describe('resolveAppOrigin + spark network + units', () => {
-  it('defaults app origin to production web', () => {
+  it('defaults app origin to the dev web app', () => {
     assert.equal(resolveAppOrigin({}), DEFAULT_ZAPPI_APP_ORIGIN)
+    assert.equal(DEFAULT_ZAPPI_APP_ORIGIN, 'https://dev.zappi.money')
   })
 
-  it('treats REGTEST as the only non-mainnet spark network', () => {
-    assert.equal(resolveSparkNetwork({}), 'MAINNET')
+  it('pairs links with the API and keeps an explicit app origin', () => {
+    assert.equal(resolveLinkOrigin({}), 'https://dev.zappi.money')
+    assert.equal(
+      resolveLinkOrigin({ ZAPPI_API_URL: 'https://api-dev.zappi.money' }),
+      'https://dev.zappi.money',
+    )
+    assert.equal(
+      resolveLinkOrigin({ ZAPPI_API_URL: 'https://api.zappi.money' }),
+      'https://zappi.money',
+    )
+    assert.equal(
+      resolveLinkOrigin({ ZAPPI_API_URL: 'http://127.0.0.1:3011' }),
+      'http://localhost:3000',
+    )
+    assert.equal(
+      resolveLinkOrigin({ ZAPPI_API_URL: 'http://localhost:3011' }),
+      'http://localhost:3000',
+    )
+    assert.equal(
+      resolveLinkOrigin({
+        ZAPPI_API_URL: 'https://api-dev.zappi.money',
+        ZAPPI_APP_ORIGIN: 'http://localhost:3000',
+      }),
+      'http://localhost:3000',
+    )
+    assert.equal(
+      relocateAppLink(
+        'https://zappi.money/?panel=pots&attach=req_1',
+        'https://dev.zappi.money',
+      ),
+      'https://dev.zappi.money/?panel=pots&attach=req_1',
+    )
+  })
+
+  it('defaults spark network to REGTEST and treats MAINNET as explicit', () => {
+    assert.equal(resolveSparkNetwork({}), 'REGTEST')
     assert.equal(resolveSparkNetwork({ SPARK_NETWORK: 'regtest' }), 'REGTEST')
+    assert.equal(resolveSparkNetwork({ SPARK_NETWORK: 'mainnet' }), 'MAINNET')
   })
 
   it('parses positive consume/pay units', () => {

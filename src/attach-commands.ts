@@ -1,7 +1,13 @@
 import { resolveZappiClient } from './client.js'
 import { parseArgs } from './args.js'
 import { promptOpenLink } from './wizard-io.js'
-import { type PotEnv } from './env.js'
+import {
+  hostHasPotClientToken,
+  POT_ALREADY_ATTACHED_ERROR,
+  relocateAppLink,
+  resolveLinkOrigin,
+  type PotEnv,
+} from './env.js'
 import {
   resolveAttachDeviceCode,
   writeAttachDeviceCode,
@@ -18,14 +24,55 @@ import {
 
 const NL = '\n'
 
+/**
+ * What the bot may say. The verification code is not in this string and is
+ * not in the approve URL. The human pastes it on the Zappi page, not in chat.
+ */
+export const ATTACH_CODE_HANDOFF =
+  'If the link does not open, paste the verification code on the Zappi pairing page. Do not paste that code into chat. Do not print or check the code.'
+
+/** Public pot id on the pairing link. Full UUID, or a hex prefix of at least 8 characters. */
+const POT_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const POT_ID_PREFIX = /^[0-9a-f]{8,32}$/i
+
+function publicPotId(value: string | undefined): string | null {
+  const id = value?.trim() ?? ''
+  if (POT_UUID.test(id) || POT_ID_PREFIX.test(id)) return id
+  return null
+}
+
 function jsonOut(result: unknown): string {
   return JSON.stringify(result, null, 2)
 }
 
-/** Public create fields only — never deviceCode. */
+/**
+ * Link the bot pastes. Names the pot. Omits the user code — the page
+ * loads that from the attach request. Never deviceCode or zpc_.
+ */
+export function botAttachApproveUrl(
+  approveUrl: string,
+  potId?: string | null,
+  appOrigin?: string | null,
+): string {
+  let url: URL
+  try {
+    url = new URL(approveUrl)
+  } catch {
+    return approveUrl
+  }
+  url.searchParams.delete('code')
+  const id = potId?.trim() ?? ''
+  if (POT_UUID.test(id) || POT_ID_PREFIX.test(id)) {
+    url.searchParams.set('pot', id)
+  }
+  if (appOrigin?.trim()) return relocateAppLink(url.toString(), appOrigin)
+  return url.toString()
+}
+
+/** Public create fields only — never deviceCode, never userCode. */
 function publicPending(pending: {
   requestId: string
-  userCode: string
   approveUrl: string
   expiresAt: string
   spendMode?: 'auth_required' | 'free' | null
@@ -33,7 +80,6 @@ function publicPending(pending: {
 }) {
   return {
     requestId: pending.requestId,
-    userCode: pending.userCode,
     approveUrl: pending.approveUrl,
     expiresAt: pending.expiresAt,
     ...(pending.spendMode !== undefined ? { spendMode: pending.spendMode } : {}),
@@ -85,22 +131,56 @@ export async function runPotAttach(
   env: PotEnv = process.env,
 ): Promise<string> {
   const { strings, booleans } = parseArgs(argv)
+  if (hostHasPotClientToken(env)) {
+    const result = {
+      ok: true as const,
+      command: 'pots attach' as const,
+      alreadyAttached: true as const,
+      message: POT_ALREADY_ATTACHED_ERROR,
+    }
+    if (mode === 'json') return jsonOut(result)
+    if (mode === 'plain') return POT_ALREADY_ATTACHED_ERROR
+    return [
+      heading('Pot already attached', mode),
+      infoLine(POT_ALREADY_ATTACHED_ERROR, mode),
+    ].join(NL)
+  }
   const client = await resolveZappiClient(env)
-  const body: { sparkAddress?: string; spendMode?: 'auth_required' | 'free'; label?: string } = {}
+  const spendMode = strings['spend-mode'] as 'auth_required' | 'free' | undefined
+  const requestedPotId = publicPotId(env.ZAPPI_POT_ID)
+  if (spendMode === 'auth_required' && !requestedPotId) {
+    throw new Error(
+      'Set ZAPPI_POT_ID before pots attach. The approve link must name that pot. Do not print a link without it.',
+    )
+  }
+  const body: {
+    sparkAddress?: string
+    spendMode?: 'auth_required' | 'free'
+    label?: string
+    potId?: string
+  } = {}
   if (strings['spark-address']) body.sparkAddress = strings['spark-address']
-  if (strings['spend-mode']) body.spendMode = strings['spend-mode'] as 'auth_required' | 'free'
+  if (spendMode) body.spendMode = spendMode
   if (strings.label) body.label = strings.label
+  if (requestedPotId) body.potId = requestedPotId
 
   const pending = await client.createPotAttach(body)
+  const approveUrl = botAttachApproveUrl(
+    pending.approveUrl,
+    requestedPotId,
+    resolveLinkOrigin(env),
+  )
+  const printable = { ...pending, approveUrl }
 
   if (pending.deviceCode?.trim()) {
     writeAttachDeviceCode(pending.requestId, pending.deviceCode, env)
   }
 
   // Open the approve URL in the browser unless --no-poll / non-interactive.
-  // Never put deviceCode in the human URL (Nest contract).
+  // The pasted link names the pot and does not include the user code.
   if (!booleans['no-poll'] && mode === 'pretty') {
-    await promptOpenLink(pending.approveUrl, {
+    process.stdout.write(`${ATTACH_CODE_HANDOFF}${NL}`)
+    await promptOpenLink(approveUrl, {
       headline: 'Approve this pot in Zappi:',
       openBrowser: true,
     }).catch(() => ({ action: 'skipped', auto: false }))
@@ -110,15 +190,19 @@ export async function runPotAttach(
     const result = {
       ok: true as const,
       command: 'pots attach' as const,
-      pending: publicPending(pending),
+      pending: publicPending(printable),
     }
-    if (mode === 'json') return jsonOut(result)
-    if (mode === 'plain') return `requestId: ${pending.requestId} approve: ${pending.approveUrl}`
+    if (mode === 'json') {
+      return jsonOut({ ...result, handoff: ATTACH_CODE_HANDOFF })
+    }
+    if (mode === 'plain') {
+      return `requestId: ${pending.requestId} approve: ${approveUrl}${NL}${ATTACH_CODE_HANDOFF}`
+    }
     return [
       heading('Pot attach pending', mode),
       kv('requestId', pending.requestId, mode),
-      kv('userCode', pending.userCode, mode),
-      kv('approve', pending.approveUrl, mode),
+      kv('approve', approveUrl, mode),
+      infoLine(ATTACH_CODE_HANDOFF, mode),
       ...(pending.deviceCode?.trim()
         ? [
             kv('deviceCode', '… (withheld; host secret)', mode),

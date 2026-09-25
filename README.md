@@ -80,14 +80,14 @@ With no flags and no `SPARK_NETWORK` / app-origin env, the same run then asks sp
 
 - Radio-circle menu: the selected row shows a **green ◉**, others a hollow `○`; **↑/↓ move**, ENTER confirms — *Generate a new pot* is the default. Digits (`1`/`2`) and `j`/`k` also work. (Set `NO_COLOR=1` to disable the green.)
 - **Spend mode** — Auth not required (`free`) vs Auth required (`auth_required`).
-- **Network** — MAINNET or REGTEST, only when `SPARK_NETWORK` is unset. It must match the app you register in. MAINNET is the first row. The CLI does not invent a network when that question is shown.
-- **App origin** — production `https://zappi.money`, staging `http://dev.zappi.money` (pair with `https://api-dev.zappi.money`), local `http://localhost:3000`, or a custom http(s) URL. Asked only when `ZAPPI_APP_ORIGIN`, `NEXT_PUBLIC_SITE_URL`, and `--origin` are all unset. Production is the first row.
+- **Network** — REGTEST or MAINNET, only when `SPARK_NETWORK` is unset. It must match the app you register in. REGTEST is the first row (the dev API). The CLI does not invent a network when that question is shown.
+- **App origin** — staging `https://dev.zappi.money` (pair with `https://api-dev.zappi.money`), production `https://zappi.money`, local `http://localhost:3000`, or a custom http(s) URL. Asked only when `ZAPPI_APP_ORIGIN`, `NEXT_PUBLIC_SITE_URL`, and `--origin` are all unset. Staging is the first row and the silent default.
 - Existing pot → paste the public pot address from your agent (validated for the network you chose; blank cancels).
 - **Label** — both modes. A name you type is used as-is. A blank answer asks you to confirm **auto `pot_<8-hex>`** or enter a custom name. Auto, or a custom name left blank, accepts `pot_<unique>`.
 - Key file prompt: blank uses `~/.zappi/…txt`. If you paste a **folder** (e.g. `~/Documents/zappi/packages`), the CLI writes the `.txt` **inside** that folder instead of crashing with `EISDIR`.
 - The browser step opens the origin you chose (ENTER / auto-open / `c` to copy). Ctrl+C quits cleanly.
 - Bare `propose` without a terminal (no TTY) prints flag usage instead of hanging.
-- Flags (`--generate`, `--address`, `--mode`, `--origin`, `--label`, …) are for CI. When those flags plus `SPARK_NETWORK` fully specify the run, nothing is prompted. A non-TTY flag run keeps the previous defaults (`free`, MAINNET, `https://zappi.money`) and does not hang.
+- Flags (`--generate`, `--address`, `--mode`, `--origin`, `--label`, …) are for CI. When those flags plus `SPARK_NETWORK` fully specify the run, nothing is prompted. A non-TTY flag run keeps the published defaults (`free`, REGTEST, `https://dev.zappi.money`, API `https://api-dev.zappi.money`) and does not hang.
 
 ## Flow (propose → fund → pay or request → consume)
 
@@ -108,12 +108,12 @@ Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest return
 | `ZAPPI_ATTACH_DEVICE_CODE` | Attach reclaim secret (RFC 8628 device_code) from `pots attach` create (host secret). Wins over `~/.zappi/attach-device-<requestId>.txt`. **Never print.** |
 | `ZAPPI_POT_SEED`     | Preferred pot spend key for free `pay` (host secret).           |
 | `ZAPPI_POT_KEY_FILE` | Fallback mode-`0600` key file if the seed env is unset.         |
-| `ZAPPI_API_URL`      | Nest origin. **Production default:** `https://api.zappi.money`. |
+| `ZAPPI_API_URL`      | Nest origin. **Default `https://api-dev.zappi.money`.** Local: `http://localhost:3011`. Production: `https://api.zappi.money`. |
 | `ZAPPI_PAYWALL_BASE` | Optional paywall origin override (wins over `ZAPPI_API_URL`).   |
 | `ZAPPI_UNLOCK_TOKEN` | Unlock bearer for `consume` (preferred over `--unlock-token`).  |
 | `ZAPPI_POT_SPEND_MODE` | Runtime spend mode. `auth_required` refuses `pay` and tells the agent to run `request`. Unset / `free` for agent-held pots. |
-| `ZAPPI_APP_ORIGIN`   | Web origin for `propose` links. **Default `https://zappi.money`.** Staging: `http://dev.zappi.money`. |
-| `SPARK_NETWORK`      | `MAINNET` (default) or `REGTEST`.                               |
+| `ZAPPI_APP_ORIGIN`   | Web origin for links the human opens. **Default `https://dev.zappi.money`.** Follows the API when unset. Local: `http://localhost:3000`. Production: `https://zappi.money`. |
+| `SPARK_NETWORK`      | `REGTEST` (default, matches the dev API) or `MAINNET`.          |
 | `ZAPPI_PROJECT_API_KEY` | Project API key for server-to-server wallet routes (`balance`, `pots`, `withdraw`, …). |
 | `ZAPPI_ACCESS_TOKEN`    | User access JWT. Wins over `zappi-cli login`. |
 | `ZAPPI_CREDENTIALS_FILE` | Override for the login file. Default `~/.zappi/credentials.json` (`0600`). |
@@ -124,21 +124,21 @@ Exact (`url_once`) resources stop after settle; use `unlockUrl` when nest return
 
 ## Staging dogfood
 
+Unset `ZAPPI_API_URL` and `ZAPPI_APP_ORIGIN` already use this pair. `http://dev.zappi.money` redirects to `https://dev.zappi.money`.
+
 ```bash
-export ZAPPI_API_URL=https://api-dev.zappi.money
-export ZAPPI_APP_ORIGIN=http://dev.zappi.money   # must pair with staging API
 export ZAPPI_POT_ID='<pot id>'
 # set ZAPPI_POT_SEED / ZAPPI_POT_CLIENT_TOKEN / ZAPPI_UNLOCK_TOKEN as host secrets — never echo / never commit
 
-npx @zappimoney/zappi-cli propose --generate --label Staging --mode free --origin http://dev.zappi.money
-# SPARK_NETWORK unset on a terminal: the wizard still asks MAINNET vs REGTEST before generating
+npx @zappimoney/zappi-cli propose --generate --label Staging --mode free
+# SPARK_NETWORK unset on a terminal: the wizard still asks REGTEST vs MAINNET before generating
 # human registers + funds in the staging app
 zappi-cli pay '<paidResourceId>'
 # metered: pay already consumed one unit; more:
 zappi-cli consume '<paidResourceId>' --units 1
 ```
 
-Production paywall is the default (`https://api.zappi.money`).
+Local nest is explicit: `ZAPPI_API_URL=http://localhost:3011` and `ZAPPI_APP_ORIGIN=http://localhost:3000`. Production is `ZAPPI_API_URL=https://api.zappi.money` and `ZAPPI_APP_ORIGIN=https://zappi.money`. Set those two together.
 
 ## CI vs live dogfood
 
@@ -164,7 +164,7 @@ npm run build
 
 ## Pot attach (device code / 1-203)
 
-`zappi-cli pots attach` creates a pending pairing. Nest returns `deviceCode` **once** to the agent host and an `approveUrl` that carries only `requestId` + `userCode` for the human.
+`zappi-cli pots attach` creates a pending pairing. Nest returns `deviceCode` **once** to the agent host and an `approveUrl` that carries only the request id. The verification code is not in that response and not in the URL.
 
 - **Host secret:** the CLI writes `deviceCode` to `~/.zappi/attach-device-<requestId>.txt` (mode `0600`). You can also set `ZAPPI_ATTACH_DEVICE_CODE` for reclaim. **Never echo / never commit.**
 - **Human:** open/print `approveUrl` only.
@@ -178,7 +178,7 @@ Reclaim path locked to Nest tip `df7aafc` / zappi-nest#82: `POST …/pots/attach
 ## Hard rules
 
 - **Never** print, log, `echo`, or `set -x` `ZAPPI_POT_SEED`, `ZAPPI_POT_CLIENT_TOKEN`, `ZAPPI_ATTACH_DEVICE_CODE`, the key file, attach-device / pot-client files under `~/.zappi/`, or `ZAPPI_UNLOCK_TOKEN`.
-- **Never** ask for `ZAPPI_ACCESS_TOKEN`, `zappi_access`, a `zpc_` paste, the pot seed, or a recovery phrase. Pair with `pots attach` (URL + user code). Paste the `request` approve URL for a send.
+- **Never** ask for `ZAPPI_ACCESS_TOKEN`, `zappi_access`, a `zpc_` paste, the pot seed, a verification code, or a recovery phrase. Pair with `pots attach` (URL only). Paste the `request` approve URL for a send.
 - Until an auth-required pot is attached, `request`, `pay`, `consume`, and `invite` fail closed. The only bot command is `pots attach`.
 - **Never** pass a recovery phrase as `--address` or put one in a deep link.
 - Nest never holds the pot key. Cap v1 is an empty pot.

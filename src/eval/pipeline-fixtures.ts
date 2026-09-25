@@ -214,7 +214,7 @@ export const PIPELINE_FIXTURES: PipelineFixture[] = [
       'In Zappi, the human only registers and funds.',
       'Host setup: propose — Create or register a pot on this host (wizard).',
       'Agent spend after the pot is funded — the agent runs pay and consume, not the human launch.',
-      'ZAPPI_APP_ORIGIN default https://zappi.money. ZAPPI_API_URL default https://api.zappi.money.',
+      'ZAPPI_APP_ORIGIN default https://dev.zappi.money. ZAPPI_API_URL default https://api-dev.zappi.money.',
       'The wizard opens the Zappi register link in your browser on both spend modes.',
     ].join('\n'),
     expect: {
@@ -237,7 +237,7 @@ export const PIPELINE_FIXTURES: PipelineFixture[] = [
       'Commands: propose, pay, consume — run any of these to launch your agent.',
       'zappi-cli pay <resourceId> is how you start.',
       'Install npx skills add on your laptop.',
-      'Propose register links default to staging web http://dev.zappi.money. Pay uses production API https://api.zappi.money. It does not say to set both together.',
+      'Propose register links default to staging web https://dev.zappi.money. Pay uses production API https://api.zappi.money. It does not say to set both together.',
       'The wizard opens the browser. Auth not required skips the browser.',
       'Paste a spark1 Bech32m spark address.',
     ].join('\n'),

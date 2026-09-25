@@ -19,7 +19,7 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 describe('qualifyInviteUrl', () => {
-  it('keeps an absolute Nest URL and qualifies a path with the app origin', () => {
+  it('moves an absolute Nest URL onto the app origin and qualifies a path', () => {
     assert.equal(
       qualifyInviteUrl(
         'https://zappi.money/invite/ABCD2345',
@@ -27,6 +27,14 @@ describe('qualifyInviteUrl', () => {
         'https://zappi.money',
       ),
       'https://zappi.money/invite/ABCD2345',
+    )
+    assert.equal(
+      qualifyInviteUrl(
+        'https://zappi.money/invite/ABCD2345',
+        '/invite/ABCD2345',
+        'http://localhost:3000',
+      ),
+      'http://localhost:3000/invite/ABCD2345',
     )
     assert.equal(
       qualifyInviteUrl('/invite/ABCD2345', '/invite/ABCD2345', 'https://zappi.money'),

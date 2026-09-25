@@ -14,7 +14,8 @@ import {
 import { generateMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import {
-  DEFAULT_ZAPPI_APP_ORIGIN,
+  LOCAL_ZAPPI_APP_ORIGIN,
+  PRODUCTION_ZAPPI_APP_ORIGIN,
   STAGING_ZAPPI_APP_ORIGIN,
   resolveAppOrigin,
   resolveSparkNetwork,
@@ -51,17 +52,17 @@ export const AUTH_MODE_OPTIONS: SelectOption[] = [
 
 const AUTH_MODE_PROMPT = 'How should this pot spend?'
 
-/** Asked only when `SPARK_NETWORK` is unset. MAINNET is the first row. */
+/** Asked only when `SPARK_NETWORK` is unset. REGTEST is first because the default API is staging. */
 export const NETWORK_PROMPT =
   'Which Spark network matches the Zappi app you will register in?'
 
 export const NETWORK_OPTIONS: SelectOption[] = [
-  { label: 'MAINNET', value: 'MAINNET' },
   { label: 'REGTEST', value: 'REGTEST' },
+  { label: 'MAINNET', value: 'MAINNET' },
 ]
 
-/** Local web. Not a silent default — the origin menu has to be confirmed. */
-export const LOCAL_APP_ORIGIN = 'http://localhost:3000'
+/** Local web. Chosen only when the human picks it or sets `ZAPPI_APP_ORIGIN`. */
+export const LOCAL_APP_ORIGIN = LOCAL_ZAPPI_APP_ORIGIN
 
 /** Asked only when app-origin env is unset and `--origin` was not passed. */
 export const ORIGIN_PROMPT = 'Which Zappi app should the register link open?'
@@ -69,11 +70,11 @@ export const ORIGIN_PROMPT = 'Which Zappi app should the register link open?'
 export const ORIGIN_CUSTOM_VALUE = 'custom'
 
 export const ORIGIN_OPTIONS: SelectOption[] = [
-  { label: 'Production — https://zappi.money', value: DEFAULT_ZAPPI_APP_ORIGIN },
   {
-    label: 'Staging — http://dev.zappi.money (pair with api-dev)',
+    label: 'Staging — https://dev.zappi.money (pair with api-dev)',
     value: STAGING_ZAPPI_APP_ORIGIN,
   },
+  { label: 'Production — https://zappi.money', value: PRODUCTION_ZAPPI_APP_ORIGIN },
   { label: 'Local — http://localhost:3000', value: LOCAL_APP_ORIGIN },
   { label: 'Custom URL', value: ORIGIN_CUSTOM_VALUE },
 ]
@@ -194,7 +195,7 @@ export function parseHttpOrigin(raw: string): string | null {
 }
 
 const ORIGIN_GUIDANCE =
-  'Choose a Zappi app origin: local (http://localhost:3000), staging (http://dev.zappi.money), production (https://zappi.money), or a custom http(s) URL.'
+  'Choose a Zappi app origin: staging (https://dev.zappi.money), production (https://zappi.money), local (http://localhost:3000), or a custom http(s) URL.'
 
 async function resolveWizardNetwork(
   env: PotEnvSubset,
@@ -414,8 +415,7 @@ export async function runProposeWizard(
       'Approve in Zappi (sign in / authenticate):',
       href,
       '',
-      'Store the pot key as ZAPPI_POT_SEED or a mode 0600 file.',
-      'Never print, email, or paste the pot key into chat or this link.',
+      'The key is created in Zappi on your device when you approve. This host does not store it.',
     )
     return {
       mode,
@@ -428,6 +428,12 @@ export async function runProposeWizard(
       openResult,
       output: lines.join('\n'),
     }
+  }
+
+  if (spendMode === 'auth_required') {
+    throw new Error(
+      'Approval-required pots do not get a key on this host. Create the pot in Zappi, then run `zappi-cli pots attach --spend-mode auth_required`. Do not generate or store a pot key.',
+    )
   }
 
   // generate mode ---------------------------------------------------------
@@ -469,47 +475,15 @@ export async function runProposeWizard(
     headline: spendMode === 'free' ? REGISTER_HEADLINE : 'Approve / authenticate this pot at:',
     openBrowser: true,
   })
-  if (spendMode === 'free') {
-    const output = formatFreeSuccess({
-      sparkAddress,
-      label,
-      href,
-      network,
-      origin,
-      keyFile,
-      openResult,
-    })
-    return {
-      mode,
-      spendMode,
-      label,
-      network,
-      origin,
-      sparkAddress,
-      keyFile,
-      href,
-      openResult,
-      output,
-    }
-  }
-
-  const lines: string[] = [
-    `Pot address: ${sparkAddress}`,
-    'Spend mode: auth required',
-    `Network: ${network}`,
-    `App: ${origin}`,
-    `Key file written (mode 0600): ${keyFile}`,
-    'Set ZAPPI_POT_SEED as a host secret. Do not cat or print the file.',
-    'Approve in Zappi (sign in / authenticate):',
+  const output = formatFreeSuccess({
+    sparkAddress,
+    label,
     href,
-    '',
-    'Never print, email, or paste the pot key into chat or this link.',
-  ]
-  if (openResult.action === 'copied') {
-    lines.push('Link copied to clipboard.')
-  } else if (openResult.action === 'skipped') {
-    lines.push('Could not copy — open the link above manually.')
-  }
+    network,
+    origin,
+    keyFile,
+    openResult,
+  })
   return {
     mode,
     spendMode,
@@ -520,6 +494,6 @@ export async function runProposeWizard(
     keyFile,
     href,
     openResult,
-    output: lines.join('\n'),
+    output,
   }
 }

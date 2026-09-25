@@ -1,5 +1,6 @@
 import pc from 'picocolors'
 import ora, { type Ora } from 'ora'
+import { DEFAULT_ZAPPI_API_URL, DEFAULT_ZAPPI_APP_ORIGIN } from './env.js'
 
 export type OutputMode = 'pretty' | 'plain' | 'json'
 
@@ -155,15 +156,18 @@ export function renderHelp(mode: OutputMode = 'pretty'): string {
     `  ${c.dim('ZAPPI_POT_CLIENT_TOKEN')}  zpc_ for request (host secret — never echo)`,
     `  ${c.dim('ZAPPI_POT_SEED')}       Pot key for free pay (host secret — never echo)`,
     `  ${c.dim('ZAPPI_POT_KEY_FILE')}   Fallback mode-0600 key file`,
-    `  ${c.dim('ZAPPI_API_URL')}        Nest origin (default https://api.zappi.money)`,
+    `  ${c.dim('ZAPPI_API_URL')}        Nest origin (default ${DEFAULT_ZAPPI_API_URL})`,
     `  ${c.dim('ZAPPI_UNLOCK_TOKEN')}   Unlock bearer for consume`,
     `  ${c.dim('ZAPPI_POT_SPEND_MODE')}  free (default) or auth_required`,
-    `  ${c.dim('ZAPPI_APP_ORIGIN')}     Web origin (default https://zappi.money)`,
+    `  ${c.dim('ZAPPI_APP_ORIGIN')}     Web origin (default ${DEFAULT_ZAPPI_APP_ORIGIN})`,
+    `  ${c.dim('SPARK_NETWORK')}        REGTEST (default) or MAINNET`,
     `  ${c.dim('ZAPPI_PROJECT_API_KEY')}  Project key for server-to-server wallet routes`,
     `  ${c.dim('ZAPPI_ACCESS_TOKEN')}    User JWT (overrides zappi-cli login)`,
     `  ${c.dim('ZAPPI_COOKIE')}         Optional cookie header forwarded for session auth`,
     '',
-    c.dim('Staging dogfood: set ZAPPI_API_URL and ZAPPI_APP_ORIGIN together.'),
+    c.dim(
+      'Defaults pair https://api-dev.zappi.money with https://dev.zappi.money. Set ZAPPI_API_URL and ZAPPI_APP_ORIGIN together for localhost or production.',
+    ),
     c.dim('Never print or log pot keys, pot client tokens, or unlock tokens.'),
   ]
   return lines.join(nl)

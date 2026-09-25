@@ -1,6 +1,7 @@
 import {
+  relocateAppLink,
   requirePotId,
-  resolveAppOrigin,
+  resolveLinkOrigin,
   resolvePaywallBase,
   resolvePotClientToken,
   type PotEnv,
@@ -178,7 +179,7 @@ export async function createSpendRequestResult(
   const approveUrl = bareApproveUrl(
     typeof record.approveUrl === 'string' ? record.approveUrl : undefined,
     requestId,
-    resolveAppOrigin(env),
+    resolveLinkOrigin(env),
   )
   assertPrintableUrl(approveUrl, clientToken)
 
@@ -254,7 +255,7 @@ function bareApproveUrl(
   if (!spend || looksLikeMnemonicPhrase(spend)) return built
   if (spend !== requestId) url.searchParams.set('spend', requestId)
   url.searchParams.delete('code')
-  return url.toString()
+  return relocateAppLink(url.toString(), origin)
 }
 
 function assertPrintableUrl(approveUrl: string, clientToken: string): void {

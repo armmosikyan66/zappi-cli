@@ -86,7 +86,7 @@ export function hybridEvalQuestions() {
       'Does `transcript` describe propose web origin and pay API default pointing at different environments (staging vs production) without saying to set both together?',
       {
         true:
-          'Defaults mix staging web (for example http://dev.zappi.money) with production API (https://api.zappi.money), or the mismatch is unstated.',
+          'Defaults mix staging web (for example https://dev.zappi.money) with production API (https://api.zappi.money), or the mismatch is unstated.',
         false:
           'Defaults match (both production or both staging), staging is an explicit paired override, or defaults are not discussed.',
       },

@@ -1,4 +1,11 @@
-import { requireAuthRequiredPotAttached, requirePotId, resolveAppOrigin, resolvePaywallBase, type PotEnv } from './env.js'
+import {
+  relocateAppLink,
+  requireAuthRequiredPotAttached,
+  requirePotId,
+  resolveLinkOrigin,
+  resolvePaywallBase,
+  type PotEnv,
+} from './env.js'
 import { paywallUrl } from './paywall-http.js'
 
 export const INVITE_DISABLED = 'INVITE_AFFILIATE_DISABLED'
@@ -47,7 +54,7 @@ export function qualifyInviteUrl(
   appOrigin: string,
 ): string {
   const raw = inviteUrl?.trim() ?? ''
-  if (/^https?:\/\//i.test(raw)) return raw
+  if (/^https?:\/\//i.test(raw)) return relocateAppLink(raw, appOrigin)
   const pathSource = (sharePath?.trim() || raw).trim()
   if (!pathSource.startsWith('/invite/')) {
     throw new InviteLinkError(
@@ -138,7 +145,7 @@ export async function runInviteLink(
   return fetchPotInviteLink({
     potId: requirePotId(env),
     baseUrl: resolvePaywallBase(env),
-    appOrigin: resolveAppOrigin(env),
+    appOrigin: resolveLinkOrigin(env),
     fetch: fetchImpl,
   })
 }

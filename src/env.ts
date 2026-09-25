@@ -35,12 +35,19 @@ export interface PotEnv {
 
 export type PotSpendModeEnv = 'free' | 'auth_required'
 
-export const DEFAULT_ZAPPI_API_URL = 'https://api.zappi.money'
+export const PRODUCTION_ZAPPI_API_URL = 'https://api.zappi.money'
 export const STAGING_ZAPPI_API_URL = 'https://api-dev.zappi.money'
-/** Production web. Staging dogfood must set this with `ZAPPI_API_URL`. */
-export const DEFAULT_ZAPPI_APP_ORIGIN = 'https://zappi.money'
-/** Staging web — pair with `STAGING_ZAPPI_API_URL`. */
-export const STAGING_ZAPPI_APP_ORIGIN = 'http://dev.zappi.money'
+/** Local nest (`server` PORT). Only when `ZAPPI_API_URL` is set to it. */
+export const LOCAL_ZAPPI_API_URL = 'http://localhost:3011'
+/** Published default. Unset env talks to the dev API, not this machine. */
+export const DEFAULT_ZAPPI_API_URL = STAGING_ZAPPI_API_URL
+/** Production web. Set `ZAPPI_API_URL` and `ZAPPI_APP_ORIGIN` together. */
+export const PRODUCTION_ZAPPI_APP_ORIGIN = 'https://zappi.money'
+/** Staging web. `http://dev.zappi.money` redirects here. Pair with `STAGING_ZAPPI_API_URL`. */
+export const STAGING_ZAPPI_APP_ORIGIN = 'https://dev.zappi.money'
+/** Local Next app. Only when the API host is local, or `ZAPPI_APP_ORIGIN` says so. */
+export const LOCAL_ZAPPI_APP_ORIGIN = 'http://localhost:3000'
+export const DEFAULT_ZAPPI_APP_ORIGIN = STAGING_ZAPPI_APP_ORIGIN
 
 export function resolvePaywallBase(env: PotEnv = process.env): string {
   const base =
@@ -55,6 +62,57 @@ export function resolveAppOrigin(env: PotEnv = process.env): string {
     env.ZAPPI_APP_ORIGIN?.trim() ||
     env.NEXT_PUBLIC_SITE_URL?.trim() ||
     DEFAULT_ZAPPI_APP_ORIGIN
+  return safeOrigin(origin)
+}
+
+/**
+ * Origin for links the human opens. An explicit app origin wins. Otherwise
+ * the link host follows the API: local nest → localhost, production API →
+ * zappi.money, and the dev API (the unset default) → dev.zappi.money.
+ */
+export function resolveLinkOrigin(env: PotEnv = process.env): string {
+  if (env.ZAPPI_APP_ORIGIN?.trim() || env.NEXT_PUBLIC_SITE_URL?.trim()) {
+    return resolveAppOrigin(env)
+  }
+  return appOriginForApi(resolvePaywallBase(env))
+}
+
+function appOriginForApi(apiBase: string): string {
+  let host = ''
+  try {
+    host = new URL(apiBase).hostname
+  } catch {
+    return DEFAULT_ZAPPI_APP_ORIGIN
+  }
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+    return LOCAL_ZAPPI_APP_ORIGIN
+  }
+  if (host === 'api.zappi.money') return PRODUCTION_ZAPPI_APP_ORIGIN
+  return STAGING_ZAPPI_APP_ORIGIN
+}
+
+/** Keep the path and query. Replace the host with the app the human is using. */
+export function relocateAppLink(href: string, appOrigin: string): string {
+  let url: URL
+  try {
+    url = new URL(href)
+  } catch {
+    return href
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return href
+  const origin = safeOrigin(appOrigin)
+  let target: URL
+  try {
+    target = new URL(origin)
+  } catch {
+    return href
+  }
+  url.protocol = target.protocol
+  url.host = target.host
+  return url.toString()
+}
+
+function safeOrigin(origin: string): string {
   try {
     const url = new URL(origin)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
@@ -70,7 +128,8 @@ export function resolveSparkNetwork(
   env: PotEnv = process.env,
 ): 'MAINNET' | 'REGTEST' {
   const raw = env.SPARK_NETWORK?.trim().toUpperCase()
-  return raw === 'REGTEST' ? 'REGTEST' : 'MAINNET'
+  // Unset matches the dev API (REGTEST). Set MAINNET explicitly for production.
+  return raw === 'MAINNET' ? 'MAINNET' : 'REGTEST'
 }
 
 export function resolvePotSpendMode(
@@ -83,9 +142,24 @@ export function resolvePotSpendMode(
 export const AUTH_REQUIRED_PAY_ERROR =
   'This pot is auth_required. Do not free-sign with pay. Run `zappi-cli request --amount-cents <cents> --to <spark-address>` and paste the approve URL. Do not ask for a session token, the pot seed, or a recovery phrase.'
 
+/** This host already holds a pot client token. Do not mint another pairing link. */
+export const POT_ALREADY_ATTACHED_ERROR =
+  'This host is already attached to this pot. Do not create another pairing link.'
+
+export function hostHasPotClientToken(env: PotEnv = process.env): boolean {
+  const fromEnv = env.ZAPPI_POT_CLIENT_TOKEN?.trim()
+  if (
+    fromEnv?.startsWith('zpc_') &&
+    !(fromEnv.startsWith('<') && fromEnv.endsWith('>'))
+  ) {
+    return true
+  }
+  return Boolean(readStoredPotClientToken(env))
+}
+
 /** Fail closed: no attach → no request. Do not ask the human to paste zpc_. */
 export const POT_NOT_ATTACHED_ERROR =
-  'This pot is not attached to the account. The bot cannot request, pay, consume, or invite until pairing is approved. Run `zappi-cli pots attach --spend-mode auth_required` and paste the pairing URL and user code. Do not ask for a zpc_ token, session token, pot seed, or recovery phrase.'
+  'This pot is not attached to the account. The bot cannot request, pay, consume, or invite until pairing is approved. Run `zappi-cli pots attach --spend-mode auth_required` and paste only the pairing URL. If the link does not open, they paste the verification code on the Zappi pairing page — not in chat. Do not print or check a verification code. Do not ask for a zpc_ token, session token, pot seed, or recovery phrase.'
 
 /**
  * Pot client token for `request`. Env wins, else `~/.zappi/pot-client-*.txt`
