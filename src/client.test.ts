@@ -51,3 +51,48 @@ describe('hasZappiCredentials', () => {
     assert.equal(hasZappiCredentials({ ZAPPI_ACCESS_TOKEN: 'jwt' }), true)
   })
 })
+
+describe('resolveZappiClient apiUrl mismatch', () => {
+  it('names the fix and forbids pot-client bypass', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const { resolveZappiClient } = await import('./client.js')
+    const dir = mkdtempSync(join(tmpdir(), 'zappi-cred-'))
+    try {
+      writeFileSync(
+        join(dir, 'credentials.json'),
+        JSON.stringify({
+          version: 1,
+          apiUrl: 'http://127.0.0.1:3011',
+          accessToken: 'jwt',
+          refreshToken: 'refresh',
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          email: 'a@b.c',
+        }),
+        { mode: 0o600 },
+      )
+      await assert.rejects(
+        () =>
+          resolveZappiClient({
+            ZAPPI_CREDENTIALS_FILE: join(dir, 'credentials.json'),
+            ZAPPI_API_URL: 'https://api-dev.zappi.money',
+          }),
+        (err: unknown) => {
+          assert.ok(err instanceof Error)
+          assert.match(err.message, /http:\/\/127\.0\.0\.1:3011/)
+          assert.match(err.message, /api-dev\.zappi\.money/)
+          assert.match(err.message, /zappi-cli login/)
+          assert.match(err.message, /credentials\.json/)
+          assert.match(err.message, /Do not bypass/)
+          assert.match(err.message, /pot-client/)
+          assert.match(err.message, /zpc_/)
+          assert.doesNotMatch(err.message, /jwt/)
+          return true
+        },
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})

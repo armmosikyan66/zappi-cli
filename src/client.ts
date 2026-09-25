@@ -66,7 +66,9 @@ export async function resolveZappiClient(
   const apiUrl = resolvePaywallBase(env)
   if (stored.apiUrl !== apiUrl) {
     throw new Error(
-      `Saved login is for ${stored.apiUrl}. This command uses ${apiUrl}. Run \`zappi-cli login\` again.`,
+      `Saved login is for ${stored.apiUrl}. This command uses ${apiUrl}. ` +
+        `Fix: run \`zappi-cli login\` against the intended API, or remove/logout the stale ~/.zappi/credentials.json. ` +
+        `Do not bypass — do not read pot-client files or invent fetch/curl with a zpc_ token.`,
     )
   }
   const fresh = credentialsStillValid(stored)
