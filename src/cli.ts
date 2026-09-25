@@ -20,7 +20,7 @@ import {
   runPotSpendApprovals,
 } from './pots-commands.js'
 import { runPotAttach, runPotAttachStatus } from './attach-commands.js'
-import { runLogin, runLogout, runWhoami } from './login-commands.js'
+import { runLogin, runLogout, runWhoami, runDoctor } from './login-commands.js'
 import { runDepositOptions, runDepositAddress } from './deposit-commands.js'
 import {
   runWithdrawOptions,
@@ -259,6 +259,10 @@ export async function runCli(
 
   if (command === 'whoami') {
     return runWhoami(rest, mode)
+  }
+
+  if (command === 'doctor') {
+    return runDoctor(rest, mode)
   }
 
   /* ----------------------------- wallet routes ----------------------------- */

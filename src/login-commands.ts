@@ -7,7 +7,7 @@ import {
   writeCliCredentials,
   type CliCredentials,
 } from './credentials.js'
-import { relocateAppLink, resolveLinkOrigin, resolvePaywallBase, type PotEnv } from './env.js'
+import { relocateAppLink, resolveLinkOrigin, resolvePaywallBase, hostHasPotClientToken, type PotEnv } from './env.js'
 import { openUrl } from './wizard-io.js'
 
 const NL = '\n'
@@ -181,19 +181,85 @@ export async function runWhoami(
   }
   const email = body?.user?.email ?? stored?.email ?? ''
   const username = body?.user?.username ?? ''
+  const resolvedApiUrl = resolvePaywallBase(env)
+  const savedApiUrl = stored?.apiUrl ?? null
+  const apiUrlMatch =
+    savedApiUrl == null
+      ? null
+      : savedApiUrl.replace(/\/+$/, '') === resolvedApiUrl.replace(/\/+$/, '')
   const result = {
     ok: true as const,
     command: 'whoami' as const,
     email: email || null,
     username: username || null,
+    resolvedApiUrl,
+    savedApiUrl,
+    apiUrlMatch,
   }
   if (mode === 'json') return JSON.stringify(result, null, 2)
   return [
     heading('Account', mode),
     ...(email ? [kv('email', email, mode)] : []),
     ...(username ? [kv('username', username, mode)] : []),
+    kv('resolvedApiUrl', resolvedApiUrl, mode),
+    kv('savedApiUrl', savedApiUrl ?? '(none)', mode),
+    kv(
+      'apiUrlMatch',
+      apiUrlMatch == null ? 'n/a' : apiUrlMatch ? 'yes' : 'NO',
+      mode,
+    ),
   ].join(NL)
 }
+
+
+/** `zappi-cli doctor` — saved login apiUrl vs resolved paywall base (no secrets). */
+export async function runDoctor(
+  _argv: string[],
+  mode: OutputMode,
+  env: PotEnv = process.env,
+): Promise<string> {
+  const resolvedApiUrl = resolvePaywallBase(env)
+  const stored = readCliCredentials(env)
+  const savedApiUrl = stored?.apiUrl ?? null
+  const match =
+    savedApiUrl == null ? null : savedApiUrl.replace(/\/+$/, '') === resolvedApiUrl.replace(/\/+$/, '')
+  const hasPotClient = hostHasPotClientToken(env)
+  const hasEnvLogin = Boolean(env.ZAPPI_ACCESS_TOKEN?.trim() || env.ZAPPI_PROJECT_API_KEY?.trim())
+  const result = {
+    ok: true as const,
+    command: 'doctor' as const,
+    resolvedApiUrl,
+    savedApiUrl,
+    apiUrlMatch: match,
+    hasSavedLogin: Boolean(stored),
+    hasEnvLogin,
+    hasPotClientToken: hasPotClient,
+  }
+  if (mode === 'json') return JSON.stringify(result, null, 2)
+  const lines = [
+    heading('Doctor', mode),
+    kv('resolvedApiUrl', resolvedApiUrl, mode),
+    kv('savedApiUrl', savedApiUrl ?? '(none)', mode),
+    kv(
+      'apiUrlMatch',
+      match == null ? 'n/a (no saved login)' : match ? 'yes' : 'NO — run zappi-cli login or logout stale credentials',
+      mode,
+    ),
+    kv('hasSavedLogin', stored ? 'yes' : 'no', mode),
+    kv('hasEnvLogin', hasEnvLogin ? 'yes' : 'no', mode),
+    kv('hasPotClientToken', hasPotClient ? 'yes' : 'no', mode),
+  ]
+  if (match === false) {
+    lines.push(
+      infoLine(
+        'Do not bypass a mismatch: do not read pot-client files or invent fetch/curl with zpc_.',
+        mode,
+      ),
+    )
+  }
+  return lines.join(NL)
+}
+
 
 async function pollUntilApproved(input: {
   fetchImpl: typeof fetch

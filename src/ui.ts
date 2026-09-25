@@ -147,6 +147,8 @@ export function renderHelp(mode: OutputMode = 'pretty'): string {
     `  ${c.dim('zappi-cli invite --json')}`,
     `  ${c.dim('zappi-cli pay <resourceId> --json')}`,
     `  ${c.dim('zappi-cli balance --json')}`,
+    `  ${c.dim('zappi-cli doctor --json')}`,
+    `  ${c.dim('zappi-cli whoami --json')}`,
     `  ${c.dim('zappi-cli pots --spend-mode free')}`,
     `  ${c.dim('zappi-cli withdraw estimate --asset USDC --network solana --address 0x... --amount 100')}`,
     `  ${c.dim('zappi-cli send --to @alice --amount-cents 100')}`,
