@@ -50,7 +50,7 @@ export async function runPotsList(
   const lines = [heading('Pots', mode)]
   for (const p of pots) {
     lines.push(
-      `${successLine(p.label ?? p.id, mode)} ${kv('address', p.sparkAddress, mode)} ${kv('spend', p.spendMode, mode)} ${kv('status', p.status, mode)}`,
+      `${successLine(p.label ?? p.id, mode)} ${kv('address', p.sparkAddress ?? '(pending)', mode)} ${kv('spend', p.spendMode, mode)} ${kv('status', p.status, mode)}`,
     )
   }
   return lines.join(NL)
@@ -75,12 +75,12 @@ export async function runPotRegister(
   const result = { ok: true as const, command: 'pots register' as const, pot }
   if (mode === 'json') return jsonOut(result)
   if (mode === 'plain') {
-    return [`id: ${pot.id}`, `address: ${pot.sparkAddress}`, `spend: ${pot.spendMode}`].join(NL)
+    return [`id: ${pot.id}`, `address: ${pot.sparkAddress ?? '-'}`, `spend: ${pot.spendMode}`].join(NL)
   }
   return [
     heading('Pot registered', mode),
     kv('id', pot.id, mode),
-    kv('address', pot.sparkAddress, mode),
+    kv('address', pot.sparkAddress ?? '-', mode),
     kv('spend', pot.spendMode, mode),
   ].join(NL)
 }

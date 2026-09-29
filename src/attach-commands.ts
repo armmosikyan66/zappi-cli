@@ -87,7 +87,7 @@ function publicPending(pending: {
   }
 }
 
-async function reclaimIfPossible(
+export async function reclaimIfPossible(
   client: Awaited<ReturnType<typeof resolveZappiClient>>,
   requestId: string,
   env: PotEnv,

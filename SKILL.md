@@ -1,6 +1,6 @@
 ---
 name: zappi-agent-pot
-description: Spend a prepaid Zappi pot to unlock a PaidResource, or create an auth-required spend ticket and paste the approve URL. Install zappi-cli. Never echo the pot key. Until an auth-required pot is attached, the bot can only run pots attach (pairing URL only — do not print the user code). Never ask for a zpc_ paste.
+description: Spend a prepaid Zappi pot to unlock a PaidResource, or create an auth-required spend ticket and paste the approve URL. Install zappi-cli. Never echo the pot key. Until an auth-required pot is attached, the bot can only run pots attach (pairing URL only — do not print the user code). Never ask for a zpc_ paste. For an app-created addressless free pot, run pots bind <potId> — the bot generates and stores the key as a host secret and prints only the pair URL.
 ---
 
 # Zappi agent pot (buyer)
@@ -63,6 +63,23 @@ zappi-cli consume <paidResourceId>
 ```
 
 Do **not** invent a chain from an address — `zappi-cli pay` reads 402 `accepts[0].network` + `asset` and only pays `spark` / `USDB`.
+
+## Pot-first free pot (app creates the pot, bot generates the key)
+
+When the human made a **free** pot in the Zappi app *without* a key (addressless, `pending`) and pastes the `npx` one-liner with that `potId`:
+
+```bash
+npx @zappimoney/zappi-cli pots bind <potId>
+```
+
+This host generates the BIP-39 key, stores it as a **host secret** (`~/.zappi/pot-*.txt` / `ZAPPI_POT_SEED`), and pairs with the named pot through the device-code attach flow. Nest never sees the mnemonic. The human approves the pair link in Zappi; nest binds this host's `sparkAddress` onto the pot (`pending` → `active`).
+
+- The command first calls the public `preview` to confirm the pot exists, is `free`, and is `pending` (addressless). It **fails closed** before generating a key if not.
+- It prints **one pairing URL only** — never the mnemonic, never the user code, never `zpc_`. Pretty mode opens the browser and polls; `--no-poll` prints the request id + approve URL.
+- After approval it reclaims `zpc_` itself. Then set `ZAPPI_POT_ID` and `ZAPPI_POT_SEED` (or `ZAPPI_POT_KEY_FILE`) as host secrets and proceed as a normal free pot (`pay` / `consume`).
+- If this host already holds a pot client token, `pots bind` refuses — set `ZAPPI_POT_ID` and use the existing pot instead.
+
+`pots bind` is the **only** command for the pot-first flow. Do not run `propose` (the pot already exists), do not run `pots attach` with a generated address, and do not ask the human for a seed or `zpc_`.
 
 ## Auth-required pot (human approves each spend)
 

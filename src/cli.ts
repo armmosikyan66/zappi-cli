@@ -20,6 +20,7 @@ import {
   runPotSpendApprovals,
 } from './pots-commands.js'
 import { runPotAttach, runPotAttachStatus } from './attach-commands.js'
+import { runPotBind } from './bind-commands.js'
 import { runLogin, runLogout, runWhoami, runDoctor } from './login-commands.js'
 import { runDepositOptions, runDepositAddress } from './deposit-commands.js'
 import {
@@ -324,8 +325,9 @@ export async function runCli(
     if (sub === 'spend-approvals') return runPotSpendApprovals(subRest, mode)
     if (sub === 'attach') return runPotAttach(subRest, mode)
     if (sub === 'attach-status') return runPotAttachStatus(subRest, mode)
+    if (sub === 'bind') return runPotBind(subRest, mode)
     throw new Error(
-      `Usage: zappi-cli pots <list|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
+      `Usage: zappi-cli pots <list|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status|bind> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
     )
   }
 

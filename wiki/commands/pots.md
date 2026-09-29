@@ -9,7 +9,7 @@ updated: 2026-09-22
 Agent-pot owner routes. Same [[reference/auth]] as [[commands/wallet]]. Flags-only (`pots --json`) means `list`. Usages: [[usages]].
 
 ```text
-zappi-cli pots <list|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status>
+zappi-cli pots <list|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status|bind>
 ```
 
 ## list
@@ -80,3 +80,19 @@ Device-code pairing (P1). `createPotAttach` returns `requestId` and `approveUrl`
 - `--json` does not open the browser. It still polls unless `--no-poll` is set.
 
 Terminal poll fields: `status`, `potId`, `grantId`. Pretty output shows the client token as `zpc_… (withheld)` and says to store it as a host secret. `--json` includes `potClientToken` when nest returns it — treat that stdout as a secret. `attach-status` is one poll, not a loop.
+
+## bind
+
+```bash
+zappi-cli pots bind <potId> [--label <name>] [--key-file <path>] [--no-poll]
+```
+
+Pot-first free pot. The app created an addressless `pending` free pot (no `sparkAddress`); this command binds a bot-generated key onto it through the device-code attach flow. Nest never holds the mnemonic.
+
+1. Calls the public `GET /wallet/pots/attach/preview?potId=` and **fails closed** if the pot is missing, not `free`, or not `pending`.
+2. Generates a BIP-39 mnemonic + derives the public `sparkAddress` on this host; writes a `0600` key file (`~/.zappi/pot-*.txt` by default, or `--key-file`). The mnemonic is a **host secret** — never printed, never logged.
+3. `createPotAttach({ potId, sparkAddress, spendMode: 'free' })` (device-code P1); stores `deviceCode` via the attach-device-secret helper.
+4. Prints **one pairing URL only** — never the mnemonic, never the user code, never `zpc_`. Pretty mode opens the browser and polls every 2s (15m cap); `--no-poll` prints request id + approve URL.
+5. On `approved`, reclaims `potClientToken` (`zpc_`) itself and stores it as a host secret. Then set `ZAPPI_POT_ID` and `ZAPPI_POT_SEED` (or `ZAPPI_POT_KEY_FILE`) and use the pot as a normal free pot (`pay` / `consume`).
+
+Refuses if this host already holds a pot client token (`ZAPPI_POT_CLIENT_TOKEN` / `~/.zappi/pot-client-*.txt`) — set `ZAPPI_POT_ID` and use the existing pot instead. `--json` includes `sparkAddress`, `keyFile`, `status`, `potId`, `grantId`, and `potClientTokenReceived` (never the mnemonic or `zpc_`).
