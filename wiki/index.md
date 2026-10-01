@@ -1,10 +1,10 @@
 ---
 type: index
 tags: [meta, cli]
-updated: 2026-09-24
+updated: 2026-09-30
 source_count: 3
-page_count: 21
-last_change: 2026-09-24 Combined spend-ticket rules into SKILL.md; one published skill zappi-agent-pot.
+page_count: 22
+last_change: 2026-09-30 Clean Code skill in .agents/skills and wiki.
 ---
 
 # zappi-cli Wiki
@@ -59,7 +59,8 @@ LLM-maintained knowledge base for `@zappimoney/zappi-cli` (`zappi-cli`). The age
 - [[reference/auth]] — project key vs access token vs pot seed.
 - [[reference/output]] — pretty, plain, and `--json` contracts.
 - [[reference/hard-rules]] — secrets, rails, invite codes, empty-pot cap.
-- [[reference/develop]] — test, TypeSafe eval, build, publish files.
+- [[reference/develop]] — test, build, publish files.
+- [[reference/clean-code]] — project skill `.agents/skills/clean-code` for CLI readability. Not the published buyer skill.
 
 ## Flows
 

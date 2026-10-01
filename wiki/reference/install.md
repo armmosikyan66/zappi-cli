@@ -38,6 +38,6 @@ npm link
 zappi-cli --help
 ```
 
-In this monorepo the package lives at `packages/zappi-cli` and depends on `@zappimoney/zappi-sdk` via `file:../zappi-sdk`. Published `files`: `bin`, `dist/**/*.js` except tests and `dist/eval/**`, `README.md`, `LICENSE`, `SKILL.md`.
+In this monorepo the package lives at `packages/zappi-cli` and depends on `@zappimoney/zappi-sdk` via `file:../zappi-sdk`. Published `files`: `bin`, `dist/**/*.js` except tests, `README.md`, `LICENSE`, `SKILL.md`.
 
 Install has no `--pot` flag. See [[commands/propose]].

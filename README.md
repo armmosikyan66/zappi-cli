@@ -147,8 +147,7 @@ Local nest is explicit: `ZAPPI_API_URL=http://localhost:3011` and `ZAPPI_APP_ORI
 
 ## CI vs live dogfood
 
-- **CI** (`npm test`): mocked HTTP + mocked Spark. Covers 402 → settle `{ sparkTxHash, potId }` → consume, empty pot fail-closed, **402 `network`/`asset` required** (refuse non-`spark`/`USDB` before sign), secret redaction (including BIP-39), `ZAPPI_POT_SPEND_MODE=auth_required` refusing CLI free-sign, `request` printing a bare approve URL (no `code=`, no `zpc_`), and a **mocked TypeSafe judge** (copy honesty / skill / route). **No live Spark spend / no paywall network / no TypeSafe API.**
-- **Optional TypeSafe pipeline** (`npm run test:pipeline`): agent-agent + human-ui fixtures, paraphrases, Pass^3 on copy. Requires `TYPESAFE_API_KEY` in `.env`. Not GitHub Actions.
+- **CI** (`npm test`): mocked HTTP + mocked Spark. Covers 402 → settle `{ sparkTxHash, potId }` → consume, empty pot fail-closed, **402 `network`/`asset` required** (refuse non-`spark`/`USDB` before sign), secret redaction (including BIP-39), `ZAPPI_POT_SPEND_MODE=auth_required` refusing CLI free-sign, and `request` printing a bare approve URL (no `code=`, no `zpc_`). **No live Spark spend / no paywall network.**
 - **Staging dogfood** (this section): human registers + funds in the app, then `pay` / `consume` against `api-dev`. Never commit seeds.
 - `--json` is the CLI trace contract: `command`, `potId`, `sparkTxHash`, `network`, `asset`, `unlockTokenReceived` (boolean). `request --json` adds `approveUrl`, `requestId`, `amountCents`, and `destinationAddress`. `pots attach` / `attach-status` JSON uses `deviceCodeReceived` / `potClientTokenReceived` booleans — never raw `deviceCode` or `zpc_`. It never includes the mnemonic, `ZAPPI_POT_SEED`, or `zpu_…` / `zpc_…` values.
 
@@ -158,9 +157,7 @@ Install has **no `--pot` flag**. Runtime pot id is `ZAPPI_POT_ID` after the huma
 
 ```bash
 npm install
-npm test          # tsc → node --test dist/ (mocked HTTP + Spark + TypeSafe)
-npm run test:judge  # live TypeSafe smoke
-npm run test:pipeline  # agent-agent + human-ui + Pass^3 copy
+npm test          # tsc → node --test dist/ (mocked HTTP + Spark)
 npm run build
 ```
 
@@ -190,5 +187,4 @@ Reclaim path locked to Nest tip `df7aafc` / zappi-nest#82: `POST …/pots/attach
 - Do **not** invent a payment chain from an address. Paywall 402 must include `accepts[0].network` and `accepts[0].asset`; this CLI only pays `spark` / `USDB`.
 - Do **not** invent an invite code. `zappi-cli invite` prints a Nest URL or fails closed.
 - Seller / project API is out of scope for this package.
-- `@typesafe-ai/sdk` is a **devDependency** for `src/eval/` only. Do not import it from the buyer CLI. `dist/eval/` is not published. This is not `@zappimoney/zappi-sdk`.
-- Do not add `@zappimoney/zappi-sdk` to this package unless intentionally migrating off the Nest HTTP + Spark path.
+- Agent-host spend is `@zappimoney/zappi-mcp`, not this CLI. Do not add `@zappimoney/zappi-sdk` to this package unless intentionally migrating off the Nest HTTP + Spark path.

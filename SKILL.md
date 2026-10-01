@@ -5,7 +5,7 @@ description: Spend a prepaid Zappi pot to unlock a PaidResource, or create an au
 
 # Zappi agent pot (buyer)
 
-This is the **only** buyer skill. Load `SKILL.md` (`zappi-agent-pot`). There is no second spend skill.
+This is the **setup** skill. Load `SKILL.md` (`zappi-agent-pot`) to propose or pair a pot. **Spend** on the agent host is `@zappimoney/zappi-mcp` (`pay`, `send`, `request`). Do not run `zappi-cli pay` or `zappi-cli send` as the agent spend path. The MCP server holds the key in the OS keychain and refuses destinations that are not allowlisted.
 
 ## Connect vs send (read this first)
 

@@ -24,7 +24,7 @@ Ingest of `packages/zappi-cli/README.md`. Command lines that the source implemen
 - `invite` is `GET /api/invite/pots/$ZAPPI_POT_ID/link` with no session and no pot key. Fail closed (`INVITE_AFFILIATE_DISABLED`, `INVITE_LINK_MISSING`, or not attached on `auth_required`). Never invents a code.
 - Wallet commands (`balance` through `send`, plus `pots …`) need `ZAPPI_PROJECT_API_KEY` or `ZAPPI_ACCESS_TOKEN`. Confirm and send sign from `ZAPPI_POT_SEED`.
 - Buyer flow: propose on the host → human funds in the app (CLI does not call deposit APIs in that step) → pay → consume. Exact (`url_once`) resources stop after settle. Empty pot is the stop. Do not fall back to the main wallet.
-- CI (`npm test`) is mocked HTTP + mocked Spark. `npm run test:pipeline` is optional TypeSafe and needs `TYPESAFE_API_KEY`. Staging dogfood pairs `ZAPPI_API_URL=https://api-dev.zappi.money` with `ZAPPI_APP_ORIGIN=http://dev.zappi.money`.
+- CI (`npm test`) is mocked HTTP + mocked Spark. Staging dogfood pairs `ZAPPI_API_URL=https://api-dev.zappi.money` with `ZAPPI_APP_ORIGIN=http://dev.zappi.money`.
 - Published npm files include `SKILL.md` (`zappi-agent-pot` — the only buyer skill).
 - Active pot labels are unique per project (case-insensitive). Nest returns `409 AGENT_POT_LABEL_EXISTS`.
 

@@ -18,8 +18,8 @@ Help text groups the same way: Host setup, Agent spend, Wallet, Pots. Global fla
 ## What this package is not
 
 - Seller / project API is out of scope (from [[sources/readme]]).
-- `@typesafe-ai/sdk` is a **devDependency** for `src/eval/` only. Do not import it from the buyer CLI. `dist/eval/` is not published.
 - This package is not the web app. Product install copy lives in the web wiki (`web/wiki/product/agent-pot-install.md`).
+- Agent-host spend is `@zappimoney/zappi-mcp`. This CLI remains setup (`propose`, `pots attach`) and the developer wallet surface.
 
 > ⚠️ Contradicts [[sources/readme]] hard rule “do not add `@zappimoney/zappi-sdk` unless intentionally migrating off the Nest HTTP + Spark path”: `package.json` already depends on `@zappimoney/zappi-sdk` (`file:../zappi-sdk`). Wallet and pots commands use `ZappiClient`. Buyer `pay` / `consume` still use the local Nest HTTP + Spark path in `src/paywall*.ts`, not the SDK client.
 

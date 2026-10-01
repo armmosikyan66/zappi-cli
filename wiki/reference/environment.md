@@ -27,6 +27,5 @@ Resolvers live in `src/env.ts`. Defaults are production. Staging must set API an
 | `ZAPPI_COOKIE` | Optional cookie forwarded with session auth (example `zappi_access=…`). | Wallet and pots, session only. |
 | `ZAPPI_USER_AGENT` | Optional user-agent forwarded with session auth. | Wallet and pots, session only. |
 | `NO_COLOR` | `1` disables green in the propose menu. | [[commands/propose]] wizard. |
-| `TYPESAFE_API_KEY` | Not a runtime CLI secret. Optional eval only. | [[reference/develop]]. |
 
 `--origin` on propose overrides the app origin for that invocation. `--unlock-token` is the one-off consume flag; scripts should use the env var.

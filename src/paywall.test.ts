@@ -386,17 +386,4 @@ describe('package isolation', () => {
     }
   })
 
-  it('keeps TypeSafe eval out of the buyer CLI runtime', () => {
-    for (const file of [
-      'cli.js',
-      'paywall.js',
-      'propose-register.js',
-      'spend-request.js',
-      'env.js',
-    ]) {
-      const source = readFileSync(join(here, file), 'utf8')
-      assert.doesNotMatch(source, /@typesafe-ai\/sdk/)
-      assert.doesNotMatch(source, /eval\/typesafe/)
-    }
-  })
 })

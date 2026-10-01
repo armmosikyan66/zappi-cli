@@ -33,10 +33,9 @@ From this CLI repo:
 
 ```bash
 npm test
-npm run test:pipeline   # live TypeSafe; TYPESAFE_API_KEY + TYPESAFE_JUDGE=1
 ```
 
-That is `tsc` then `node --test dist/*.test.js dist/eval/*.test.js`. Mocked HTTP + mocked Spark + mocked TypeSafe. No live Spark.
+That is `tsc` then `node --test dist/*.test.js`. Mocked HTTP + mocked Spark. No live Spark. The TypeSafe judge was removed from this package. Agent-host spend controls are `@zappimoney/zappi-mcp`.
 
 Nest dogfood (sibling): `cd ../zappi-nest && npm run test:dogfood`. It exercises attach deny, spend deny, and a two-owner factory. Public poll does not return `potClientToken`.
 
@@ -48,4 +47,4 @@ Nest dogfood (sibling): `cd ../zappi-nest && npm run test:dogfood`. It exercises
 
 mnemonic, `ZAPPI_POT_SEED`, `zpu_`, `zpc_`, JWT, project API key.
 
-`ZAPPI_POT_ID` is runtime, not install. `ZAPPI_POT_SPEND_MODE=auth_required` refuses `pay`. `SPARK_NETWORK` defaults `MAINNET`. Paywall spend is `spark`/`USDB` only; do not guess `sourceChain`/`sourceAsset`. `@typesafe-ai/sdk` is a **devDependency** for `src/eval/` only. Never `@zappimoney/zappi-sdk`.
+`ZAPPI_POT_ID` is runtime, not install. `ZAPPI_POT_SPEND_MODE=auth_required` refuses `pay`. `SPARK_NETWORK` defaults `MAINNET`. Paywall spend is `spark`/`USDB` only; do not guess `sourceChain`/`sourceAsset`.
