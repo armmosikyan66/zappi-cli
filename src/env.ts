@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { readStoredPotClientToken } from './attach-device-secret.js'
 
 export interface PotEnv {
@@ -10,6 +12,14 @@ export interface PotEnv {
   ZAPPI_UNLOCK_TOKEN?: string
   /** Pot client token (`zpc_`) for auth-required spend tickets. Host secret. */
   ZAPPI_POT_CLIENT_TOKEN?: string
+  /**
+   * Unlock secret for the encrypted free-pot seed registry (`~/.zappi/pots.json`).
+   * High-entropy host secret. Never printed, logged, or exported to `process.env`
+   * by the CLI. Free pots only — not the main-wallet passphrase. (1-454/1-456)
+   */
+  ZAPPI_POT_PASSPHRASE?: string
+  /** Override path for the encrypted free-pot seed registry. (1-454/1-456) */
+  ZAPPI_POT_REGISTRY_FILE?: string
   /** Runtime spend mode. `auth_required` refuses CLI free-sign (1-200). */
   ZAPPI_POT_SPEND_MODE?: string
   NEXT_PUBLIC_SITE_URL?: string
@@ -242,4 +252,32 @@ export function parsePositiveUnits(
     throw new Error('--units must be a positive integer.')
   }
   return parsed
+}
+
+/**
+ * Unlock secret for the encrypted free-pot seed registry. Host secret only —
+ * never a CLI flag (would leak to `ps`/shell history). Placeholder guard
+ * mirrors `resolveUnlockToken` so docs examples are not treated as secrets.
+ * This is a free-pot registry secret, NOT the human device wallet passphrase.
+ */
+export function resolvePotPassphrase(env: PotEnv = process.env): string {
+  const fromEnv = env.ZAPPI_POT_PASSPHRASE?.trim()
+  if (!fromEnv) {
+    throw new Error(
+      'Set ZAPPI_POT_PASSPHRASE as a host secret to unlock the free-pot seed registry. Do not paste it into chat. This is not the device wallet passphrase.',
+    )
+  }
+  if (fromEnv.startsWith('<') && fromEnv.endsWith('>')) {
+    throw new Error(
+      'ZAPPI_POT_PASSPHRASE is still a placeholder. Set it as a host secret — do not paste it into chat.',
+    )
+  }
+  return fromEnv
+}
+
+/** Registry file path. Default `~/.zappi/pots.json`; override `ZAPPI_POT_REGISTRY_FILE`. */
+export function potRegistryPath(env: PotEnv = process.env): string {
+  const override = env.ZAPPI_POT_REGISTRY_FILE?.trim()
+  if (override) return override
+  return join(homedir(), '.zappi', 'pots.json')
 }
