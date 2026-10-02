@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import type { PotEnv } from './env.js'
 import { intentHash, type MoneyOutIntent } from './pot-outgate.js'
+import { ensureSecureDirectory } from './pot-registry.js'
 
 export const JOURNAL_VERSION = 1
 export const MAX_JOURNAL_BYTES = 1 << 20
@@ -186,20 +187,38 @@ export function validateJournalFile(raw: unknown): JournalFile {
 }
 
 function readJournal(path: string): JournalFile | null {
+  let stat: ReturnType<typeof statSync>
+  try {
+    stat = statSync(path)
+  } catch (error) {
+    // Only a missing file may initialize an empty journal. EACCES, EISDIR,
+    // and every other I/O failure must stop signing so cap history is not reset.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw new Error(
+      `Journal file ${path} could not be read (${(error as Error).message}). Refusing to sign.`,
+    )
+  }
+  if (!stat.isFile()) {
+    throw new Error(`Journal path ${path} is not a regular file. Refusing to sign.`)
+  }
+  if (stat.size > MAX_JOURNAL_BYTES) {
+    throw new Error(
+      `Journal file ${path} is too large (${stat.size} bytes). Refusing to sign. The existing journal was not modified.`,
+    )
+  }
   let raw: string
   try {
-    const stat = statSync(path)
-    if (stat.size > MAX_JOURNAL_BYTES) throw new Error(`Journal file ${path} is too large (${stat.size} bytes).`)
     raw = readFileSync(path, 'utf8')
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') return null
-    return null
+  } catch (error) {
+    throw new Error(
+      `Journal file ${path} could not be read (${(error as Error).message}). Refusing to sign.`,
+    )
   }
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error(`Journal file ${path} is not valid JSON.`)
+    throw new Error(`Journal file ${path} is not valid JSON. Refusing to sign.`)
   }
   return validateJournalFile(parsed)
 }
@@ -269,7 +288,10 @@ async function withFileLock<T>(path: string, fn: () => T | Promise<T>): Promise<
 }
 
 async function withLock<T>(path: string, fn: () => T | Promise<T>): Promise<T> {
-  return withMutex(path, () => withFileLock(path, fn))
+  return withMutex(path, async () => {
+    ensureSecureDirectory(dirname(path), 'journal')
+    return withFileLock(path, fn)
+  })
 }
 
 function committedAmounts(file: JournalFile, now: Date): number {
@@ -336,6 +358,11 @@ export async function beginOperation(
     assertSafePath(path)
     const file = readJournal(path) ?? { version: JOURNAL_VERSION, ops: Object.create(null) }
     const existing = file.ops[idempotencyKey]
+    if (!existing && Object.keys(file.ops).length >= MAX_OPS) {
+      throw new Error(
+        `Journal already holds ${MAX_OPS} operations. Refusing to sign rather than drop replay or cap history.`,
+      )
+    }
     if (!existing) {
       enforceCaps(file, intent, cfg, now)
       const op = toOp(intent, idempotencyKey, now, 'pending')

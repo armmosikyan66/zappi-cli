@@ -4,9 +4,11 @@ import { promptOpenLink } from './wizard-io.js'
 import {
   hostHasPotClientToken,
   resolveLinkOrigin,
+  resolvePotPassphrase,
   resolveSparkNetwork,
   type PotEnv,
 } from './env.js'
+import { savePotSeed } from './pot-registry.js'
 import {
   resolveAttachDeviceCode,
   writeAttachDeviceCode,
@@ -93,19 +95,38 @@ export async function runPotBind(
     )
   }
 
-  // 2. Generate a BIP-39 mnemonic + derive the public spark address on this host.
+  // 2. Require the unlock secret, then generate. The pot id is already known,
+  // so the default path seals into the registry. --key-file is the plaintext opt-out.
+  const passphrase = resolvePotPassphrase(env)
   const network = resolveSparkNetwork(env)
   const { generateMnemonic } = await import('@scure/bip39')
   const { wordlist } = await import('@scure/bip39/wordlists/english.js')
   const mnemonic = generateMnemonic(wordlist, 128)
   const sparkAddress = await deriveSparkAddress(mnemonic, network)
-
-  // 3. Write the 0600 key file. The mnemonic is a host secret — never print.
-  const keyFile = resolveKeyFilePath(
-    strings['key-file']?.trim() || undefined,
-    defaultKeyFile(strings.label?.trim() || undefined),
-  )
-  writeKeyFile(keyFile, mnemonic, sparkAddress, strings.label?.trim() || undefined)
+  const label = strings.label?.trim() || undefined
+  let keyFile: string | undefined
+  if (strings['key-file']?.trim()) {
+    keyFile = resolveKeyFilePath(strings['key-file'], defaultKeyFile(label))
+    writeKeyFile(keyFile, mnemonic, sparkAddress, label)
+  } else {
+    await savePotSeed(
+      {
+        potId,
+        ...(label ? { label } : {}),
+        sparkAddress,
+        spendMode: 'free',
+        network,
+        derivationMode: 'spark',
+        accountIndex: 0,
+        seed: mnemonic,
+      },
+      passphrase,
+      { env },
+    )
+  }
+  const storedLine = keyFile
+    ? `Plaintext key file written (${keyFile}). Seal is skipped because --key-file was set. Do not cat or print it.`
+    : 'Seed sealed in the encrypted registry. Set ZAPPI_POT_PASSPHRASE as a host secret. Do not set ZAPPI_POT_SEED.'
 
   // 4. Create the pending attach (device-code P1). The bot names the pot and
   //    provides the sparkAddress it generated. The user approves; nest binds.
@@ -140,7 +161,7 @@ export async function runPotBind(
       command: 'pots bind' as const,
       potId,
       sparkAddress,
-      keyFile,
+      ...(keyFile ? { keyFile } : { sealed: true }),
       pending: {
         requestId: pending.requestId,
         approveUrl,
@@ -158,14 +179,11 @@ export async function runPotBind(
       heading('Pot bind pending', mode),
       kv('pot', potId, mode),
       kv('address', sparkAddress, mode),
-      kv('keyFile', keyFile, mode),
+      ...(keyFile ? [kv('keyFile', keyFile, mode)] : []),
       kv('requestId', pending.requestId, mode),
       kv('approve', approveUrl, mode),
       infoLine(ATTACH_CODE_HANDOFF, mode),
-      infoLine(
-        'Set ZAPPI_POT_ID and ZAPPI_POT_SEED (or ZAPPI_POT_KEY_FILE) as host secrets. Do not cat or print the key file.',
-        mode,
-      ),
+      infoLine(storedLine, mode),
       infoLine('Poll with: zappi-cli pots attach-status <requestId>', mode),
     ].join(NL)
   }
@@ -198,7 +216,7 @@ export async function runPotBind(
     potId: resolvedPotId,
     grantId,
     sparkAddress,
-    keyFile,
+    ...(keyFile ? { keyFile } : { sealed: true }),
     deviceCodeReceived: Boolean(pending.deviceCode?.trim()),
     potClientTokenReceived,
   }
@@ -211,7 +229,7 @@ export async function runPotBind(
     kv('pot', resolvedPotId, mode),
     successLine(`Status: ${poll.status}`, mode),
     kv('address', sparkAddress, mode),
-    kv('keyFile', keyFile, mode),
+    ...(keyFile ? [kv('keyFile', keyFile, mode)] : []),
   ]
   if (grantId) lines.push(kv('grant', grantId, mode))
   if (potClientTokenReceived) {
@@ -234,7 +252,7 @@ export async function runPotBind(
   }
   lines.push(
     infoLine(
-      `Set ZAPPI_POT_ID=${resolvedPotId} and ZAPPI_POT_SEED (or ZAPPI_POT_KEY_FILE=${keyFile}) as host secrets. Never print or paste the key.`,
+      storedLine,
       mode,
     ),
   )

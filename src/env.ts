@@ -41,6 +41,13 @@ export interface PotEnv {
   /** Override for `zappi-cli login` credential file. Default `~/.zappi/credentials.json`. */
   ZAPPI_CREDENTIALS_FILE?: string
   /**
+   * Expected Spark address for a legacy `ZAPPI_POT_SEED` / `ZAPPI_POT_KEY_FILE`
+   * opt-out. Required before that seed may sign. Not a secret.
+   */
+  ZAPPI_POT_SPARK_ADDRESS?: string
+  /** Original derivation index for a legacy seed. Defaults to 0 only when unset. */
+  ZAPPI_POT_ACCOUNT_INDEX?: string
+  /**
    * Attach deviceCode (RFC 8628) for reclaim after approve (1-203).
    * Host secret — never print. Wins over `~/.zappi/attach-device-<requestId>.txt`.
    */
@@ -266,6 +273,8 @@ export function parsePositiveUnits(
  * mirrors `resolveUnlockToken` so docs examples are not treated as secrets.
  * This is a free-pot registry secret, NOT the human device wallet passphrase.
  */
+export const MIN_POT_PASSPHRASE_LENGTH = 16
+
 export function resolvePotPassphrase(env: PotEnv = process.env): string {
   const fromEnv = env.ZAPPI_POT_PASSPHRASE?.trim()
   if (!fromEnv) {
@@ -278,7 +287,29 @@ export function resolvePotPassphrase(env: PotEnv = process.env): string {
       'ZAPPI_POT_PASSPHRASE is still a placeholder. Set it as a host secret — do not paste it into chat.',
     )
   }
+  if (fromEnv.length < MIN_POT_PASSPHRASE_LENGTH) {
+    throw new Error(
+      `ZAPPI_POT_PASSPHRASE must be at least ${MIN_POT_PASSPHRASE_LENGTH} characters. Set a high-entropy host secret.`,
+    )
+  }
   return fromEnv
+}
+
+/**
+ * Spend mode for the free signer. Unset means free. `auth_required` and any
+ * other value are rejected by the signer before it reads a seed. This does
+ * not change the auth-required request/approve path, which uses
+ * {@link resolvePotSpendMode}.
+ */
+export function assertFreeSignerSpendMode(env: PotEnv = process.env): void {
+  const raw = env.ZAPPI_POT_SPEND_MODE?.trim().toLowerCase()
+  if (!raw || raw === 'free') return
+  if (raw === 'auth_required') {
+    throw new Error(AUTH_REQUIRED_PAY_ERROR)
+  }
+  throw new Error(
+    `Unknown ZAPPI_POT_SPEND_MODE "${raw}". Refusing to sign. Expected free or auth_required.`,
+  )
 }
 
 /** Registry file path. Default `~/.zappi/pots.json`; override `ZAPPI_POT_REGISTRY_FILE`. */

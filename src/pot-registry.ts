@@ -94,6 +94,11 @@ export interface RegistryFile {
   version: typeof ENVELOPE_VERSION
   activePotId?: string
   pots: Record<string, PotRecord>
+  /**
+   * Seeds sealed before Nest has assigned a pot id. Not selectable for signing
+   * until `bindProvisionedSeed` moves one into `pots` under the real id.
+   */
+  provisions?: Record<string, PotRecord>
 }
 
 export interface SealPotSeedInput
@@ -308,10 +313,37 @@ export function validateRegistryFile(raw: unknown): RegistryFile {
     }
     pots[key] = validatePotRecord((potsRaw as Record<string, unknown>)[key], key)
   }
+  const provisionsRaw = (raw as Record<string, unknown>).provisions
+  const provisions: Record<string, PotRecord> = Object.create(null)
+  if (provisionsRaw !== undefined) {
+    if (!isPlainObject(provisionsRaw)) {
+      throw new Error('Registry provisions field is not an object.')
+    }
+    for (const key of Object.keys(provisionsRaw)) {
+      if (PROTOTYPE_KEYS.has(key)) {
+        throw new Error(`Registry provision key "${key}" is not allowed (prototype pollution).`)
+      }
+      if (key.length === 0 || key.length > MAX_POT_ID_LEN) {
+        throw new Error('Registry provision key is missing or too long.')
+      }
+      provisions[key] = validatePotRecord(
+        (provisionsRaw as Record<string, unknown>)[key],
+        key,
+      )
+    }
+  }
+  if (keys.length + Object.keys(provisions).length > MAX_POTS) {
+    throw new Error(`Registry holds too many pots (${keys.length} > ${MAX_POTS}).`)
+  }
   if (activePotId !== undefined && !(activePotId in pots)) {
     throw new Error('Registry activePotId does not refer to a stored pot.')
   }
-  return { version: ENVELOPE_VERSION, ...(activePotId ? { activePotId } : {}), pots }
+  return {
+    version: ENVELOPE_VERSION,
+    ...(activePotId ? { activePotId } : {}),
+    pots,
+    ...(Object.keys(provisions).length > 0 ? { provisions } : {}),
+  }
 }
 
 /* --------------------------------- Storage --------------------------------- */
@@ -324,6 +356,74 @@ function refuseWindows(): void {
         'Run the signer on macOS/Linux, or see docs/signer-boundary.md §6.',
     )
   }
+}
+
+/**
+ * Create the registry/journal directory before any lock file is opened.
+ * A missing parent used to make `openSync(path.lock)` throw ENOENT on a fresh
+ * host. Existing symlinks, non-directories, group/other permissions, and
+ * foreign owners fail closed. Newly created directories are chmod 0700 after
+ * mkdir (umask can widen the requested mode). Ancestors that already exist
+ * are refused when they are symlinks, but are not required to be mode 0700
+ * (the home directory is not).
+ */
+export function ensureSecureDirectory(dir: string, label = 'registry'): void {
+  refuseWindows()
+  const parent = dirname(dir)
+  if (parent !== dir) {
+    let parentStat: ReturnType<typeof lstatSync>
+    try {
+      parentStat = lstatSync(parent)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      ensureSecureDirectory(parent, label)
+      parentStat = lstatSync(parent)
+    }
+    if (parentStat.isSymbolicLink()) {
+      throw new Error(`Refusing to use a symlink for the ${label} parent: ${parent}`)
+    }
+    if (!parentStat.isDirectory()) {
+      throw new Error(`${label} parent ${parent} is not a directory.`)
+    }
+  }
+
+  let created = false
+  let stat: ReturnType<typeof lstatSync>
+  try {
+    stat = lstatSync(dir)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    try {
+      mkdirSync(dir, { mode: DIR_MODE })
+      created = true
+    } catch (mkdirError) {
+      if ((mkdirError as NodeJS.ErrnoException).code !== 'EEXIST') throw mkdirError
+    }
+    if (created) {
+      try {
+        chmodSync(dir, DIR_MODE)
+      } catch {
+        // re-checked below
+      }
+    }
+    stat = lstatSync(dir)
+  }
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Refusing to use a symlink for the ${label}: ${dir}`)
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`${label} path ${dir} is not a directory.`)
+  }
+  if (created) {
+    try {
+      chmodSync(dir, DIR_MODE)
+    } catch {
+      // re-checked below
+    }
+    stat = lstatSync(dir)
+  }
+  assertRestrictiveMode(dir, stat.mode & 0o777, 'directory')
+  assertOwnedByUs(dir, stat, 'directory')
 }
 
 function assertNoSymlink(path: string, stat: { isSymbolicLink?: () => boolean }): void {
@@ -354,8 +454,13 @@ function assertSafeRegistryPath(path: string): void {
   let dirStat
   try {
     dirStat = lstatSync(dirname(path))
-  } catch {
-    return // dir does not exist yet; created on write
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(
+        `Registry directory ${dirname(path)} does not exist. It must be created securely before use.`,
+      )
+    }
+    throw error
   }
   assertNoSymlink(dirname(path), dirStat)
   assertRestrictiveMode(dirname(path), dirStat.mode & 0o777, 'directory')
@@ -543,7 +648,51 @@ async function withFileLock<T>(path: string, fn: () => T | Promise<T>): Promise<
 
 /** In-process mutex + cross-process file lock around a read-modify-write. */
 function withRegistryLock<T>(path: string, fn: () => T | Promise<T>): Promise<T> {
-  return withProcessLock(path, () => withFileLock(path, fn))
+  return withProcessLock(path, async () => {
+    // Parent must exist before the lock file is created. Competing fresh-host
+    // initializers share this path: mkdir is idempotent, then the file lock
+    // serializes the first write.
+    ensureSecureDirectory(dirname(path), 'registry')
+    return withFileLock(path, fn)
+  })
+}
+
+/** Read the registry under the same lock and path checks as writers. */
+export async function readRegistryAt(path: string): Promise<RegistryFile | null> {
+  return withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    return readRegistryFile(path)
+  })
+}
+
+/**
+ * Atomically replace the registry. Refuses a symlink destination (rename
+ * replaces the directory entry; it does not follow a final symlink, and a
+ * symlink is rejected before the write).
+ */
+export async function commitRegistryAt(path: string, file: RegistryFile): Promise<void> {
+  const checked = validateRegistryFile(file)
+  await withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    writeRegistryFile(path, checked)
+  })
+}
+
+/**
+ * Read-modify-write under one lock. `mutate` must not write; the commit
+ * happens only if it returns. A throw leaves the live file untouched.
+ */
+export async function updateRegistryAt(
+  path: string,
+  mutate: (file: RegistryFile) => RegistryFile,
+): Promise<void> {
+  await withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    const file = readRegistryFile(path)
+    if (!file) throw new Error('Free-pot seed registry is empty.')
+    const next = validateRegistryFile(mutate(file))
+    writeRegistryFile(path, next)
+  })
 }
 
 /* ------------------------------- Public API -------------------------------- */
@@ -571,6 +720,26 @@ function assertEndpointsTrusted(record: PotRecord, env: PotEnv): void {
       'Registry pot endpoints do not match the trusted configuration. ' +
         'Refusing to sign against an untrusted API/app origin (fail closed).',
     )
+  }
+}
+
+/**
+ * Decrypt every envelope and check trusted endpoints before a restore or
+ * rotation commit. A throw means the caller must not replace the live file.
+ * The opened seeds are dropped; this does not export them.
+ */
+export function authenticateRegistryFile(
+  file: RegistryFile,
+  passphrase: string,
+  env: PotEnv,
+): void {
+  const records = [
+    ...Object.values(file.pots),
+    ...Object.values(file.provisions ?? {}),
+  ]
+  for (const record of records) {
+    assertEndpointsTrusted(record, env)
+    openSeed(record, passphrase, record)
   }
 }
 
@@ -611,6 +780,122 @@ export async function savePotSeed(
     writeRegistryFile(path, file)
   })
   return record
+}
+
+export interface ProvisionSeedInput {
+  label?: string
+  sparkAddress: string
+  network: SparkNetwork
+  derivationMode: PotDerivationMode
+  accountIndex: number
+  seed: string
+}
+
+/**
+ * Seal a newly generated seed before Nest has a pot id. The record lives under
+ * `provisions`, not `pots`, so it cannot be selected for signing until
+ * {@link bindProvisionedSeed}.
+ */
+export async function saveProvisionedSeed(
+  input: ProvisionSeedInput,
+  passphrase: string,
+  deps: PotRegistryDeps = {},
+): Promise<{ provisionId: string; record: PotRecord }> {
+  const env = resolveEnv(deps.env)
+  refuseWindows()
+  const provisionId = `prov_${randomBytes(8).toString('hex')}`
+  const { apiUrl, appOrigin } = trustedEndpoints(env)
+  const createdAt = (deps.now ?? (() => new Date()))().toISOString()
+  const meta: PotMetadata = {
+    potId: provisionId,
+    ...(input.label ? { label: input.label } : {}),
+    sparkAddress: input.sparkAddress,
+    spendMode: 'free',
+    network: input.network,
+    derivationMode: input.derivationMode,
+    accountIndex: input.accountIndex,
+    apiUrl,
+    appOrigin,
+    createdAt,
+  }
+  const record: PotRecord = { ...meta, ...sealSeed(input.seed, passphrase, meta) }
+  const path = potRegistryPath(env)
+  await withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    const file: RegistryFile =
+      readRegistryFile(path) ?? { version: ENVELOPE_VERSION, pots: Object.create(null) }
+    const provisions = file.provisions ?? Object.create(null)
+    provisions[provisionId] = record
+    file.provisions = provisions
+    writeRegistryFile(path, file)
+  })
+  return { provisionId, record }
+}
+
+/**
+ * Move a provisioning record onto the Nest pot id. Refuses when that id
+ * already holds a different address, network, or account index. Re-seals
+ * because the authenticated pot id is part of the AAD.
+ */
+export async function bindProvisionedSeed(
+  provisionId: string,
+  potId: string,
+  passphrase: string,
+  deps: PotRegistryDeps = {},
+): Promise<PotRecord> {
+  const env = resolveEnv(deps.env)
+  refuseWindows()
+  if (!potId.trim() || potId === provisionId) {
+    throw new Error('Pass the Nest pot id to bind. It must differ from the local provision id.')
+  }
+  const path = potRegistryPath(env)
+  let bound: PotRecord | undefined
+  await withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    const file = readRegistryFile(path)
+    const provision = file?.provisions?.[provisionId]
+    if (!file || !provision) {
+      throw new Error(`Provision ${provisionId} is not in the registry.`)
+    }
+    assertEndpointsTrusted(provision, env)
+    const seed = openSeed(provision, passphrase, provision)
+    const existing = file.pots[potId]
+    if (
+      existing &&
+      (existing.sparkAddress !== provision.sparkAddress ||
+        existing.network !== provision.network ||
+        existing.accountIndex !== provision.accountIndex ||
+        existing.derivationMode !== provision.derivationMode)
+    ) {
+      throw new Error(
+        `Refusing to bind ${provisionId} onto ${potId}: that pot already has a different address, network, or account index.`,
+      )
+    }
+    const { apiUrl, appOrigin } = trustedEndpoints(env)
+    const meta: PotMetadata = {
+      potId,
+      ...(provision.label ? { label: provision.label } : {}),
+      sparkAddress: provision.sparkAddress,
+      spendMode: 'free',
+      network: provision.network,
+      derivationMode: provision.derivationMode,
+      accountIndex: provision.accountIndex,
+      apiUrl,
+      appOrigin,
+      createdAt: existing?.createdAt ?? provision.createdAt,
+    }
+    const record: PotRecord = { ...meta, ...sealSeed(seed, passphrase, meta) }
+    file.pots[potId] = record
+    if (!file.activePotId) file.activePotId = potId
+    if (file.provisions) delete file.provisions[provisionId]
+    if (file.provisions && Object.keys(file.provisions).length === 0) {
+      delete file.provisions
+    }
+    writeRegistryFile(path, file)
+    bound = record
+  })
+  if (!bound) throw new Error(`Provision ${provisionId} is not in the registry.`)
+  return bound
 }
 
 /** Decrypt + authenticate the seed for one pot id. Fails closed on any mismatch. */

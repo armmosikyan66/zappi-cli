@@ -55,7 +55,14 @@ function makeDeps(overrides: Partial<Record<'ask' | 'select' | 'promptOpenLink',
     deriveAddress: async (_mnemonic: string, _network: 'MAINNET' | 'REGTEST') => ADDRESS,
     writeKeyFile: (_path: string, _mnemonic: string, _address: string, _label?: string) => undefined,
     defaultKeyFile: (label?: string) => `/tmp/fake-pot-${label ?? 'x'}.txt`,
-    resolvePassphrase: () => 'test-passphrase',
+    resolvePassphrase: () => 'test-passphrase-host-secret',
+    sealProvision: async (_input: {
+      seed: string
+      sparkAddress: string
+      label?: string
+      network: 'MAINNET' | 'REGTEST'
+      passphrase: string
+    }) => ({ provisionId: 'prov_test' }),
   }
   return { deps, prompts }
 }
@@ -177,49 +184,53 @@ describe('runProposeWizard', () => {
     )
   })
 
-  it('generate mode: asks label then key file, writes 0600 key file, builds link', async () => {
-    const written: Array<{ path: string; label?: string }> = []
+  it('generate mode: asks label, seals the seed, and does not write a key file', async () => {
+    const written: string[] = []
+    const sealed: string[] = []
     const { deps, prompts } = makeDeps({
       select: ['generate', 'free'],
-      ask: ['Research', ''], // label, blank key-file → default suggested
+      ask: ['Research'],
     })
-    deps.writeKeyFile = (path: string, _m: string, _a: string, label?: string) => {
-      written.push({ path, label })
+    deps.writeKeyFile = (path: string) => {
+      written.push(path)
+    }
+    deps.sealProvision = async (input) => {
+      sealed.push(input.sparkAddress)
+      assert.equal(input.seed.includes('test mnemonic'), true)
+      return { provisionId: 'prov_research' }
     }
     const result = await runProposeWizard([], {}, deps)
 
     assert.equal(result.mode, 'generate')
     assert.equal(result.label, 'Research')
-    assert.equal(written.length, 1)
-    assert.equal(written[0].label, 'Research')
-    assert.match(written[0].path, /fake-pot-Research/)
+    assert.equal(written.length, 0)
+    assert.equal(sealed.length, 1)
+    assert.equal(result.provisionId, 'prov_research')
     assert.match(result.output, /Pot created successfully/)
-    assert.match(result.output, /Disconnect cannot stop on-chain spend/)
-    assert.match(result.output, /fake-pot-Research/)
+    assert.match(result.output, /prov_research/)
+    assert.match(result.output, /No plaintext key file/)
     assert.ok(!result.output.includes('test mnemonic words'))
     assert.match(result.href!, /https:\/\/zappi\.money\//)
-    assert.ok(
-      prompts.some((p) => p.startsWith('Pot key file')),
-      'key-file prompt does not say mnemonic',
-    )
+    assert.ok(!prompts.some((p) => p.startsWith('Pot key file')))
     assert.ok(!prompts.some((p) => /mnemonic/i.test(p)))
   })
 
-  it('generate mode: a directory answer writes the suggested filename inside it', async () => {
+  it('generate mode: an explicit --key-file directory writes the suggested filename inside it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'zappi-wiz-'))
     const written: string[] = []
     const { deps } = makeDeps({
       select: ['generate', 'free'],
-      ask: ['Research', dir],
+      ask: ['Research'],
     })
     deps.defaultKeyFile = () => '/tmp/pot-research-1.txt'
     deps.writeKeyFile = (path: string) => {
       written.push(path)
     }
     try {
-      const result = await runProposeWizard([], {}, deps)
+      const result = await runProposeWizard([], {}, deps, { keyFile: dir })
       assert.equal(written[0], join(dir, 'pot-research-1.txt'))
       assert.equal(result.keyFile, join(dir, 'pot-research-1.txt'))
+      assert.match(result.output, /plaintext/)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -236,12 +247,14 @@ describe('runProposeWizard', () => {
       events.push(`prompts:${prompts.length}`)
       return 'test mnemonic words only for unit tests never use'
     }
-    deps.writeKeyFile = (path: string, _m: string, _a: string, label?: string) => {
-      written.push({ path, label })
+    deps.sealProvision = async () => {
+      written.push({ path: 'sealed', label: 'sealed' })
+      return { provisionId: 'prov_auto' }
     }
     const result = await runProposeWizard([], {}, deps)
     assert.match(result.label, /^pot_[0-9a-f]{8}$/)
-    assert.match(written[0].path, /fake-pot-pot_/)
+    assert.equal(written.length, 1)
+    assert.equal(result.provisionId, 'prov_auto')
     assert.ok(prompts.includes(LABEL_CONFIRM_PROMPT))
     assert.ok(prompts.includes(NETWORK_PROMPT))
     assert.ok(prompts.includes(ORIGIN_PROMPT))
@@ -507,7 +520,8 @@ describe('runProposeWizard', () => {
     assert.ok(!prompts.includes(ORIGIN_PROMPT))
     assert.ok(!prompts.includes(LABEL_CONFIRM_PROMPT))
     assert.ok(prompts.includes(NETWORK_PROMPT))
-    assert.ok(prompts.some((p) => p.startsWith('Pot key file')))
+    assert.ok(!prompts.some((p) => p.startsWith('Pot key file')))
+    assert.equal(result.provisionId, 'prov_test')
   })
 
   it('rejects a preset origin that is not http(s)', async () => {
@@ -547,15 +561,14 @@ describe('runProposeWizard', () => {
     assert.equal(wrote, false, 'must not write a key file when the passphrase is missing')
   })
 
-  it('generate mode: success output tells the operator to seal then remove the plaintext file', async () => {
+  it('generate mode: success output says the seed was sealed and never prints it', async () => {
     const { deps } = makeDeps({
       select: ['generate', 'free'],
-      ask: ['Research', ''],
+      ask: ['Research'],
     })
     const result = await runProposeWizard([], { SPARK_NETWORK: 'MAINNET' }, deps)
-    assert.match(result.output, /Seal it into the encrypted registry/)
-    assert.match(result.output, /pots registry import --pot-id <id> --from-file/)
-    assert.match(result.output, /Anyone who reads this file can drain the pot/)
+    assert.match(result.output, /No plaintext key file/)
+    assert.match(result.output, /pots registry bind --provision prov_test/)
     assert.ok(!result.output.includes('test mnemonic words'))
   })
 })

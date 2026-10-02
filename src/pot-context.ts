@@ -26,11 +26,13 @@ import {
   type PotRecord,
 } from './pot-registry.js'
 import {
+  assertFreeSignerSpendMode,
   resolvePotPassphrase,
   resolveSparkNetwork,
   type PotEnv,
 } from './env.js'
 import { loadPotSeed } from './load-pot-seed.js'
+import { inspectSparkAddress } from './spark-address.js'
 
 export type SparkNetwork = 'MAINNET' | 'REGTEST'
 export type PotDerivationMode = 'spark'
@@ -74,6 +76,8 @@ export async function resolvePotContext(
   deps: PotContextDeps = {},
 ): Promise<PotContext> {
   const env = deps.env ?? process.env
+  // Reject auth-required and unknown modes before any seed is read.
+  assertFreeSignerSpendMode(env)
   const potId = await resolvePotId(selectors, env, deps)
 
   const registryRecord = await findPotRecord(potId, { env })
@@ -127,6 +131,7 @@ async function resolveRegistryContext(
       `Pot ${potId} is in the encrypted registry but ZAPPI_POT_SEED/ZAPPI_POT_KEY_FILE is also set. Remove the env override; the registry is authoritative.`,
     )
   }
+  assertRecordMatchesSelectors(record, env)
   const passphrase = deps.passphrase ?? resolvePotPassphrase(env)
   // loadPotSeedFromRegistry re-validates endpoints and the AAD tag. A decrypt
   // failure here fails closed — we do NOT fall back to env/file.
@@ -165,14 +170,38 @@ async function resolveLegacyContext(
       `Pot ${potId} is not in the encrypted registry and no legacy seed source is set. Run \`zappi-cli propose --generate\` or set ZAPPI_POT_SEED.`,
     )
   }
-  // loadPotSeed reads env then file and applies the placeholder guard.
-  const seed = loadPotSeed(env)
+  // Legacy opt-out still needs an authoritative address. Without it an
+  // arbitrary pot id plus an unrelated seed would be labelled free.
+  const expectedAddress = env.ZAPPI_POT_SPARK_ADDRESS?.trim()
+  if (!expectedAddress) {
+    throw new Error(
+      `Pot ${potId} has no registry identity. Set ZAPPI_POT_SPARK_ADDRESS to the pot's Spark address before using ZAPPI_POT_SEED or ZAPPI_POT_KEY_FILE. Refusing to sign.`,
+    )
+  }
   const network = resolveSparkNetwork(env)
+  const inspected = inspectSparkAddress(expectedAddress)
+  if (
+    inspected.valid &&
+    inspected.network &&
+    inspected.network !== 'FOREIGN' &&
+    inspected.network !== network
+  ) {
+    throw new Error(
+      `ZAPPI_POT_SPARK_ADDRESS is a ${inspected.network} address but SPARK_NETWORK is ${network}. Refusing to sign.`,
+    )
+  }
+  const accountIndex = resolveLegacyAccountIndex(env)
   const derivationMode: PotDerivationMode = DEFAULT_POT_DERIVATION_MODE
-  const accountIndex = DEFAULT_POT_ACCOUNT_INDEX
+  // Identity is known. Only now read the signing material.
+  const seed = loadPotSeed(env)
   const derived = await (deps.deriveAddress
     ? deps.deriveAddress(seed, network, accountIndex)
     : defaultDeriveAddress(seed, network, accountIndex))
+  if (derived !== expectedAddress) {
+    throw new Error(
+      `Seed-derived Spark address does not match ZAPPI_POT_SPARK_ADDRESS. Refusing to sign — the seed does not belong to this pot.`,
+    )
+  }
   return freezeContext({
     potId,
     sparkAddress: derived,
@@ -183,6 +212,40 @@ async function resolveLegacyContext(
     source: envSeed ? 'env' : 'file',
     seed,
   })
+}
+
+function assertRecordMatchesSelectors(record: PotRecord, env: PotEnv): void {
+  if (record.spendMode !== 'free') {
+    throw new Error('Registry pot is not a free pot. Refusing to sign.')
+  }
+  if (record.derivationMode !== 'spark') {
+    throw new Error(`Unknown derivation mode ${record.derivationMode}. Refusing to sign.`)
+  }
+  const expected = env.ZAPPI_POT_SPARK_ADDRESS?.trim()
+  if (expected && expected !== record.sparkAddress) {
+    throw new Error(
+      `ZAPPI_POT_SPARK_ADDRESS does not match the registry identity for ${record.potId}. Refusing to sign.`,
+    )
+  }
+  const accountRaw = env.ZAPPI_POT_ACCOUNT_INDEX?.trim()
+  if (accountRaw) {
+    const accountIndex = resolveLegacyAccountIndex(env)
+    if (accountIndex !== record.accountIndex) {
+      throw new Error(
+        `ZAPPI_POT_ACCOUNT_INDEX ${accountIndex} does not match the registry account index ${record.accountIndex}. Refusing to sign.`,
+      )
+    }
+  }
+}
+
+function resolveLegacyAccountIndex(env: PotEnv): number {
+  const raw = env.ZAPPI_POT_ACCOUNT_INDEX?.trim()
+  if (!raw) return DEFAULT_POT_ACCOUNT_INDEX
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error('ZAPPI_POT_ACCOUNT_INDEX must be a non-negative integer.')
+  }
+  return parsed
 }
 
 /* --------------------------- address verification ---------------------------- */

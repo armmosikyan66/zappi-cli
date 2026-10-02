@@ -26,26 +26,45 @@ secret. It is **not** the human device-wallet passphrase; unattended free-pot
 operation needs no human passphrase.
 
 - Set `ZAPPI_POT_PASSPHRASE` in the bot's environment (secret file / secret
-  manager), never in `~/.zshrc` or argv.
-- A missing or placeholder (`<…>`) passphrase fails before any pot creation or
-  signing — the CLI never writes a plaintext seed.
-- The generated mnemonic stays in signer memory and is sealed into the
-  registry before success. It is never written to `process.env`, stdout,
-  stderr, logs, or HTTP debug output, and never passed to child processes.
+  manager), never in `~/.zshrc` or argv. It must be at least 16 characters.
+  A missing, short, or placeholder (`<…>`) value fails before mnemonic
+  generation.
+- The generated mnemonic stays in signer memory and is sealed into an
+  encrypted provisioning record before success. Nest has not assigned a pot
+  id yet. After the human registers, bind that record:
+  `zappi-cli pots registry bind --provision <prov_id> --pot-id <id>`.
+- New pots are derivation mode `spark`, account index 0. Import does not
+  assume that: pass `--network`, `--account-index`, and `--address`, and the
+  CLI refuses to store a seed that does not reproduce that identity.
+- The mnemonic is never written to `process.env`, stdout, stderr, logs, or
+  HTTP debug output. Browser and clipboard children are spawned with host
+  secrets removed from their environment.
 
 ## 3. Creating / importing a pot
 
 ```bash
-# Unattended creation (seals the generated seed into the registry):
+# Unattended creation. Seals a provisioning record; does not write a txt file.
 ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli propose --generate --mode free
+# After Zappi shows the pot id:
+zappi-cli pots registry bind --provision <prov_id> --pot-id <id>
 
-# Import an existing 12/24-word recovery phrase (masked TTY prompt, or a 0600 file):
-ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli pots registry import --pot-id <id> [--label Research]
-ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli pots registry import --pot-id <id> --from-file ~/.zappi/pot-research.txt
+# Explicit plaintext opt-out (warned). This is the only path that writes a key file.
+ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli propose --generate --mode free --key-file ~/.zappi/pot.txt
+
+# Import. Network, account index, and address are the original identity — not SPARK_NETWORK.
+ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli pots registry import \
+  --pot-id <id> --network REGTEST --account-index 0 --address <spark-address>
+ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli pots registry import \
+  --pot-id <id> --network REGTEST --account-index 3 --address <spark-address> \
+  --from-file ~/.zappi/pot-research.txt
 ```
 
 The mnemonic is **never** a CLI flag (it would leak to `ps` and shell
-history). Import reads it from a hidden TTY prompt or a 0600 file.
+history). Import reads it from a hidden TTY prompt or a mode-0600 regular
+file (symlinks, loose permissions, and oversized files are refused). The
+source file is not deleted. An import that does not reproduce `--address`,
+or that would replace a stored pot with a different network, account index,
+or address, is refused and the existing entry is left as-is.
 
 ## 4. Legacy opt-out (plaintext key file / env seed)
 
@@ -53,8 +72,15 @@ Plaintext key files (`ZAPPI_POT_KEY_FILE`) and the env seed
 (`ZAPPI_POT_SEED`) are **explicit legacy opt-outs / migration inputs**,
 never automatic recovery from registry failure. If both a registry pot and
 an env/file seed are set, the CLI fails closed — the registry is
-authoritative. Warn before relying on a plaintext file: anyone who reads that
-file gets the seed and can drain the pot.
+authoritative.
+
+A legacy seed is not treated as free just because it is set. Signing also
+requires `ZAPPI_POT_SPARK_ADDRESS` (the pot's Spark address). The derived
+address must match it. `ZAPPI_POT_SPEND_MODE=auth_required` and any unknown
+spend mode are rejected before the seed is read. `ZAPPI_POT_ACCOUNT_INDEX`
+overrides the default account 0 when set. Anyone who reads a plaintext file
+gets the seed and can drain the pot. The CLI does not detect or refuse a
+main-wallet mnemonic; do not import one.
 
 ## 5. Backup, restore, rotation
 
@@ -64,15 +90,20 @@ zappi-cli pots registry restore /mnt/backup/pots.json     # replace registry fro
 ZAPPI_POT_PASSPHRASE=<old> zappi-cli pots registry rotate-passphrase   # prompts for new (hidden, twice)
 ```
 
-- **Backup** is a copy of the already-encrypted registry (ciphertext). Store
-  it on offline media. It is decryptable only with the passphrase.
-- **Restore** validates the backup before overwriting the live registry, so
-  a corrupt backup never destroys a working one. Identity is verified on
-  first decrypt (the seed-derived Spark address must match each stored pot).
-  A stale backup restores the original pot identities — that is the point.
-- **Rotation** re-seals every pot under a new passphrase. It does **not**
-  invalidate old ciphertext or old backups — they still decrypt with the old
-  passphrase. Rotation does **not** revoke an exposed seed.
+- **Backup** copies the encrypted registry through the same locking and
+  permission checks as a normal write. The destination must not be a symlink.
+  Store the copy on offline media. It stays decryptable with the passphrase
+  that sealed it.
+- **Restore** authenticates every envelope with `ZAPPI_POT_PASSPHRASE` and
+  checks trusted API/app origins before replacing the live file. A corrupt
+  backup, a wrong passphrase, tampered ciphertext, or a symlink destination
+  leaves the live registry untouched. A stale backup restores the original
+  pot identities (network, account index, address). It does not apply the
+  current `SPARK_NETWORK` or account 0 as new defaults.
+- **Rotation** re-seals every pot under a new passphrase, using the same
+  locked atomic write. Retained old ciphertext and old backups **remain
+  decryptable with the old secret**. Re-encryption does not revoke seed
+  access and does not invalidate those copies.
 
 ## 6. `pots registry remove` — local access only
 
@@ -106,16 +137,29 @@ signer on macOS/Linux, or see [docs/signer-boundary.md](./signer-boundary.md) §
 
 ## 9. Money-out gates, caps, and the pending-operation journal
 
-Every free-pot money-out path (`pay` and `send spark`) runs a deterministic
-pre-sign gate and a durable pending-operation journal (Linear 1-461):
+Every free-pot money-out path runs a deterministic pre-sign gate and a
+durable pending-operation journal (Linear 1-461, extended by 1-468). That
+includes `pay`, direct Spark `send`, `send internal`, `send external`, and
+`withdraw confirm`. Auth-required pots never enter this signer.
 
-- **Pre-sign gate** (`pot-outgate.ts`): the recipient, integer amount, canonical
-  asset (USDB), network, source pot, and (for `pay`) resource are bound to the
-  verified pot context and checked before signing. Missing, contradictory,
-  expired, or unsupported data is rejected before any signature.
-- **Idempotency key bound to the immutable intent**: the operation's key is
-  derived from the canonical intent (+ optional `--idempotency-key` salt), so a
-  replay of the same intent reconciles instead of issuing a second payment.
+Selectors: `--pot` wins over `--pot-id` and `ZAPPI_POT_ID`. If two of those
+name different pots, the command fails closed. With no flag and no
+`ZAPPI_POT_ID`, the registry's active pot is used.
+
+- **Pre-sign gate**: the recipient Spark address is decoded and its network
+  (MAINNET vs REGTEST) must match the verified pot. The integer cent amount,
+  USDB token id, source account, and (for `pay`) the resource id are bound
+  before signing. A quote whose account, token, amount, or expiry does not
+  match is rejected. The gate does not treat "intent copied from the context"
+  as proof that the recipient is on that network.
+- **Idempotency**: the journal key is the canonical intent plus the optional
+  `--idempotency-key` salt. The same intent and salt reconcile (no second
+  signature). A different salt is a different payment. Direct Spark send,
+  internal send, and external send all pass that salt through. Omitting it
+  does not mix in the current time, so a retry of the same command reconciles.
+- **Journal failures fail closed.** Only a missing journal file starts empty.
+  An oversized, unreadable, or corrupt journal stops signing and is not
+  replaced. The CLI does not drop old operations to make room.
 - **Durable journal** (`~/.zappi/pending-ops.json`, 0600, atomic write,
   cross-process lock): around every submission the gate records a pending op.
   On timeout, crash, or ambiguous settlement the same op is reconciled — a

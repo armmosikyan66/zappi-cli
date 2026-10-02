@@ -15,6 +15,9 @@ import { parseConsumeCliArgs, parsePayCliArgs } from './cli.js'
 import { AUTH_REQUIRED_PAY_ERROR, POT_NOT_ATTACHED_ERROR } from './env.js'
 import { EMPTY_POT_ERROR } from './spark-send.js'
 import { toJson } from './results.js'
+import { bech32m } from '@scure/base'
+
+const PAY_TO = bech32m.encode('sparkrt', bech32m.toWords(new Uint8Array(32).fill(2)))
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -32,7 +35,7 @@ function unpaid402(extra: Record<string, unknown> = {}): Response {
   return jsonResponse(402, {
     accepts: [
       {
-        payTo: 'spark1payto',
+        payTo: PAY_TO,
         network: 'spark',
         asset: 'USDB',
         extra: { priceCents: 25, pricingMode: 'exact', ...extra },
@@ -131,7 +134,7 @@ describe('pay + consume request shaping (mock fetch, no Spark)', () => {
       loadSeed: () => SEED,
       readTokenIdentifier: async () => 'btkn1example',
       sendUsdb: async (input) => {
-        assert.equal(input.receiverSparkAddress, 'spark1payto')
+        assert.equal(input.receiverSparkAddress, PAY_TO)
         assert.equal(input.amountCents, 25)
         assert.equal(input.mnemonic, SEED)
         return { sparkTxHash: 'aa'.repeat(32) }
@@ -223,7 +226,7 @@ describe('pay + consume request shaping (mock fetch, no Spark)', () => {
               return jsonResponse(402, {
                 accepts: [
                   {
-                    payTo: 'spark1payto',
+                    payTo: PAY_TO,
                     network: 'solana',
                     asset: 'USDC',
                     extra: { priceCents: 10, pricingMode: 'exact' },

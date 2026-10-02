@@ -26,6 +26,7 @@ import {
 import { isMeteredPricing, pickPaywallAccept, type PaywallChallenge } from './paywall-accept.js'
 import { resolvePotContext, type PotContext } from './pot-context.js'
 import { validateMoneyOutIntent, type MoneyOutIntent } from './pot-outgate.js'
+import { assertRecipientOnPotNetwork } from './free-pot-sign.js'
 import {
   beginOperation,
   markSettled,
@@ -152,6 +153,8 @@ export interface PayResourceOptions {
     accountNumber: number,
     network: 'MAINNET' | 'REGTEST',
   ) => Promise<string>
+  /** `--pot <id>`. Wins over `ZAPPI_POT_ID` when they differ (fail closed). */
+  potFlag?: string
   /** Default true: after settle, consume one grant unit when pricingMode is metered. */
   autoConsume?: boolean
   consumeUnits?: number
@@ -164,7 +167,12 @@ export async function payResourceResult(
   options: PayResourceOptions = {},
 ): Promise<PayResult> {
   const env = options.env ?? process.env
-  const potId = requirePotId(env)
+  const flagPot = options.potFlag?.trim()
+  const envPot = env.ZAPPI_POT_ID?.trim()
+  if (flagPot && envPot && flagPot !== envPot) {
+    throw new Error(`Conflicting pot selectors: --pot ${flagPot} but ZAPPI_POT_ID=${envPot}. Pick one.`)
+  }
+  const potId = flagPot || envPot || requirePotId(env)
   if (resolvePotSpendMode(env) === 'auth_required') {
     throw new Error(AUTH_REQUIRED_PAY_ERROR)
   }
@@ -203,14 +211,17 @@ export async function payResourceResult(
     ? await options.resolveContext(env)
     : options.loadSeed
       ? legacySeedContext(env, options.loadSeed)
-      : await resolvePotContext({}, { env })
-  const mnemonic = context.getSeed()
+      : await resolvePotContext(options.potFlag ? { potFlag: options.potFlag } : {}, { env })
   const sparkNetwork = context.network
   const accountNumber = context.accountIndex
 
-  // Deterministic pre-sign gate: bind the immutable intent (recipient, amount,
-  // asset, network, source pot, resource) to the verified context. Rejects
-  // missing/contradictory/expired/unsupported data before signing. (1-316/1-461)
+  // The 402 `network` field is the rail name (`spark`), not the Spark HRP.
+  // The recipient address's HRP must match the pot network before any seed is read.
+  const recipientNetwork = assertRecipientOnPotNetwork(payTo, sparkNetwork)
+  if (!Number.isSafeInteger(priceCents) || priceCents <= 0) {
+    throw new Error('Pay amount must be a positive safe integer number of cents. Refusing to sign.')
+  }
+
   const intent: MoneyOutIntent = {
     kind: 'pay',
     potId: context.potId,
@@ -218,10 +229,11 @@ export async function payResourceResult(
     receiver: payTo,
     amountCents: priceCents,
     asset: 'USDB',
-    network: context.network,
+    network: recipientNetwork,
     resourceId,
   }
   const { idempotencyKey } = validateMoneyOutIntent(intent, context)
+  const mnemonic = context.getSeed()
 
   const readToken = options.readTokenIdentifier ?? readUsdbTokenIdentifier
   const sendUsdb = options.sendUsdb ?? sendUsdbFromPot

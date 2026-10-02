@@ -90,7 +90,14 @@ describe('pots registry commands', () => {
       writeFileSync(seedFile, PHRASE + '\n', { mode: 0o600 })
       chmodSync(seedFile, 0o600)
       const out = await runPotsRegistryImport(
-        ['--pot-id', 'pot_x', '--from-file', seedFile, '--label', 'Imported'],
+        [
+          '--pot-id', 'pot_x',
+          '--from-file', seedFile,
+          '--label', 'Imported',
+          '--network', 'REGTEST',
+          '--account-index', '0',
+          '--address', SPARK_ADDRESS,
+        ],
         'pretty',
         { env, deriveAddress: deriveMatching },
       )
@@ -109,7 +116,10 @@ describe('pots registry commands', () => {
     try {
       await assert.rejects(
         () =>
-          runPotsRegistryImport(['--pot-id', 'pot_x'], 'pretty', {
+          runPotsRegistryImport(
+            ['--pot-id', 'pot_x', '--network', 'REGTEST', '--account-index', '0', '--address', SPARK_ADDRESS],
+            'pretty',
+            {
             env,
             deriveAddress: deriveMatching,
             askSecret: async () => 'not a mnemonic',
