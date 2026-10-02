@@ -74,6 +74,7 @@ async function runSendSparkUsdb(
   env: PotEnv,
   resolveContext: (env: PotEnv) => Promise<PotContext> = (e) => resolvePotContext({}, { env: e }),
   jdeps?: JournalDeps,
+  externalIdempotencyKey?: string,
 ): Promise<string> {
   const inspected = inspectSparkAddress(to)
   if (!inspected.valid || !inspected.network || inspected.network === 'FOREIGN') {
@@ -109,7 +110,9 @@ async function runSendSparkUsdb(
     asset: 'USDB',
     network: context.network,
   }
-  const { idempotencyKey } = validateMoneyOutIntent(intent, context)
+  const { idempotencyKey } = validateMoneyOutIntent(intent, context, {
+    ...(externalIdempotencyKey ? { externalIdempotencyKey } : {}),
+  })
 
   const mnemonic = context.getSeed()
   let sparkTxHash: string
@@ -187,11 +190,16 @@ export async function runSend(
   const amountCents = resolveAmountCents(strings)
   const route = classifySendTarget(to, strings)
   const idempotencyKey = strings['idempotency-key']
-  const potId = strings['pot-id'] ?? env.ZAPPI_POT_ID
-  const potEnv: NodeJS.ProcessEnv =
-    strings['pot-id'] != null && strings['pot-id'] !== ''
-      ? { ...env, ZAPPI_POT_ID: strings['pot-id'] }
-      : env
+  const potFlag = strings.pot ?? strings['pot-id']
+  if (strings.pot && strings['pot-id'] && strings.pot !== strings['pot-id']) {
+    throw new Error(
+      `Conflicting pot selectors: --pot ${strings.pot} but --pot-id ${strings['pot-id']}. Pick one.`,
+    )
+  }
+  const potId = potFlag ?? env.ZAPPI_POT_ID
+  const potEnv: NodeJS.ProcessEnv = env
+  const resolveContext = (e: PotEnv) =>
+    resolvePotContext(potFlag ? { potFlag } : {}, { env: e })
 
   if (booleans['dry-run']) {
     const plan = {
@@ -230,7 +238,15 @@ export async function runSend(
   }
 
   if (route === 'spark') {
-    return runSendSparkUsdb(to, amountCents, mode, potEnv, undefined, { env: potEnv })
+    return runSendSparkUsdb(
+      to,
+      amountCents,
+      mode,
+      potEnv,
+      resolveContext,
+      { env: potEnv },
+      idempotencyKey,
+    )
   }
 
   if (route === 'internal') {
@@ -258,7 +274,15 @@ export async function runSend(
 
   // Don't invent Orchestra labels for Spark USDB — redirect spark destinations.
   if (looksLikeSparkAddress(to) || /^(usdb|spark)$/i.test(strings.asset) || /^spark$/i.test(strings.network)) {
-    return runSendSparkUsdb(to, amountCents, mode, potEnv, undefined, { env: potEnv })
+    return runSendSparkUsdb(
+      to,
+      amountCents,
+      mode,
+      potEnv,
+      resolveContext,
+      { env: potEnv },
+      idempotencyKey,
+    )
   }
 
   const forwarded = [

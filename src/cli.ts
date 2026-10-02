@@ -63,6 +63,7 @@ export interface PayCliArgs {
   resourceArg?: string
   noConsume: boolean
   units: number
+  potFlag?: string
 }
 
 export interface ConsumeCliArgs {
@@ -78,6 +79,12 @@ export function parsePayCliArgs(argv: string[]): PayCliArgs {
     const next = argv[index + 1]
     if (arg === '--no-consume') {
       parsed.noConsume = true
+    } else if ((arg === '--pot' || arg === '--pot-id') && next) {
+      if (parsed.potFlag && parsed.potFlag !== next) {
+        throw new Error(`Conflicting pot selectors: ${parsed.potFlag} and ${next}. Pick one.`)
+      }
+      parsed.potFlag = next
+      index += 1
     } else if (arg === '--units' && next) {
       parsed.units = parsePositiveUnits(next)
       index += 1
@@ -203,6 +210,7 @@ export async function runCli(
       const result = await payResourceResult(parseResourceId(args.resourceArg), {
         autoConsume: !args.noConsume,
         consumeUnits: args.units,
+        ...(args.potFlag ? { potFlag: args.potFlag } : {}),
         onStatus: (label) => spinner.setText(label),
         journal: {},
       })

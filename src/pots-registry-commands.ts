@@ -11,19 +11,22 @@
  * memory/disk zeroization. See docs/free-pot-registry-ops.md.
  */
 
-import { readFileSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { lstatSync, readFileSync } from 'node:fs'
 import {
   listPots,
   removePot,
   setActivePot,
   savePotSeed,
   getActivePot,
+  findPotRecord,
   validateRegistryFile,
+  authenticateRegistryFile,
+  readRegistryAt,
+  commitRegistryAt,
+  bindProvisionedSeed,
 } from './pot-registry.js'
 import {
   resolvePotPassphrase,
-  resolveSparkNetwork,
   potRegistryPath,
   type PotEnv,
 } from './env.js'
@@ -121,7 +124,7 @@ export async function runPotsRegistryRemove(
   ].join(NL)
 }
 
-/** `pots registry import --pot-id <id> [--from-file <path>] [--label <l>]` */
+/** `pots registry import --pot-id <id> --network <MAINNET|REGTEST> --account-index <n> --address <spark> [--from-file <path>] [--label <l>]` */
 export async function runPotsRegistryImport(
   argv: string[],
   mode: OutputMode,
@@ -132,17 +135,35 @@ export async function runPotsRegistryImport(
   const potId = strings['pot-id']?.trim() || env.ZAPPI_POT_ID?.trim()
   if (!potId) throw new Error('Pass --pot-id <id> (or set ZAPPI_POT_ID). The mnemonic is never a CLI flag.')
   const label = strings.label?.trim() || undefined
-  const network = resolveSparkNetwork(env)
-  const accountIndex = 0
+  const networkRaw = strings.network?.trim().toUpperCase()
+  if (networkRaw !== 'MAINNET' && networkRaw !== 'REGTEST') {
+    throw new Error(
+      'Pass --network MAINNET|REGTEST. Import does not take the original network from SPARK_NETWORK.',
+    )
+  }
+  const network = networkRaw
+  const accountRaw = strings['account-index']?.trim()
+  if (accountRaw == null || accountRaw === '' || !/^\d+$/.test(accountRaw)) {
+    throw new Error(
+      'Pass --account-index <n> (the original derivation index). Import does not assume 0.',
+    )
+  }
+  const accountIndex = Number(accountRaw)
+  const expectedAddress = strings.address?.trim()
+  if (!expectedAddress) {
+    throw new Error('Pass --address <spark-address> (the original pot address). Import does not invent one.')
+  }
   const fromFile = strings['from-file']?.trim()
 
   // Never accept the mnemonic as argv. Read from a masked TTY prompt or a 0600 file.
   let seed: string
+  let plaintextWarning = false
   if (fromFile) {
-    const text = readFileSync(fromFile, 'utf8')
+    const text = readBoundedSecretFile(fromFile)
     const phrase = extractPhraseFromKeyFile(text)
     if (!phrase) throw new Error(`No recovery phrase found in ${fromFile}.`)
     seed = phrase
+    plaintextWarning = true
   } else {
     const ask = deps.askSecret ?? askSecret
     const entered = (await ask('Paste the pot recovery phrase (input hidden):')).trim()
@@ -154,6 +175,23 @@ export async function runPotsRegistryImport(
 
   const deriveAddress = deps.deriveAddress ?? defaultDeriveAddress
   const sparkAddress = await deriveAddress(seed, network, accountIndex)
+  if (sparkAddress !== expectedAddress) {
+    throw new Error(
+      'Imported seed does not reproduce --address at that network and account index. Nothing was stored.',
+    )
+  }
+  const existing = await findPotRecord(potId, { env })
+  if (
+    existing &&
+    (existing.sparkAddress !== sparkAddress ||
+      existing.network !== network ||
+      existing.accountIndex !== accountIndex ||
+      existing.derivationMode !== 'spark')
+  ) {
+    throw new Error(
+      `Refusing to replace ${potId}: the stored pot is ${existing.network} account ${existing.accountIndex} ${existing.sparkAddress}. Import would change that identity.`,
+    )
+  }
   const passphrase = resolvePotPassphrase(env)
 
   await savePotSeed(
@@ -171,15 +209,62 @@ export async function runPotsRegistryImport(
     { env, ...(deps.now ? { now: deps.now } : {}) },
   )
 
-  const result = { ok: true as const, command: 'pots registry import' as const, potId, sparkAddress, network }
+  const result = {
+    ok: true as const,
+    command: 'pots registry import' as const,
+    potId,
+    sparkAddress,
+    network,
+    accountIndex,
+  }
   if (mode === 'json') return jsonOut(result)
-  if (mode === 'plain') return `${potId} ${sparkAddress} ${network}`
-  return [
+  if (mode === 'plain') return `${potId} ${sparkAddress} ${network} account ${accountIndex}`
+  const lines = [
     successLine('Pot imported and sealed in the encrypted registry', mode),
     kv('pot', potId, mode),
     kv('address', sparkAddress, mode),
     kv('network', network, mode),
-    infoLine('Seed sealed to ~/.zappi/pots.json. Set ZAPPI_POT_PASSPHRASE as a host secret to sign.', mode),
+    kv('account', String(accountIndex), mode),
+    infoLine('Seed sealed to the encrypted registry. Set ZAPPI_POT_PASSPHRASE as a host secret to sign.', mode),
+  ]
+  if (plaintextWarning) {
+    lines.push(warnLine('The source file is still plaintext. It was not deleted. Remove it yourself after you confirm the sealed pot signs.', mode))
+  }
+  return lines.join(NL)
+}
+
+/** `pots registry bind --provision <id> --pot-id <id>` */
+export async function runPotsRegistryBind(
+  argv: string[],
+  mode: OutputMode,
+  deps: PotsRegistryCommandDeps = {},
+): Promise<string> {
+  const env = depsEnv(deps)
+  const strings = parseStrings(argv)
+  const provisionId = strings.provision?.trim()
+  const potId = strings['pot-id']?.trim() || env.ZAPPI_POT_ID?.trim()
+  if (!provisionId || !potId) {
+    throw new Error('Usage: zappi-cli pots registry bind --provision <id> --pot-id <id>')
+  }
+  const passphrase = resolvePotPassphrase(env)
+  const record = await bindProvisionedSeed(provisionId, potId, passphrase, { env })
+  const result = {
+    ok: true as const,
+    command: 'pots registry bind' as const,
+    provisionId,
+    potId,
+    sparkAddress: record.sparkAddress,
+    network: record.network,
+    accountIndex: record.accountIndex,
+  }
+  if (mode === 'json') return jsonOut(result)
+  if (mode === 'plain') return `${potId} ${record.sparkAddress} ${record.network}`
+  return [
+    successLine('Provision bound to the Nest pot id', mode),
+    kv('pot', potId, mode),
+    kv('address', record.sparkAddress, mode),
+    kv('network', record.network, mode),
+    kv('account', String(record.accountIndex), mode),
   ].join(NL)
 }
 
@@ -224,14 +309,14 @@ export async function runPotsRegistryBackup(
   const target = argv.find((a) => !a.startsWith('-'))?.trim()
   if (!target) throw new Error('Usage: zappi-cli pots registry backup <path>')
   const src = potRegistryPath(depsEnv(deps))
-  const data = readFileSync(src)
-  mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
-  writeFileSync(target, data, { mode: 0o600 })
-  if (process.platform !== 'win32') chmodSync(target, 0o600)
-  const result = { ok: true as const, command: 'pots registry backup' as const, path: target, bytes: data.length }
+  const file = await readRegistryAt(src)
+  if (!file) throw new Error('Free-pot seed registry is empty. Nothing to back up.')
+  await commitRegistryAt(target, file)
+  const bytes = Buffer.byteLength(`${JSON.stringify(file, null, 2)}\n`)
+  const result = { ok: true as const, command: 'pots registry backup' as const, path: target, bytes }
   if (mode === 'json') return jsonOut(result)
-  if (mode === 'plain') return `backup: ${target} (${data.length} bytes)`
-  return [successLine('Encrypted registry backed up', mode), kv('path', target, mode), kv('size', `${data.length} bytes`, mode)].join(NL)
+  if (mode === 'plain') return `backup: ${target} (${bytes} bytes)`
+  return [successLine('Encrypted registry backed up', mode), kv('path', target, mode), kv('size', `${bytes} bytes`, mode)].join(NL)
 }
 
 /** `pots registry restore <path>` — replace the registry from an encrypted backup. */
@@ -244,6 +329,7 @@ export async function runPotsRegistryRestore(
   if (!src) throw new Error('Usage: zappi-cli pots registry restore <path>')
   const env = depsEnv(deps)
   const dest = potRegistryPath(env)
+  readBoundedSecretFile(src)
   const data = readFileSync(src, 'utf8')
   let parsed: unknown
   try {
@@ -251,11 +337,11 @@ export async function runPotsRegistryRestore(
   } catch {
     throw new Error(`Backup at ${src} is not valid JSON.`)
   }
-  // Validate before overwriting so a corrupt backup never destroys the live registry.
+  // Schema first, then authenticate every envelope. A tampered or
+  // wrong-passphrase backup throws here and the live registry is not replaced.
   const file = validateRegistryFile(parsed)
-  mkdirSync(dirname(dest), { recursive: true, mode: 0o700 })
-  writeFileSync(dest, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 })
-  if (process.platform !== 'win32') chmodSync(dest, 0o600)
+  authenticateRegistryFile(file, resolvePotPassphrase(env), env)
+  await commitRegistryAt(dest, file)
   const count = Object.keys(file.pots).length
   const result = { ok: true as const, command: 'pots registry restore' as const, path: dest, pots: count }
   if (mode === 'json') return jsonOut(result)
@@ -269,6 +355,34 @@ export async function runPotsRegistryRestore(
 }
 
 /* -------------------------------- helpers --------------------------------- */
+
+const MAX_SECRET_FILE_BYTES = 64 * 1024
+
+/** Mode 0600, owned by us, not a symlink, bounded. Used for migration input and backups. */
+function readBoundedSecretFile(path: string): string {
+  let stat: ReturnType<typeof lstatSync>
+  try {
+    stat = lstatSync(path)
+  } catch (error) {
+    throw new Error(`Could not read ${path} (${(error as Error).message}).`)
+  }
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Refusing to read a symlink: ${path}`)
+  }
+  if (!stat.isFile()) {
+    throw new Error(`Refusing to read ${path}: it is not a regular file.`)
+  }
+  if ((stat.mode & 0o077) !== 0) {
+    throw new Error(`Refusing to read ${path}: other users can read it. Run chmod 600 ${path}.`)
+  }
+  if (typeof process.getuid === 'function' && stat.uid !== process.getuid()) {
+    throw new Error(`Refusing to read ${path}: it is not owned by you.`)
+  }
+  if (stat.size > MAX_SECRET_FILE_BYTES) {
+    throw new Error(`Refusing to read ${path}: file is larger than ${MAX_SECRET_FILE_BYTES} bytes.`)
+  }
+  return readFileSync(path, 'utf8')
+}
 
 function parseStrings(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {}
@@ -298,7 +412,7 @@ async function defaultDeriveAddress(seed: string, network: 'MAINNET' | 'REGTEST'
 }
 
 const REGISTRY_USAGE =
-  'Usage: zappi-cli pots registry <list|use|remove|import|rotate-passphrase|backup|restore> ...'
+  'Usage: zappi-cli pots registry <list|use|remove|import|bind|rotate-passphrase|backup|restore> ...'
 
 /** Dispatch `pots registry <sub>`. `sub` undefined → `list`. */
 export async function runPotsRegistry(
@@ -311,6 +425,7 @@ export async function runPotsRegistry(
   if (sub === 'use') return runPotsRegistryUse(argv, mode, deps)
   if (sub === 'remove') return runPotsRegistryRemove(argv, mode, deps)
   if (sub === 'import') return runPotsRegistryImport(argv, mode, deps)
+  if (sub === 'bind') return runPotsRegistryBind(argv, mode, deps)
   if (sub === 'rotate-passphrase') return runPotsRegistryRotatePassphrase(mode, deps)
   if (sub === 'backup') return runPotsRegistryBackup(argv, mode, deps)
   if (sub === 'restore') return runPotsRegistryRestore(argv, mode, deps)

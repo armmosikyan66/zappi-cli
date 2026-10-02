@@ -19,6 +19,8 @@ interface CaseEnv {
   ZAPPI_POT_ID?: string
   ZAPPI_POT_SEED?: string
   ZAPPI_POT_KEY_FILE?: string
+  ZAPPI_POT_SPARK_ADDRESS?: string
+  ZAPPI_POT_SPEND_MODE?: string
   SPARK_NETWORK?: string
 }
 
@@ -178,6 +180,7 @@ describe('resolvePotContext — legacy path', () => {
         ZAPPI_APP_ORIGIN: 'https://app.test.zappi.money',
         ZAPPI_POT_ID: 'pot_legacy',
         ZAPPI_POT_SEED: PHRASE,
+        ZAPPI_POT_SPARK_ADDRESS: SPARK_ADDRESS,
         SPARK_NETWORK: 'MAINNET',
       }
       const ctx = await resolvePotContext({}, { env, deriveAddress: deriveMatching })
@@ -204,6 +207,7 @@ describe('resolvePotContext — legacy path', () => {
         ZAPPI_APP_ORIGIN: 'https://app.test.zappi.money',
         ZAPPI_POT_ID: 'pot_legacy',
         ZAPPI_POT_KEY_FILE: keyFile,
+        ZAPPI_POT_SPARK_ADDRESS: SPARK_ADDRESS,
         SPARK_NETWORK: 'REGTEST',
       }
       const ctx = await resolvePotContext({}, { env, deriveAddress: deriveMatching })

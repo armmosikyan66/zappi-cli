@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { openUrl as openUrlSanitized } from './wizard-io.js'
 import {
   buildRegisterDeepLink,
   parseRegisterDeepLinkQuery,
@@ -18,6 +18,7 @@ import {
   type WizardPresets,
 } from './propose-wizard.js'
 import { resolveAppOrigin, resolvePotPassphrase, resolveSparkNetwork, type PotEnv } from './env.js'
+import { saveProvisionedSeed } from './pot-registry.js'
 
 export {
   defaultKeyFile,
@@ -204,9 +205,7 @@ export function printRegisterDeepLink(input: {
 }
 
 function openUrl(href: string) {
-  const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
-  const child = spawn(command, [href], { stdio: 'ignore', detached: true })
-  child.unref()
+  openUrlSanitized(href)
 }
 
 export interface ProposeRegisterDeps {
@@ -230,17 +229,10 @@ async function executeFlagPropose(
     }
     const { generateMnemonic } = await import('@scure/bip39')
     const { wordlist } = await import('@scure/bip39/wordlists/english.js')
-    // Require the unlock secret before unattended creation so a plaintext
-    // mnemonic is never created without the secret provisioned to seal it.
-    // (1-456 stage 4 / 1-460)
-    resolvePotPassphrase(env)
+    // Require a high-entropy host secret before the mnemonic exists.
+    const passphrase = resolvePotPassphrase(env)
     const mnemonic = generateMnemonic(wordlist, 128)
     const generatedAddress = await deriveSparkAddress(mnemonic, network)
-    const keyFile = resolveKeyFilePath(
-      args.keyFile,
-      defaultKeyFile(args.label),
-    )
-    writeKeyFile(keyFile, mnemonic, generatedAddress, args.label)
     const printed = printRegisterDeepLink({
       sparkAddress: generatedAddress,
       label: args.label,
@@ -249,13 +241,42 @@ async function executeFlagPropose(
       mode: args.mode,
       ref: args.ref,
     })
-    const output = [
-      printed,
-      `Key file written (mode 0600): ${keyFile}`,
-      'This file is plaintext. Seal it into the encrypted registry once you have the pot id, then remove the file:',
-      `  ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli pots registry import --pot-id <id> --from-file ${keyFile}`,
-      'Anyone who reads this file can drain the pot. Do not cat, print, email, or paste it.',
-    ].join('\n')
+    // `--key-file` is an explicit plaintext opt-out. The default seals the
+    // mnemonic into an encrypted provisioning record before success. The Nest
+    // pot id is not known yet; bind it after the human registers.
+    let storedLine: string
+    if (args.keyFile?.trim()) {
+      const keyFile = resolveKeyFilePath(args.keyFile, defaultKeyFile(args.label))
+      writeKeyFile(keyFile, mnemonic, generatedAddress, args.label)
+      storedLine = [
+        `Key file written (mode 0600): ${keyFile}`,
+        'This file is plaintext. It is the only recoverable backup until you seal it.',
+        `  zappi-cli pots registry import --pot-id <id> --from-file ${keyFile} --network ${network} --account-index 0 --address ${generatedAddress}`,
+        'Anyone who reads this file can drain the pot. Do not cat, print, email, or paste it.',
+      ].join('\n')
+    } else {
+      const { provisionId } = await saveProvisionedSeed(
+        {
+          ...(args.label ? { label: args.label } : {}),
+          sparkAddress: generatedAddress,
+          network,
+          derivationMode: 'spark',
+          accountIndex: 0,
+          seed: mnemonic,
+        },
+        passphrase,
+        { env },
+      )
+      storedLine = [
+        `Seed sealed in the encrypted registry as provision ${provisionId}.`,
+        'No plaintext key file was written.',
+        'Set ZAPPI_POT_PASSPHRASE as a host secret.',
+        'After the pot is registered in Zappi, bind the provision to the Nest pot id:',
+        `  zappi-cli pots registry bind --provision ${provisionId} --pot-id <id>`,
+        'New pots use derivation spark, account index 0. Do not print the seed.',
+      ].join('\n')
+    }
+    const output = [printed, storedLine].join('\n')
     if (args.open) {
       const href = buildRegisterDeepLink({
         sparkAddress: generatedAddress,

@@ -8,19 +8,14 @@
  * fund migration — never automated here.
  */
 
-import { readFileSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
 import {
   openSeed,
   sealSeed,
-  validateRegistryFile,
+  updateRegistryAt,
   type PotRecord,
   type RegistryFile,
 } from './pot-registry.js'
-import { potRegistryPath, type PotEnv } from './env.js'
-
-const FILE_MODE = 0o600
-const DIR_MODE = 0o700
+import type { PotEnv } from './env.js'
 
 export interface ReseedDeps {
   env?: PotEnv
@@ -38,29 +33,36 @@ export async function reseedAll(
   newPassphrase: string,
   deps: ReseedDeps = {},
 ): Promise<number> {
-  const raw = readFileSync(registryPath, 'utf8')
-  const file = validateRegistryFile(JSON.parse(raw))
-  const resealed: Record<string, PotRecord> = Object.create(null)
-  const potIds = Object.keys(file.pots)
-
-  // Decrypt + re-seal every pot first; only write if all succeed.
-  for (const potId of potIds) {
-    const record = file.pots[potId]
-    if (!record) continue
-    const seed = openSeed(record, oldPassphrase, record)
-    const envelope = sealSeed(seed, newPassphrase, record)
-    resealed[potId] = { ...record, ...envelope }
-  }
-
-  const next: RegistryFile = {
-    version: file.version,
-    ...(file.activePotId ? { activePotId: file.activePotId } : {}),
-    pots: resealed,
-  }
-
-  mkdirSync(dirname(registryPath), { recursive: true, mode: DIR_MODE })
-  writeFileSync(registryPath, `${JSON.stringify(next, null, 2)}\n`, { mode: FILE_MODE })
-  if (process.platform !== 'win32') chmodSync(registryPath, FILE_MODE)
   void deps
-  return potIds.length
+  let count = 0
+  // Decrypt every envelope first inside the registry lock. The atomic commit
+  // runs only after all of them authenticate, so a wrong passphrase or a
+  // tampered record leaves the live file untouched. Old ciphertext is not
+  // revoked: anything still encrypted to the old secret still opens with it.
+  await updateRegistryAt(registryPath, (file) => {
+    const resealed: Record<string, PotRecord> = Object.create(null)
+    for (const potId of Object.keys(file.pots)) {
+      const record = file.pots[potId]
+      if (!record) continue
+      const seed = openSeed(record, oldPassphrase, record)
+      resealed[potId] = { ...record, ...sealSeed(seed, newPassphrase, record) }
+      count += 1
+    }
+    const provisions: Record<string, PotRecord> = Object.create(null)
+    for (const provisionId of Object.keys(file.provisions ?? {})) {
+      const record = file.provisions?.[provisionId]
+      if (!record) continue
+      const seed = openSeed(record, oldPassphrase, record)
+      provisions[provisionId] = { ...record, ...sealSeed(seed, newPassphrase, record) }
+      count += 1
+    }
+    const next: RegistryFile = {
+      version: file.version,
+      ...(file.activePotId ? { activePotId: file.activePotId } : {}),
+      pots: resealed,
+      ...(Object.keys(provisions).length > 0 ? { provisions } : {}),
+    }
+    return next
+  })
+  return count
 }
