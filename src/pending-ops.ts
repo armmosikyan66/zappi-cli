@@ -276,7 +276,9 @@ function committedAmounts(file: JournalFile, now: Date): number {
   const cutoff = now.getTime() - CUMULATIVE_WINDOW_MS
   let total = 0
   for (const op of Object.values(file.ops)) {
-    if (op.status !== 'submitted' && op.status !== 'settled') continue
+    // Pending counts too: a concurrent attempt that has not yet recorded a tx
+    // hash still reserves the amount, so two parallel signs cannot both pass.
+    if (op.status === 'failed') continue
     if (new Date(op.createdAt).getTime() < cutoff) continue
     total += op.amountCents
   }

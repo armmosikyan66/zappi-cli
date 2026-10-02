@@ -132,3 +132,22 @@ The backend's paywall-settlement replay recovery ([1-430](https://linear.app/skr
 reused, not duplicated: the CLI retries settle with the same tx hash and the
 journal ensures it never re-signs on replay.
 
+## 10. Inherited settlement risk (release blocker)
+
+[1-220](https://linear.app/skribz/issue/1-220/zappi-buyer-mcp-server-http-paywall-tools)
+and [1-316](https://linear.app/skribz/issue/1-316/cli-typesafe-jev-pre-sign-gate-transfer-must-match-402)
+carry an inherited payer-proof / settlement-claim race: who is credited for a
+Spark payment is decided by the backend settle path, not by this CLI's local
+registry or pre-sign gate.
+
+**Disposition:** explicit release blocker, not a newly confirmed exploit, and
+not fixed by this work.
+
+- The CLI gate checks recipient, amount, asset, network, source pot, and
+  resource before signing, and the journal stops a second signature for the
+  same intent.
+- Those checks do **not** prove payer attribution. A local seed registry
+  cannot decide which Zappi account an on-chain transfer belongs to.
+- Backend remediation stays separately scoped. Do not treat 1-456 as closing
+  1-220 or 1-316. Ship the free-pot signer only with that dependency recorded.
+
