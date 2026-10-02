@@ -17,7 +17,7 @@ import {
   runProposeWizard,
   type WizardPresets,
 } from './propose-wizard.js'
-import { resolveAppOrigin, resolveSparkNetwork, type PotEnv } from './env.js'
+import { resolveAppOrigin, resolvePotPassphrase, resolveSparkNetwork, type PotEnv } from './env.js'
 
 export {
   defaultKeyFile,
@@ -230,6 +230,10 @@ async function executeFlagPropose(
     }
     const { generateMnemonic } = await import('@scure/bip39')
     const { wordlist } = await import('@scure/bip39/wordlists/english.js')
+    // Require the unlock secret before unattended creation so a plaintext
+    // mnemonic is never created without the secret provisioned to seal it.
+    // (1-456 stage 4 / 1-460)
+    resolvePotPassphrase(env)
     const mnemonic = generateMnemonic(wordlist, 128)
     const generatedAddress = await deriveSparkAddress(mnemonic, network)
     const keyFile = resolveKeyFilePath(
@@ -248,7 +252,9 @@ async function executeFlagPropose(
     const output = [
       printed,
       `Key file written (mode 0600): ${keyFile}`,
-      'Set ZAPPI_POT_SEED as a host secret. Do not cat or print the file.',
+      'This file is plaintext. Seal it into the encrypted registry once you have the pot id, then remove the file:',
+      `  ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli pots registry import --pot-id <id> --from-file ${keyFile}`,
+      'Anyone who reads this file can drain the pot. Do not cat, print, email, or paste it.',
     ].join('\n')
     if (args.open) {
       const href = buildRegisterDeepLink({

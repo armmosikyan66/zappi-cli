@@ -164,6 +164,18 @@ describe('parseProposeRegisterArgs', () => {
       /does not invent one/,
     )
   })
+
+  it('non-TTY --generate fails before generating when the passphrase is missing', async () => {
+    await assert.rejects(
+      () =>
+        runProposeRegister(
+          ['--generate', '--label', 'Research', '--mode', 'free', '--origin', 'https://zappi.money'],
+          { SPARK_NETWORK: 'MAINNET' },
+          { isTTY: false },
+        ),
+      /ZAPPI_POT_PASSPHRASE/,
+    )
+  })
 })
 
 describe('printRegisterDeepLink', () => {
