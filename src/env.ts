@@ -20,6 +20,12 @@ export interface PotEnv {
   ZAPPI_POT_PASSPHRASE?: string
   /** Override path for the encrypted free-pot seed registry. (1-454/1-456) */
   ZAPPI_POT_REGISTRY_FILE?: string
+  /** Override path for the durable pending-operation journal. (1-456 stage 5) */
+  ZAPPI_POT_PENDING_OPS_FILE?: string
+  /** Per-payment cap (cents) for free-pot money-out paths. Defense in depth. (1-456 stage 5) */
+  ZAPPI_POT_MAX_PER_PAYMENT_CENTS?: string
+  /** Cumulative cap (cents) over the trailing 24h for free-pot money-out. (1-456 stage 5) */
+  ZAPPI_POT_MAX_CUMULATIVE_CENTS_24H?: string
   /** Runtime spend mode. `auth_required` refuses CLI free-sign (1-200). */
   ZAPPI_POT_SPEND_MODE?: string
   NEXT_PUBLIC_SITE_URL?: string
