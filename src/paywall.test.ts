@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -266,6 +267,136 @@ describe('pay + consume request shaping (mock fetch, no Spark)', () => {
       new RegExp(AUTH_REQUIRED_PAY_ERROR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
     )
     assert.equal(fetched, false)
+  })
+
+  it('pre-sign gate binds a deterministic idempotency key to the intent and passes it to settle', async () => {
+    const calls: Array<{ body: Record<string, unknown> | null }> = []
+    await payResourceResult('res_1', {
+      env,
+      fetch: async (input, init) => {
+        const url = String(input)
+        calls.push({ body: init?.body ? JSON.parse(String(init.body)) : null })
+        if ((init?.method ?? 'GET') === 'GET') {
+          return unpaid402({ priceCents: 25, pricingMode: 'exact' })
+        }
+        return jsonResponse(200, {
+          firstUnlock: true,
+          unlockToken: 'zpu_secret_token',
+        })
+      },
+      loadSeed: () => SEED,
+      readTokenIdentifier: async () => 'btkn1example',
+      sendUsdb: async () => ({ sparkTxHash: 'aa'.repeat(32) }),
+    })
+    const settleBody = calls.find((c) => c.body && 'sparkTxHash' in c.body)?.body
+    assert.ok(settleBody, 'settle was called')
+    assert.equal(typeof settleBody!.idempotencyKey, 'string')
+    assert.match(settleBody!.idempotencyKey as string, /^[0-9a-f]{64}$/)
+    // Same intent → same key on a replay (deterministic).
+    const first = settleBody!.idempotencyKey as string
+    calls.length = 0
+    await payResourceResult('res_1', {
+      env,
+      fetch: async (input, init) => {
+        const url = String(input)
+        calls.push({ body: init?.body ? JSON.parse(String(init.body)) : null })
+        if ((init?.method ?? 'GET') === 'GET') {
+          return unpaid402({ priceCents: 25, pricingMode: 'exact' })
+        }
+        return jsonResponse(200, { firstUnlock: true, unlockToken: 'zpu_secret_token' })
+      },
+      loadSeed: () => SEED,
+      readTokenIdentifier: async () => 'btkn1example',
+      sendUsdb: async () => ({ sparkTxHash: 'aa'.repeat(32) }),
+    })
+    const replay = calls.find((c) => c.body && 'sparkTxHash' in c.body)?.body
+    assert.equal(replay?.idempotencyKey, first, 'idempotency key is deterministic for the same intent')
+  })
+
+  it('journal reconciles a submitted op on replay (no re-sign, no second payment)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zappi-pay-journal-'))
+    const jdeps = { path: join(dir, 'pending-ops.json'), env, now: () => new Date('2026-01-01T00:00:00Z') }
+    let signCount = 0
+    // First run: sign + settle.
+    await payResource('res_1', {
+      env,
+      fetch: async (input, init) => {
+        if ((init?.method ?? 'GET') === 'GET') return unpaid402({ priceCents: 25, pricingMode: 'exact' })
+        return jsonResponse(200, { firstUnlock: true, unlockToken: 'zpu_secret_token' })
+      },
+      loadSeed: () => SEED,
+      readTokenIdentifier: async () => 'btkn1example',
+      sendUsdb: async () => { signCount += 1; return { sparkTxHash: 'aa'.repeat(32) } },
+      journal: jdeps,
+    })
+    assert.equal(signCount, 1)
+    // Simulate a crash AFTER recordSubmitted but BEFORE markSettled: corrupt the op to 'submitted' with the tx hash.
+    // (recordSubmitted runs before settle; markSettled runs after. Here settle succeeded, so the op is 'settled'.
+    // To force a reconcile scenario, rewind the op to 'submitted'.)
+    const { writeFileSync, readFileSync } = await import('node:fs')
+    const jpath = join(dir, 'pending-ops.json')
+    const j = JSON.parse(readFileSync(jpath, 'utf8'))
+    const key = Object.keys(j.ops)[0]
+    j.ops[key].status = 'submitted'
+    writeFileSync(jpath, JSON.stringify(j), { mode: 0o600 })
+
+    // Replay: should reconcile (settle with the existing tx hash) and NOT re-sign.
+    const output = await payResource('res_1', {
+      env,
+      fetch: async (input, init) => {
+        if ((init?.method ?? 'GET') === 'GET') return unpaid402({ priceCents: 25, pricingMode: 'exact' })
+        return jsonResponse(200, { firstUnlock: true, unlockToken: 'zpu_secret_token' })
+      },
+      loadSeed: () => SEED,
+      readTokenIdentifier: async () => 'btkn1example',
+      sendUsdb: async () => { signCount += 1; return { sparkTxHash: 'ff'.repeat(32) } },
+      journal: jdeps,
+    })
+    assert.equal(signCount, 1, 'reconcile must not re-sign')
+    assert.match(output, /Reconciled/)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('journal fails closed on a pending op with no tx hash (unknown outcome)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zappi-pay-journal-unknown-'))
+    const jdeps = { path: join(dir, 'pending-ops.json'), env, now: () => new Date('2026-01-01T00:00:00Z') }
+    // First run: begin → sign, but crash BEFORE recordSubmitted (op stays 'pending', no tx hash).
+    // Simulate by creating the journal with a pending op and no tx hash.
+    const { writeFileSync } = await import('node:fs')
+    const jpath = join(dir, 'pending-ops.json')
+    // Trigger a begin by running pay, but abort the sign by throwing from sendUsdb.
+    await assert.rejects(
+      () =>
+        payResource('res_1', {
+          env,
+          fetch: async (input, init) => {
+            if ((init?.method ?? 'GET') === 'GET') return unpaid402({ priceCents: 25, pricingMode: 'exact' })
+            return jsonResponse(200, { firstUnlock: true, unlockToken: 'zpu_secret_token' })
+          },
+          loadSeed: () => SEED,
+          readTokenIdentifier: async () => 'btkn1example',
+          sendUsdb: async () => { throw new Error('crash mid-sign') },
+          journal: jdeps,
+        }),
+      /crash mid-sign/,
+    )
+    // The op is now 'pending' with no tx hash. A replay must fail closed (unknown), not re-sign.
+    await assert.rejects(
+      () =>
+        payResource('res_1', {
+          env,
+          fetch: async (input, init) => {
+            if ((init?.method ?? 'GET') === 'GET') return unpaid402({ priceCents: 25, pricingMode: 'exact' })
+            return jsonResponse(200, { firstUnlock: true, unlockToken: 'zpu_secret_token' })
+          },
+          loadSeed: () => SEED,
+          readTokenIdentifier: async () => 'btkn1example',
+          sendUsdb: async () => { throw new Error('must not re-sign') },
+          journal: jdeps,
+        }),
+      /unknown state/,
+    )
+    rmSync(dir, { recursive: true, force: true })
   })
 
   it('refuses consume on an auth-required pot that is not attached', async () => {

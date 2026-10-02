@@ -204,6 +204,7 @@ export async function runCli(
         autoConsume: !args.noConsume,
         consumeUnits: args.units,
         onStatus: (label) => spinner.setText(label),
+        journal: {},
       })
       spinner.succeed(
         result.status === 'already_unlocked' ? 'Already unlocked' : 'Settled',

@@ -103,3 +103,32 @@ exposed seed.
 The encrypted registry is **not** supported on Windows yet. ACL-based
 permission checks are required (chmod alone is insufficient). Run the
 signer on macOS/Linux, or see [docs/signer-boundary.md](./signer-boundary.md) §6.
+
+## 9. Money-out gates, caps, and the pending-operation journal
+
+Every free-pot money-out path (`pay` and `send spark`) runs a deterministic
+pre-sign gate and a durable pending-operation journal (Linear 1-461):
+
+- **Pre-sign gate** (`pot-outgate.ts`): the recipient, integer amount, canonical
+  asset (USDB), network, source pot, and (for `pay`) resource are bound to the
+  verified pot context and checked before signing. Missing, contradictory,
+  expired, or unsupported data is rejected before any signature.
+- **Idempotency key bound to the immutable intent**: the operation's key is
+  derived from the canonical intent (+ optional `--idempotency-key` salt), so a
+  replay of the same intent reconciles instead of issuing a second payment.
+- **Durable journal** (`~/.zappi/pending-ops.json`, 0600, atomic write,
+  cross-process lock): around every submission the gate records a pending op.
+  On timeout, crash, or ambiguous settlement the same op is reconciled — a
+  `submitted` op (tx hash known, settlement unconfirmed) is retried with that
+  hash and **not** re-signed; a `pending` op with no tx hash (outcome unknown)
+  **fails closed**. The CLI never issues a second payment for the same intent.
+- **Caps** (defense in depth, not protection from raw-seed compromise):
+  `ZAPPI_POT_MAX_PER_PAYMENT_CENTS` (per-payment) and
+  `ZAPPI_POT_MAX_CUMULATIVE_CENTS_24H` (trailing 24h) are enforced across
+  all free-pot money-out paths, including concurrent attempts. Unset = disabled.
+
+The backend's paywall-settlement replay recovery ([1-430](https://linear.app/skribz/issue/1-430/security-handle-paywall-settlement-replay-without-false-success-or),
+[Nest PR 107](https://github.com/armmosikyan66/zappi-nest/pull/107)) is
+reused, not duplicated: the CLI retries settle with the same tx hash and the
+journal ensures it never re-signs on replay.
+

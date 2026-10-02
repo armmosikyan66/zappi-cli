@@ -9,7 +9,6 @@ import {
   resolveUnlockToken,
   type PotEnv,
 } from './env.js'
-import { loadPotSeed } from './load-pot-seed.js'
 import {
   consumeGrant,
   getResource,
@@ -25,6 +24,14 @@ import {
   type SendUsdbFromPotResult,
 } from './spark-send.js'
 import { isMeteredPricing, pickPaywallAccept, type PaywallChallenge } from './paywall-accept.js'
+import { resolvePotContext, type PotContext } from './pot-context.js'
+import { validateMoneyOutIntent, type MoneyOutIntent } from './pot-outgate.js'
+import {
+  beginOperation,
+  markSettled,
+  recordSubmitted,
+  type JournalDeps,
+} from './pending-ops.js'
 import {
   formatConsumePlain,
   formatPayPlain,
@@ -44,8 +51,6 @@ export type {
   PaywallChallenge,
   SelectedPaywallAccept,
 } from './paywall-accept.js'
-
-const DEFAULT_ACCOUNT_NUMBER = 0
 
 export function parseResourceId(input: string): string {
   const trimmed = input.trim()
@@ -95,6 +100,30 @@ function messageFromBody(body: unknown, fallback: string): string {
   return fallback
 }
 
+/**
+ * Legacy synthetic {@link PotContext} for the migration/test opt-out: env id +
+ * env network + an injected seed, with no registry identity binding. The
+ * pre-sign gate still runs, but the source-address binding is trivial (the
+ * intent is built from this context). Production defaults to
+ * {@link resolvePotContext} (registry-authoritative). (1-456 stage 5 / 1-461)
+ */
+function legacySeedContext(env: PotEnv, loadSeed: (env: PotEnv) => string): PotContext {
+  const potId = requirePotId(env)
+  const network = resolveSparkNetwork(env)
+  const seed = loadSeed(env)
+  const context: PotContext = {
+    potId,
+    sparkAddress: '',
+    spendMode: 'free',
+    network,
+    derivationMode: 'spark',
+    accountIndex: 0,
+    source: env.ZAPPI_POT_KEY_FILE?.trim() ? 'file' : 'env',
+    getSeed: () => seed,
+  }
+  return Object.freeze(context) as PotContext
+}
+
 export interface PayResourceOptions {
   env?: PotEnv
   fetch?: typeof fetch
@@ -102,6 +131,21 @@ export interface PayResourceOptions {
   deadlineMs?: number
   log?: (message: string) => void
   loadSeed?: (env: PotEnv) => string
+  /**
+   * Override pot-context resolution (tests). Default {@link resolvePotContext}
+   * binds the immutable source-pot identity (registry-authoritative) and holds
+   * the seed in memory. When `loadSeed` is provided instead, a legacy synthetic
+   * context is built from env + the injected seed (migration/test opt-out).
+   * (1-456 stage 5 / 1-461)
+   */
+  resolveContext?: (env: PotEnv) => Promise<PotContext>
+  /**
+   * Durable pending-operation journal deps. When provided, the pay path
+   * records a pending op keyed by the intent idempotency key and reconciles
+   * on replay instead of re-signing. When omitted, no journal is kept
+   * (legacy/test behavior). Production passes `{}` for defaults. (1-461)
+   */
+  journal?: JournalDeps
   sendUsdb?: (input: SendUsdbFromPotInput) => Promise<SendUsdbFromPotResult>
   readTokenIdentifier?: (
     mnemonic: string,
@@ -124,9 +168,6 @@ export async function payResourceResult(
   if (resolvePotSpendMode(env) === 'auth_required') {
     throw new Error(AUTH_REQUIRED_PAY_ERROR)
   }
-  const loadSeed = options.loadSeed ?? loadPotSeed
-  const mnemonic = loadSeed(env)
-  const sparkNetwork = resolveSparkNetwork(env)
   const autoConsume = options.autoConsume ?? true
   const consumeUnits = options.consumeUnits ?? 1
   const http = httpOptions(env, options)
@@ -154,40 +195,121 @@ export async function payResourceResult(
   const { payTo, priceCents, network, asset } = selected
   const metered = isMeteredPricing(selected.accept)
 
+  // Resolve the immutable, verified source-pot context. Default
+  // (resolvePotContext) is registry-authoritative and holds the seed in
+  // memory. An injected `loadSeed` builds a legacy synthetic context (migration
+  // / test opt-out). (1-456 stage 5 / 1-461)
+  const context = options.resolveContext
+    ? await options.resolveContext(env)
+    : options.loadSeed
+      ? legacySeedContext(env, options.loadSeed)
+      : await resolvePotContext({}, { env })
+  const mnemonic = context.getSeed()
+  const sparkNetwork = context.network
+  const accountNumber = context.accountIndex
+
+  // Deterministic pre-sign gate: bind the immutable intent (recipient, amount,
+  // asset, network, source pot, resource) to the verified context. Rejects
+  // missing/contradictory/expired/unsupported data before signing. (1-316/1-461)
+  const intent: MoneyOutIntent = {
+    kind: 'pay',
+    potId: context.potId,
+    sourceAddress: context.sparkAddress,
+    receiver: payTo,
+    amountCents: priceCents,
+    asset: 'USDB',
+    network: context.network,
+    resourceId,
+  }
+  const { idempotencyKey } = validateMoneyOutIntent(intent, context)
+
   const readToken = options.readTokenIdentifier ?? readUsdbTokenIdentifier
   const sendUsdb = options.sendUsdb ?? sendUsdbFromPot
-  onStatus?.('Reading pot USDB token…')
-  const tokenIdentifier = await readToken(
-    mnemonic,
-    DEFAULT_ACCOUNT_NUMBER,
-    sparkNetwork,
-  )
 
-  onStatus?.(`Signing ${priceCents}¢ USDB…`)
-  const { sparkTxHash } = await sendUsdb({
-    mnemonic,
-    accountNumber: DEFAULT_ACCOUNT_NUMBER,
-    network: sparkNetwork,
-    tokenIdentifier,
-    receiverSparkAddress: payTo,
-    amountCents: priceCents,
-  })
+  // Durable pending-operation journal. On replay, reconcile the same op
+  // instead of issuing a second payment; fail closed while the outcome is
+  // unknown. (1-461)
+  const jdeps = options.journal
+  let sparkTxHash: string
+  let reconciled = false
+  if (jdeps) {
+    const begin = await beginOperation(intent, idempotencyKey, jdeps)
+    if (begin.action === 'sign') {
+      onStatus?.('Reading pot USDB token…')
+      const tokenIdentifier = await readToken(mnemonic, accountNumber, sparkNetwork)
+      onStatus?.(`Signing ${priceCents}¢ USDB…`)
+      const signed = await sendUsdb({
+        mnemonic, accountNumber, network: sparkNetwork, tokenIdentifier,
+        receiverSparkAddress: payTo, amountCents: priceCents,
+      })
+      sparkTxHash = signed.sparkTxHash
+      await recordSubmitted(idempotencyKey, sparkTxHash, jdeps)
+    } else if (begin.action === 'reconcile') {
+      // Reconcile: retry settle with the existing tx hash, do NOT re-sign.
+      sparkTxHash = begin.op.sparkTxHash ?? ''
+      if (!sparkTxHash) {
+        throw new Error(redactSecrets('Pending pay op has no tx hash to reconcile. Refusing to re-sign.'))
+      }
+      reconciled = true
+      onStatus?.('Reconciling pending payment (no re-sign)…')
+    } else if (begin.action === 'done') {
+      // Already settled on a prior run.
+      return {
+        ok: true,
+        command: 'pay',
+        status: 'settled',
+        resourceId,
+        potId: context.potId,
+        priceCents,
+        network,
+        asset,
+        sparkTxHash: begin.op.sparkTxHash ?? '',
+        unlockTokenReceived: false,
+        unlockUrl: undefined,
+        metered,
+        autoConsume,
+        consume: undefined,
+        notes: ['Reconciled: payment was already settled on a prior run.'],
+      }
+    } else {
+      // unknown — a pending op with no tx hash. Fail closed.
+      throw new Error(redactSecrets(
+        `A prior payment for resource ${resourceId} is in an unknown state (no tx hash recorded). ` +
+          'Refusing to sign again — reconcile the pending operation manually. ' +
+          `Idempotency key: ${idempotencyKey.slice(0, 16)}…`,
+      ))
+    }
+  } else {
+    onStatus?.('Reading pot USDB token…')
+    const tokenIdentifier = await readToken(mnemonic, accountNumber, sparkNetwork)
+    onStatus?.(`Signing ${priceCents}¢ USDB…`)
+    const signed = await sendUsdb({
+      mnemonic, accountNumber, network: sparkNetwork, tokenIdentifier,
+      receiverSparkAddress: payTo, amountCents: priceCents,
+    })
+    sparkTxHash = signed.sparkTxHash
+  }
 
   onStatus?.('Settling payment…')
   const settled = await settleWithRetry(
-    { resourceId, potId, sparkTxHash },
+    { resourceId, potId: context.potId, sparkTxHash, idempotencyKey },
     http,
   )
 
   if (settled.status !== 200) {
+    // Ambiguous settlement: tx submitted but settle not confirmed. Leave
+    // the op as 'submitted' so a later run reconciles with the same tx hash.
+    // Fail closed while the outcome is unknown. (1-461)
     throw new Error(
       redactSecrets(
         `Settle failed (${settled.status}): ${messageFromBody(settled.body, 'unknown error')}`,
       ),
     )
   }
+  if (jdeps) await markSettled(idempotencyKey, jdeps)
 
   const notes: string[] = []
+  if (reconciled) notes.push('Reconciled: settled a pending payment from a prior run (no second payment issued).')
   const unlockTokenReceived = Boolean(settled.firstUnlock && settled.unlockToken)
 
   const shouldConsume = autoConsume && metered && Boolean(settled.unlockToken)
