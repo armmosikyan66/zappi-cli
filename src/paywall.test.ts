@@ -268,6 +268,50 @@ describe('pay + consume request shaping (mock fetch, no Spark)', () => {
     assert.equal(fetched, false)
   })
 
+  it('pre-sign gate binds a deterministic idempotency key to the intent and passes it to settle', async () => {
+    const calls: Array<{ body: Record<string, unknown> | null }> = []
+    await payResourceResult('res_1', {
+      env,
+      fetch: async (input, init) => {
+        const url = String(input)
+        calls.push({ body: init?.body ? JSON.parse(String(init.body)) : null })
+        if ((init?.method ?? 'GET') === 'GET') {
+          return unpaid402({ priceCents: 25, pricingMode: 'exact' })
+        }
+        return jsonResponse(200, {
+          firstUnlock: true,
+          unlockToken: 'zpu_secret_token',
+        })
+      },
+      loadSeed: () => SEED,
+      readTokenIdentifier: async () => 'btkn1example',
+      sendUsdb: async () => ({ sparkTxHash: 'aa'.repeat(32) }),
+    })
+    const settleBody = calls.find((c) => c.body && 'sparkTxHash' in c.body)?.body
+    assert.ok(settleBody, 'settle was called')
+    assert.equal(typeof settleBody!.idempotencyKey, 'string')
+    assert.match(settleBody!.idempotencyKey as string, /^[0-9a-f]{64}$/)
+    // Same intent → same key on a replay (deterministic).
+    const first = settleBody!.idempotencyKey as string
+    calls.length = 0
+    await payResourceResult('res_1', {
+      env,
+      fetch: async (input, init) => {
+        const url = String(input)
+        calls.push({ body: init?.body ? JSON.parse(String(init.body)) : null })
+        if ((init?.method ?? 'GET') === 'GET') {
+          return unpaid402({ priceCents: 25, pricingMode: 'exact' })
+        }
+        return jsonResponse(200, { firstUnlock: true, unlockToken: 'zpu_secret_token' })
+      },
+      loadSeed: () => SEED,
+      readTokenIdentifier: async () => 'btkn1example',
+      sendUsdb: async () => ({ sparkTxHash: 'aa'.repeat(32) }),
+    })
+    const replay = calls.find((c) => c.body && 'sparkTxHash' in c.body)?.body
+    assert.equal(replay?.idempotencyKey, first, 'idempotency key is deterministic for the same intent')
+  })
+
   it('refuses consume on an auth-required pot that is not attached', async () => {
     let fetched = false
     await assert.rejects(

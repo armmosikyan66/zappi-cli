@@ -1,6 +1,5 @@
 import { parseArgs, parseIntFlag } from './args.js'
-import { loadPotSeed } from './load-pot-seed.js'
-import { resolveSparkNetwork, type PotEnv } from './env.js'
+import { type PotEnv } from './env.js'
 import {
   inspectSparkAddress,
   looksLikeSparkAddress,
@@ -18,6 +17,8 @@ import {
   warnLine,
 } from './ui.js'
 import { runSendExternal, runSendInternal } from './withdraw-commands.js'
+import { resolvePotContext, type PotContext } from './pot-context.js'
+import { validateMoneyOutIntent, type MoneyOutIntent } from './pot-outgate.js'
 
 const NL = String.fromCharCode(10)
 const SEND_USAGE =
@@ -70,6 +71,7 @@ async function runSendSparkUsdb(
   amountCents: number,
   mode: OutputMode,
   env: PotEnv,
+  resolveContext: (env: PotEnv) => Promise<PotContext> = (e) => resolvePotContext({}, { env: e }),
 ): Promise<string> {
   const inspected = inspectSparkAddress(to)
   if (!inspected.valid || !inspected.network || inspected.network === 'FOREIGN') {
@@ -77,22 +79,41 @@ async function runSendSparkUsdb(
       'Destination is not a valid Spark address for MAINNET/REGTEST: ' + to,
     )
   }
-  const potNetwork = resolveSparkNetwork(env)
+
+  // Resolve the immutable, verified source-pot context (registry-authoritative
+  // by default; legacy env/file opt-out via resolvePotContext's legacy branch).
+  // (1-456 stage 5 / 1-461)
+  const context = await resolveContext(env)
+  const potNetwork = context.network
   if (inspected.network !== potNetwork) {
     throw new Error(
       'Spark address network is ' +
         inspected.network +
-        ' but pot SPARK_NETWORK is ' +
+        ' but the pot network is ' +
         potNetwork +
         '.',
     )
   }
 
-  const mnemonic = loadPotSeed(env)
-  const tokenIdentifier = await readUsdbTokenIdentifier(mnemonic, 0, potNetwork)
+  // Deterministic pre-sign gate: bind the immutable intent (recipient, amount,
+  // asset, network, source pot) to the verified context before signing.
+  // (1-316/1-461)
+  const intent: MoneyOutIntent = {
+    kind: 'send',
+    potId: context.potId,
+    sourceAddress: context.sparkAddress,
+    receiver: to.trim(),
+    amountCents,
+    asset: 'USDB',
+    network: context.network,
+  }
+  validateMoneyOutIntent(intent, context)
+
+  const mnemonic = context.getSeed()
+  const tokenIdentifier = await readUsdbTokenIdentifier(mnemonic, context.accountIndex, potNetwork)
   const { sparkTxHash } = await sendUsdbFromPot({
     mnemonic,
-    accountNumber: 0,
+    accountNumber: context.accountIndex,
     network: potNetwork,
     tokenIdentifier,
     receiverSparkAddress: to.trim(),
