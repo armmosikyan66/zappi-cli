@@ -326,8 +326,14 @@ export async function runCli(
     if (sub === 'attach') return runPotAttach(subRest, mode)
     if (sub === 'attach-status') return runPotAttachStatus(subRest, mode)
     if (sub === 'bind') return runPotBind(subRest, mode)
+    if (sub === 'registry') {
+      const regSub = subRest.find((a) => !a.startsWith('-'))
+      const regRest = regSub ? subRest.filter((a) => a !== regSub) : subRest
+      const { runPotsRegistry } = await import('./pots-registry-commands.js')
+      return runPotsRegistry(regSub, regRest, mode)
+    }
     throw new Error(
-      `Usage: zappi-cli pots <list|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status|bind> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
+      `Usage: zappi-cli pots <list|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status|bind|registry> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
     )
   }
 

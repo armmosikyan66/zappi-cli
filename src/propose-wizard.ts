@@ -18,7 +18,9 @@ import {
   PRODUCTION_ZAPPI_APP_ORIGIN,
   STAGING_ZAPPI_APP_ORIGIN,
   resolveAppOrigin,
+  resolvePotPassphrase,
   resolveSparkNetwork,
+  type PotEnv,
 } from './env.js'
 import {
   ask,
@@ -109,7 +111,9 @@ function formatFreeSuccess(input: {
   ]
   if (input.keyFile) {
     lines.push(kv('key file', input.keyFile))
-    lines.push(infoLine('Set ZAPPI_POT_SEED as a host secret. Do not cat the file.'))
+    lines.push(infoLine('This file is plaintext. Seal it into the encrypted registry once you have the pot id, then remove the file:'))
+    lines.push(infoLine(`  ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli pots registry import --pot-id <id> --from-file ${input.keyFile}`))
+    lines.push(infoLine('Anyone who reads this file can drain the pot. Do not cat, print, email, or paste it.'))
   } else {
     lines.push(infoLine('Store the pot key as ZAPPI_POT_SEED or a mode 0600 file.'))
   }
@@ -140,12 +144,20 @@ export interface WizardDeps {
   writeKeyFile: (path: string, mnemonic: string, sparkAddress: string, label?: string) => void
   defaultKeyFile: (label?: string) => string
   promptOpenLink: (href: string, options?: { autoOpenMs?: number; headline?: string; openBrowser?: boolean }) => Promise<{ action: string; auto: boolean }>
+  /**
+   * Require the host-managed unlock secret before unattended pot creation.
+   * Missing/placeholder throws before any mnemonic is generated or written.
+   * (1-456 stage 4 / 1-460)
+   */
+  resolvePassphrase: (env: PotEnvSubset) => string
 }
 
 export interface PotEnvSubset {
   ZAPPI_APP_ORIGIN?: string
   NEXT_PUBLIC_SITE_URL?: string
   SPARK_NETWORK?: string
+  /** Unlock secret for the encrypted free-pot seed registry. (1-456 stage 4) */
+  ZAPPI_POT_PASSPHRASE?: string
 }
 
 export interface RunProposeWizardResult {
@@ -279,6 +291,7 @@ export async function runProposeWizard(
     writeKeyFile: deps.writeKeyFile ?? writeKeyFile,
     defaultKeyFile: deps.defaultKeyFile ?? defaultKeyFile,
     promptOpenLink: deps.promptOpenLink ?? promptOpenLink,
+    resolvePassphrase: deps.resolvePassphrase ?? ((e) => resolvePotPassphrase(e as PotEnv)),
   }
 
   const inviteRef = inviteRefFromArgv(argv)
@@ -435,6 +448,13 @@ export async function runProposeWizard(
       'Approval-required pots do not get a key on this host. Create the pot in Zappi, then run `zappi-cli pots attach --spend-mode auth_required`. Do not generate or store a pot key.',
     )
   }
+
+  // Require the host-managed unlock secret BEFORE unattended creation so a
+  // plaintext mnemonic is never generated without the secret provisioned to
+  // seal it. The pot id is not known until the human registers in Zappi, so
+  // the mnemonic is written to a 0600 migration file and sealed via
+  // `pots registry import --from-file` once the id is known. (1-456 stage 4)
+  d.resolvePassphrase(env)
 
   // generate mode ---------------------------------------------------------
   // Label first (feeds the key-file name). Blank confirms auto pot_<unique>.

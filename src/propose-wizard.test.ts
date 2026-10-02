@@ -55,6 +55,7 @@ function makeDeps(overrides: Partial<Record<'ask' | 'select' | 'promptOpenLink',
     deriveAddress: async (_mnemonic: string, _network: 'MAINNET' | 'REGTEST') => ADDRESS,
     writeKeyFile: (_path: string, _mnemonic: string, _address: string, _label?: string) => undefined,
     defaultKeyFile: (label?: string) => `/tmp/fake-pot-${label ?? 'x'}.txt`,
+    resolvePassphrase: () => 'test-passphrase',
   }
   return { deps, prompts }
 }
@@ -525,5 +526,36 @@ describe('runProposeWizard', () => {
         }),
       /http\(s\) URL/,
     )
+  })
+
+  it('generate mode: missing passphrase fails before generating or writing a key', async () => {
+    let wrote = false
+    const { deps } = makeDeps({
+      select: ['generate', 'free'],
+      ask: ['Research', ''],
+    })
+    deps.resolvePassphrase = () => {
+      throw new Error('Set ZAPPI_POT_PASSPHRASE as a host secret to unlock the free-pot seed registry.')
+    }
+    deps.writeKeyFile = () => {
+      wrote = true
+    }
+    await assert.rejects(
+      () => runProposeWizard([], { SPARK_NETWORK: 'MAINNET' }, deps),
+      /ZAPPI_POT_PASSPHRASE/,
+    )
+    assert.equal(wrote, false, 'must not write a key file when the passphrase is missing')
+  })
+
+  it('generate mode: success output tells the operator to seal then remove the plaintext file', async () => {
+    const { deps } = makeDeps({
+      select: ['generate', 'free'],
+      ask: ['Research', ''],
+    })
+    const result = await runProposeWizard([], { SPARK_NETWORK: 'MAINNET' }, deps)
+    assert.match(result.output, /Seal it into the encrypted registry/)
+    assert.match(result.output, /pots registry import --pot-id <id> --from-file/)
+    assert.match(result.output, /Anyone who reads this file can drain the pot/)
+    assert.ok(!result.output.includes('test mnemonic words'))
   })
 })
