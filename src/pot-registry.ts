@@ -731,3 +731,22 @@ export async function getPotRecord(
   })
 }
 
+/** Like getPotRecord but returns null when the pot is absent (no throw). Endpoints still checked. */
+export async function findPotRecord(
+  potId: string,
+  deps: PotRegistryDeps = {},
+): Promise<PotRecord | null> {
+  const env = resolveEnv(deps.env)
+  refuseWindows()
+  const path = potRegistryPath(env)
+  return withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    const file = readRegistryFile(path)
+    if (!file) return null
+    const record = file.pots[potId]
+    if (!record) return null
+    assertEndpointsTrusted(record, env)
+    return record
+  })
+}
+
