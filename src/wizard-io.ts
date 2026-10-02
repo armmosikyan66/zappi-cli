@@ -138,6 +138,30 @@ export async function ask(prompt: string): Promise<string> {
   })
 }
 
+/**
+ * Read a secret (mnemonic/passphrase) from a TTY without echoing it. The value
+ * is kept in memory only — never written to argv, shell history, stdout, or logs.
+ * On a non-TTY (piped) stdin the line is still read but not echoed; callers that
+ * need a secret in CI must pipe it or use `--from-file`, never a CLI flag.
+ */
+export async function askSecret(prompt: string): Promise<string> {
+  process.stdout.write(`${prompt} `)
+  const rl = ensureReadline()
+  rl.resume()
+  const buffered = pendingLines.shift()
+  if (buffered != null) {
+    process.stdout.write('\n')
+    return buffered
+  }
+  if (interfaceClosed) return ''
+  return await new Promise<string>((resolve) => {
+    pendingResolver = (value: string) => {
+      process.stdout.write('\n')
+      resolve(value)
+    }
+  })
+}
+
 export interface SelectOption {
   label: string
   value: string
