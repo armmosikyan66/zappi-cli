@@ -23,7 +23,7 @@ function payIntent(overrides: Partial<MoneyOutIntent> = {}): MoneyOutIntent {
     receiver: 'spark1payto',
     amountCents: 25,
     asset: 'USDB',
-    network: 'REGTEST',
+    network: 'MAINNET',
     resourceId: 'res_1',
     ...overrides,
   }
@@ -61,13 +61,13 @@ describe('validateJournalFile', () => {
   })
 
   it('rejects a prototype-pollution op key', () => {
-    const bad = JSON.parse('{"version":1,"ops":{"__proto__":{"idempotencyKey":"__proto__","intentHash":"h","kind":"pay","potId":"p","receiver":"r","amountCents":1,"asset":"USDB","network":"REGTEST","status":"pending","createdAt":"t","updatedAt":"t"}}}')
+    const bad = JSON.parse('{"version":1,"ops":{"__proto__":{"idempotencyKey":"__proto__","intentHash":"h","kind":"pay","potId":"p","receiver":"r","amountCents":1,"asset":"USDB","network":"MAINNET","status":"pending","createdAt":"t","updatedAt":"t"}}}')
     assert.throws(() => validateJournalFile(bad), /reserved/)
   })
 
   it('rejects a dictionary key that does not equal idempotencyKey', () => {
     assert.throws(
-      () => validateJournalFile({ version: 1, ops: { k1: { idempotencyKey: 'other', intentHash: 'h', kind: 'pay', potId: 'p', receiver: 'r', amountCents: 1, asset: 'USDB', network: 'REGTEST', status: 'pending', createdAt: 't', updatedAt: 't' } } }),
+      () => validateJournalFile({ version: 1, ops: { k1: { idempotencyKey: 'other', intentHash: 'h', kind: 'pay', potId: 'p', receiver: 'r', amountCents: 1, asset: 'USDB', network: 'MAINNET', status: 'pending', createdAt: 't', updatedAt: 't' } } }),
       /must equal idempotencyKey/,
     )
   })

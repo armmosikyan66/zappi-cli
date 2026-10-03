@@ -41,7 +41,7 @@ export interface PendingOp {
   receiver: string
   amountCents: number
   asset: string
-  network: 'MAINNET' | 'REGTEST'
+  network: 'MAINNET'
   resourceId?: string
   status: OpStatus
   sparkTxHash?: string
@@ -159,7 +159,7 @@ export function validateJournalFile(raw: unknown): JournalFile {
     if (!isPlainObject(value)) throw new Error(`Journal op ${key} is not an object.`)
     const r = value as Record<string, unknown>
     const kind = r.kind === 'pay' || r.kind === 'send' ? r.kind : null
-    const network = r.network === 'MAINNET' || r.network === 'REGTEST' ? r.network : null
+    const network = r.network === 'MAINNET' ? r.network : null
     const status = (['pending', 'submitted', 'settled', 'failed'] as const).includes(r.status as OpStatus) ? (r.status as OpStatus) : null
     if (!kind || !network || !status) throw new Error(`Journal op ${key} has bad kind/network/status.`)
     const op: PendingOp = {

@@ -54,15 +54,6 @@ export const AUTH_MODE_OPTIONS: SelectOption[] = [
 
 const AUTH_MODE_PROMPT = 'How should this pot spend?'
 
-/** Asked only when `SPARK_NETWORK` is unset. REGTEST is first because the default API is staging. */
-export const NETWORK_PROMPT =
-  'Which Spark network matches the Zappi app you will register in?'
-
-export const NETWORK_OPTIONS: SelectOption[] = [
-  { label: 'REGTEST', value: 'REGTEST' },
-  { label: 'MAINNET', value: 'MAINNET' },
-]
-
 /** Local web. Chosen only when the human picks it or sets `ZAPPI_APP_ORIGIN`. */
 export const LOCAL_APP_ORIGIN = LOCAL_ZAPPI_APP_ORIGIN
 
@@ -97,7 +88,7 @@ function formatFreeSuccess(input: {
   sparkAddress: string
   label: string
   href: string
-  network: 'MAINNET' | 'REGTEST'
+  network: 'MAINNET'
   origin: string
   keyFile?: string
   provisionId?: string
@@ -113,7 +104,7 @@ function formatFreeSuccess(input: {
   if (input.keyFile) {
     lines.push(kv('key file', input.keyFile))
     lines.push(infoLine('This file is plaintext. It is an explicit legacy opt-out and the only recoverable backup until you import it.'))
-    lines.push(infoLine(`  zappi-cli pots registry import --pot-id <id> --from-file ${input.keyFile} --network ${input.network} --account-index 0 --address ${input.sparkAddress}`))
+    lines.push(infoLine(`  zappi-cli pots registry import --pot-id <id> --from-file ${input.keyFile} --network ${input.network} --account-index 1 --address ${input.sparkAddress}`))
     lines.push(infoLine('Anyone who reads this file can drain the pot. Do not cat, print, email, or paste it.'))
   } else if (input.provisionId) {
     lines.push(infoLine(`Seed sealed as provision ${input.provisionId}. No plaintext key file was written.`))
@@ -145,7 +136,7 @@ export interface WizardDeps {
   ask: (prompt: string) => Promise<string>
   select: (prompt: string, options: SelectOption[]) => Promise<string>
   generateMnemonic: () => string
-  deriveAddress: (mnemonic: string, network: 'MAINNET' | 'REGTEST') => Promise<string>
+  deriveAddress: (mnemonic: string, network: 'MAINNET') => Promise<string>
   writeKeyFile: (path: string, mnemonic: string, sparkAddress: string, label?: string) => void
   defaultKeyFile: (label?: string) => string
   promptOpenLink: (href: string, options?: { autoOpenMs?: number; headline?: string; openBrowser?: boolean }) => Promise<{ action: string; auto: boolean }>
@@ -163,7 +154,7 @@ export interface WizardDeps {
     seed: string
     sparkAddress: string
     label?: string
-    network: 'MAINNET' | 'REGTEST'
+    network: 'MAINNET'
     passphrase: string
     env: PotEnvSubset
   }) => Promise<{ provisionId: string }>
@@ -181,7 +172,7 @@ export interface RunProposeWizardResult {
   mode: WizardMode
   spendMode: PotSpendMode
   label: string
-  network: 'MAINNET' | 'REGTEST'
+  network: 'MAINNET'
   origin: string
   sparkAddress?: string
   keyFile?: string
@@ -205,10 +196,6 @@ const MODE_PROMPT = `Do you already have a pot, or should this host generate a n
 
 const LABEL_HINT = '(blank = confirm auto-name pot_<unique>)'
 
-export function hasSparkNetworkEnv(env: PotEnvSubset): boolean {
-  return Boolean(env.SPARK_NETWORK?.trim())
-}
-
 export function hasAppOriginEnv(env: PotEnvSubset): boolean {
   return Boolean(env.ZAPPI_APP_ORIGIN?.trim() || env.NEXT_PUBLIC_SITE_URL?.trim())
 }
@@ -227,16 +214,8 @@ export function parseHttpOrigin(raw: string): string | null {
 const ORIGIN_GUIDANCE =
   'Choose a Zappi app origin: staging (https://dev.zappi.money), production (https://zappi.money), local (http://localhost:3000), or a custom http(s) URL.'
 
-async function resolveWizardNetwork(
-  env: PotEnvSubset,
-  selectFn: WizardDeps['select'],
-): Promise<'MAINNET' | 'REGTEST'> {
-  if (hasSparkNetworkEnv(env)) return resolveSparkNetwork(env)
-  const choice = (await selectFn(NETWORK_PROMPT, NETWORK_OPTIONS)).trim().toUpperCase()
-  if (choice === 'MAINNET' || choice === 'REGTEST') return choice
-  throw new Error(
-    'Choose MAINNET or REGTEST. The network must match the Zappi app you will register in.',
-  )
+function resolveWizardNetwork(env: PotEnvSubset): 'MAINNET' {
+  return resolveSparkNetwork(env)
 }
 
 async function askCustomOrigin(askFn: WizardDeps['ask']): Promise<string> {
@@ -320,7 +299,7 @@ export async function runProposeWizard(
             sparkAddress: input.sparkAddress,
             network: input.network,
             derivationMode: 'spark',
-            accountIndex: 0,
+            accountIndex: 1,
             seed: input.seed,
           },
           input.passphrase,
@@ -352,7 +331,7 @@ export async function runProposeWizard(
   }
 
   // Step 3 — network, then app origin. Both happen before generate/register.
-  const network = await resolveWizardNetwork(env, d.select)
+  const network = resolveWizardNetwork(env)
   const origin = await resolveWizardOrigin(env, d.ask, d.select, presets.origin)
 
   if (mode === 'existing') {

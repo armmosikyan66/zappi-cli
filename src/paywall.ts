@@ -119,7 +119,7 @@ function legacySeedContext(env: PotEnv, loadSeed: (env: PotEnv) => string): PotC
     spendMode: 'free',
     network,
     derivationMode: 'spark',
-    accountIndex: 0,
+    accountIndex: 1,
     source: env.ZAPPI_POT_KEY_FILE?.trim() ? 'file' : 'env',
     getSeed: () => seed,
   }
@@ -152,7 +152,7 @@ export interface PayResourceOptions {
   readTokenIdentifier?: (
     mnemonic: string,
     accountNumber: number,
-    network: 'MAINNET' | 'REGTEST',
+    network: 'MAINNET',
   ) => Promise<string>
   /** `--pot <id>`. Wins over `ZAPPI_POT_ID` when they differ (fail closed). */
   potFlag?: string

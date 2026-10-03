@@ -72,7 +72,7 @@ export interface PotBindClient {
 
 export interface PotBindDeps {
   client?: PotBindClient
-  deriveSparkAddress?: (mnemonic: string, network: 'MAINNET' | 'REGTEST') => Promise<string>
+  deriveSparkAddress?: (mnemonic: string, network: 'MAINNET') => Promise<string>
   generateMnemonic?: () => string
 }
 
@@ -173,7 +173,7 @@ export async function runPotBind(
         spendMode: 'free',
         network,
         derivationMode: 'spark',
-        accountIndex: 0,
+        accountIndex: 1,
         seed: mnemonic,
       },
       passphrase,

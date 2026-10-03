@@ -50,9 +50,9 @@ function baseInput(potId: string) {
     label: 'Research',
     sparkAddress: SPARK_ADDRESS,
     spendMode: 'free' as const,
-    network: 'REGTEST' as const,
+    network: 'MAINNET' as const,
     derivationMode: 'spark' as const,
-    accountIndex: 0,
+    accountIndex: 1,
     seed: PHRASE,
   }
 }
@@ -188,7 +188,7 @@ describe('resolvePotContext — legacy path', () => {
       assert.equal(ctx.source, 'env')
       assert.equal(ctx.network, 'MAINNET')
       assert.equal(ctx.derivationMode, 'spark')
-      assert.equal(ctx.accountIndex, 0)
+      assert.equal(ctx.accountIndex, 1)
       assert.equal(ctx.getSeed(), PHRASE)
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -208,7 +208,7 @@ describe('resolvePotContext — legacy path', () => {
         ZAPPI_POT_ID: 'pot_legacy',
         ZAPPI_POT_KEY_FILE: keyFile,
         ZAPPI_POT_SPARK_ADDRESS: SPARK_ADDRESS,
-        SPARK_NETWORK: 'REGTEST',
+        SPARK_NETWORK: 'MAINNET',
       }
       const ctx = await resolvePotContext({}, { env, deriveAddress: deriveMatching })
       assert.equal(ctx.source, 'file')

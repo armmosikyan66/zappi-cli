@@ -49,7 +49,7 @@ export interface PotsRegistryCommandDeps {
   env?: PotEnv
   askSecret?: (prompt: string) => Promise<string>
   /** Override Spark address derivation (tests). Default uses the Spark SDK. */
-  deriveAddress?: (seed: string, network: 'MAINNET' | 'REGTEST', accountIndex: number) => Promise<string>
+  deriveAddress?: (seed: string, network: 'MAINNET', accountIndex: number) => Promise<string>
   now?: () => Date
 }
 
@@ -124,7 +124,7 @@ export async function runPotsRegistryRemove(
   ].join(NL)
 }
 
-/** `pots registry import --pot-id <id> --network <MAINNET|REGTEST> --account-index <n> --address <spark> [--from-file <path>] [--label <l>]` */
+/** `pots registry import --pot-id <id> --network MAINNET --account-index 1 --address <spark> [--from-file <path>] [--label <l>]` */
 export async function runPotsRegistryImport(
   argv: string[],
   mode: OutputMode,
@@ -136,19 +136,20 @@ export async function runPotsRegistryImport(
   if (!potId) throw new Error('Pass --pot-id <id> (or set ZAPPI_POT_ID). The mnemonic is never a CLI flag.')
   const label = strings.label?.trim() || undefined
   const networkRaw = strings.network?.trim().toUpperCase()
-  if (networkRaw !== 'MAINNET' && networkRaw !== 'REGTEST') {
+  if (networkRaw !== 'MAINNET') {
     throw new Error(
-      'Pass --network MAINNET|REGTEST. Import does not take the original network from SPARK_NETWORK.',
+      'Pass --network MAINNET. Import does not take the network from SPARK_NETWORK.',
     )
   }
   const network = networkRaw
   const accountRaw = strings['account-index']?.trim()
-  if (accountRaw == null || accountRaw === '' || !/^\d+$/.test(accountRaw)) {
-    throw new Error(
-      'Pass --account-index <n> (the original derivation index). Import does not assume 0.',
-    )
+  if (accountRaw == null || accountRaw === '') {
+    throw new Error('Pass --account-index 1.')
   }
   const accountIndex = Number(accountRaw)
+  if (accountIndex !== 1) {
+    throw new Error('Account index must be 1.')
+  }
   const expectedAddress = strings.address?.trim()
   if (!expectedAddress) {
     throw new Error('Pass --address <spark-address> (the original pot address). Import does not invent one.')
@@ -400,7 +401,7 @@ function parseStrings(argv: string[]): Record<string, string> {
   return out
 }
 
-async function defaultDeriveAddress(seed: string, network: 'MAINNET' | 'REGTEST', accountIndex: number): Promise<string> {
+async function defaultDeriveAddress(seed: string, network: 'MAINNET', accountIndex: number): Promise<string> {
   const { SparkWallet } = await import('@buildonspark/spark-sdk')
   const { wallet } = await SparkWallet.initialize({
     mnemonicOrSeed: seed,

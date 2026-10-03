@@ -36,7 +36,7 @@ const PHRASE =
 const PASSPHRASE = 'a-very-long-high-entropy-host-secret-passphrase-0123456789'
 const ADDRESS_A = 'spark1originalidentity000000000000000'
 const ADDRESS_B = 'spark1replacedidentity000000000000000'
-const REGTEST_ADDR = bech32m.encode('sparkrt', bech32m.toWords(new Uint8Array(32).fill(1)))
+const REGTEST_ADDR = bech32m.encode('spark', bech32m.toWords(new Uint8Array(32).fill(1)))
 
 function envFor(dir: string) {
   return {
@@ -47,13 +47,13 @@ function envFor(dir: string) {
   }
 }
 
-function input(potId: string, sparkAddress: string, accountIndex = 0) {
+function input(potId: string, sparkAddress: string, accountIndex = 1) {
   return {
     potId,
     label: 'Research',
     sparkAddress,
     spendMode: 'free' as const,
-    network: 'REGTEST' as const,
+    network: 'MAINNET' as const,
     derivationMode: 'spark' as const,
     accountIndex,
     seed: PHRASE,
@@ -66,15 +66,15 @@ describe('1-462 identity survives rotation and stale-backup restore', () => {
     const env = envFor(dir)
     const path = env.ZAPPI_POT_REGISTRY_FILE
     try {
-      await savePotSeed(input('pot_a', ADDRESS_A, 2), PASSPHRASE, { env })
+      await savePotSeed(input('pot_a', ADDRESS_A), PASSPHRASE, { env })
       const next = 'rotated-passphrase-at-least-16'
       await reseedAll(path, PASSPHRASE, next, { env })
       const loaded = await loadPotSeedFromRegistry('pot_a', next, {
         env: { ...env, ZAPPI_POT_PASSPHRASE: next },
       })
       assert.equal(loaded.record.sparkAddress, ADDRESS_A)
-      assert.equal(loaded.record.accountIndex, 2)
-      assert.equal(loaded.record.network, 'REGTEST')
+      assert.equal(loaded.record.accountIndex, 1)
+      assert.equal(loaded.record.network, 'MAINNET')
       assert.equal(loaded.seed, PHRASE)
       assert.equal(readFileSync(path, 'utf8').includes(PHRASE), false)
     } finally {
@@ -112,21 +112,21 @@ describe('1-462 context does not silently migrate derivation', () => {
     const env = { ...envFor(dir), SPARK_NETWORK: 'MAINNET' }
     const seen: number[] = []
     try {
-      await savePotSeed(input('pot_a', ADDRESS_A, 3), PASSPHRASE, { env })
+      await savePotSeed(input('pot_a', ADDRESS_A), PASSPHRASE, { env })
       const ctx = await resolvePotContext(
         { potFlag: 'pot_a' },
         {
           env,
           deriveAddress: async (_seed, network, accountIndex) => {
             seen.push(accountIndex)
-            assert.equal(network, 'REGTEST')
+            assert.equal(network, 'MAINNET')
             return ADDRESS_A
           },
         },
       )
-      assert.deepEqual(seen, [3])
-      assert.equal(ctx.accountIndex, 3)
-      assert.equal(ctx.network, 'REGTEST')
+      assert.deepEqual(seen, [1])
+      assert.equal(ctx.accountIndex, 1)
+      assert.equal(ctx.network, 'MAINNET')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -144,7 +144,7 @@ describe('1-462 concurrent caps and auth-required boundary', () => {
       receiver: ADDRESS_A,
       amountCents: 60,
       asset: 'USDB',
-      network: 'REGTEST',
+      network: 'MAINNET',
     })
     const deps = {
       path,
@@ -171,9 +171,9 @@ describe('1-462 concurrent caps and auth-required boundary', () => {
       potId: 'pot_a',
       sparkAddress: REGTEST_ADDR,
       spendMode: 'auth_required',
-      network: 'REGTEST',
+      network: 'MAINNET',
       derivationMode: 'spark',
-      accountIndex: 0,
+      accountIndex: 1,
       source: 'registry',
       getSeed: () => {
         throw new Error('seed must not be read')

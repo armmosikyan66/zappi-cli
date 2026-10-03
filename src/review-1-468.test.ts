@@ -33,7 +33,8 @@ const PHRASE =
   'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima'
 const PASSPHRASE = 'a-very-long-high-entropy-host-secret-passphrase-0123456789'
 const ADDRESS = 'spark1exampleaddress0000000000000000'
-const REGTEST = bech32m.encode('sparkrt', bech32m.toWords(new Uint8Array(32).fill(4)))
+const REGTEST = bech32m.encode('spark', bech32m.toWords(new Uint8Array(32).fill(4)))
+const SPARKRT = bech32m.encode('sparkrt', bech32m.toWords(new Uint8Array(32).fill(4)))
 const MAINNET = bech32m.encode('spark', bech32m.toWords(new Uint8Array(32).fill(5)))
 
 function envIn(dir: string, file = 'pots.json') {
@@ -57,9 +58,9 @@ describe('1-470 fresh registry directory', () => {
           potId: 'pot_a',
           sparkAddress: ADDRESS,
           spendMode: 'free',
-          network: 'REGTEST',
+          network: 'MAINNET',
           derivationMode: 'spark',
-          accountIndex: 0,
+          accountIndex: 1,
           seed: PHRASE,
         },
         PASSPHRASE,
@@ -169,7 +170,7 @@ describe('1-471 legacy identity', () => {
                 ZAPPI_POT_ID: 'pot_x',
                 ZAPPI_POT_SEED: PHRASE,
                 ZAPPI_POT_SPARK_ADDRESS: ADDRESS,
-                SPARK_NETWORK: 'REGTEST',
+                SPARK_NETWORK: 'MAINNET',
               },
               deriveAddress: async () => 'spark1someoneelse000000000000000000',
             },
@@ -192,9 +193,9 @@ describe('1-473 import keeps the original identity', () => {
           potId: 'pot_a',
           sparkAddress: ADDRESS,
           spendMode: 'free',
-          network: 'REGTEST',
+          network: 'MAINNET',
           derivationMode: 'spark',
-          accountIndex: 3,
+          accountIndex: 1,
           seed: PHRASE,
         },
         PASSPHRASE,
@@ -210,7 +211,7 @@ describe('1-473 import keeps the original identity', () => {
               '--pot-id', 'pot_a',
               '--from-file', seedFile,
               '--network', 'MAINNET',
-              '--account-index', '0',
+              '--account-index', '1',
               '--address', 'spark1other000000000000000000000000',
             ],
             'plain',
@@ -219,8 +220,8 @@ describe('1-473 import keeps the original identity', () => {
         /Refusing to replace/,
       )
       const pots = await listPots({ env })
-      assert.equal(pots[0]?.network, 'REGTEST')
-      assert.equal(pots[0]?.accountIndex, 3)
+      assert.equal(pots[0]?.network, 'MAINNET')
+      assert.equal(pots[0]?.accountIndex, 1)
       assert.equal(pots[0]?.sparkAddress, ADDRESS)
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -238,9 +239,9 @@ describe('1-474 restore does not follow a symlink or accept tampered ciphertext'
           potId: 'pot_a',
           sparkAddress: ADDRESS,
           spendMode: 'free',
-          network: 'REGTEST',
+          network: 'MAINNET',
           derivationMode: 'spark',
-          accountIndex: 0,
+          accountIndex: 1,
           seed: PHRASE,
         },
         PASSPHRASE,
@@ -274,9 +275,9 @@ describe('1-474 restore does not follow a symlink or accept tampered ciphertext'
           potId: 'pot_a',
           sparkAddress: ADDRESS,
           spendMode: 'free',
-          network: 'REGTEST',
+          network: 'MAINNET',
           derivationMode: 'spark',
-          accountIndex: 0,
+          accountIndex: 1,
           seed: PHRASE,
         },
         PASSPHRASE,
@@ -315,7 +316,7 @@ describe('1-475 journal fail-closed', () => {
       receiver: REGTEST,
       amountCents: 10,
       asset: 'USDB',
-      network: 'REGTEST',
+      network: 'MAINNET',
     }
     try {
       await beginOperation(intent, 'k1', { path, env: envIn(dir) })
@@ -341,13 +342,13 @@ describe('1-476 pay network and idempotency salt', () => {
     await assert.rejects(
       () =>
         payResourceResult('res_1', {
-          env: { ZAPPI_POT_ID: 'pot_1', ZAPPI_API_URL: 'https://api.example.test', SPARK_NETWORK: 'REGTEST' },
+          env: { ZAPPI_POT_ID: 'pot_1', ZAPPI_API_URL: 'https://api.example.test', SPARK_NETWORK: 'MAINNET' },
           fetch: async () =>
             new Response(
               JSON.stringify({
                 accepts: [
                   {
-                    payTo: MAINNET,
+                    payTo: SPARKRT,
                     network: 'spark',
                     asset: 'USDB',
                     extra: { priceCents: 25, pricingMode: 'exact' },
@@ -362,7 +363,7 @@ describe('1-476 pay network and idempotency salt', () => {
             return { sparkTxHash: 'aa'.repeat(32) }
           },
         }),
-      /Recipient Spark network is MAINNET/,
+      /Recipient Spark network is REGTEST/,
     )
     assert.equal(signed, false)
   })
@@ -383,9 +384,9 @@ describe('1-476 pay network and idempotency salt', () => {
           potId: 'pot_a',
           sparkAddress: ADDRESS,
           spendMode: 'free' as const,
-          network: 'REGTEST' as const,
+          network: 'MAINNET' as const,
           derivationMode: 'spark' as const,
-          accountIndex: 0,
+          accountIndex: 1,
           source: 'registry' as const,
           getSeed: () => PHRASE,
         }),

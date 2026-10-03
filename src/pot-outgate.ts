@@ -18,7 +18,7 @@ import type { PotContext } from './pot-context.js'
 
 export type MoneyOutKind = 'pay' | 'send'
 export type MoneyOutAsset = 'USDB'
-export type MoneyOutNetwork = 'MAINNET' | 'REGTEST'
+export type MoneyOutNetwork = 'MAINNET'
 
 export interface MoneyOutIntent {
   kind: MoneyOutKind

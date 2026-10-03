@@ -17,9 +17,9 @@ function baseInput(potId: string) {
     label: 'Research',
     sparkAddress: 'spark1exampleaddress0000000000000000',
     spendMode: 'free' as const,
-    network: 'REGTEST' as const,
+    network: 'MAINNET' as const,
     derivationMode: 'spark' as const,
-    accountIndex: 0,
+    accountIndex: 1,
     seed: PHRASE,
   }
 }

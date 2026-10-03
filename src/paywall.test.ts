@@ -17,7 +17,7 @@ import { EMPTY_POT_ERROR } from './spark-send.js'
 import { toJson } from './results.js'
 import { bech32m } from '@scure/base'
 
-const PAY_TO = bech32m.encode('sparkrt', bech32m.toWords(new Uint8Array(32).fill(2)))
+const PAY_TO = bech32m.encode('spark', bech32m.toWords(new Uint8Array(32).fill(2)))
 
 const here = dirname(fileURLToPath(import.meta.url))
 

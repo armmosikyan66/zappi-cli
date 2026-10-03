@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { bech32m } from '@scure/base'
 import { describe, it } from 'node:test'
 import { classifySendTarget, runSendSparkUsdb } from './send-commands.js'
 import type { PotContext } from './pot-context.js'
@@ -8,9 +9,9 @@ function fakeContext(overrides: Partial<Pick<PotContext, 'potId' | 'sparkAddress
     potId: 'pot_1',
     sparkAddress: 'spark1source',
     spendMode: 'free' as const,
-    network: 'REGTEST' as const,
+    network: 'MAINNET' as const,
     derivationMode: 'spark' as const,
-    accountIndex: 0,
+    accountIndex: 1,
     source: 'registry' as const,
     getSeed: () => 'seed',
     ...overrides,
@@ -63,17 +64,18 @@ describe('runSendSparkUsdb pre-sign gate', () => {
   const MAINNET_ADDR =
     'spark1pgssyele0qrcjdheeq2a0zmpwdwvj3r4f4stkuju0fp36g6grapv2w7l8am2cp'
 
-  it('rejects a receiver/pot network mismatch before signing (no SDK call)', async () => {
+  it('rejects a regtest receiver before signing (no SDK call)', async () => {
+    const regtest = bech32m.encode('sparkrt', bech32m.toWords(new Uint8Array(32).fill(4)))
     await assert.rejects(
       () =>
         runSendSparkUsdb(
-          MAINNET_ADDR,
+          regtest,
           100,
           'plain',
           { ZAPPI_POT_ID: 'pot_1' },
-          () => Promise.resolve(fakeContext({ network: 'REGTEST' })),
+          () => Promise.resolve(fakeContext()),
         ),
-      /Spark address network is MAINNET but the pot network is REGTEST/,
+      /Spark address network is REGTEST but the pot network is MAINNET/,
     )
   })
 })

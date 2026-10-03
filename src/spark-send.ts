@@ -10,7 +10,7 @@ export const EMPTY_POT_ERROR =
 export interface SendUsdbFromPotInput {
   mnemonic: string
   accountNumber: number
-  network: 'MAINNET' | 'REGTEST'
+  network: 'MAINNET'
   tokenIdentifier: string
   receiverSparkAddress: string
   amountCents: number
@@ -36,15 +36,7 @@ export function pickUsdbTokenIdentifier(tokenBalances: unknown): string | null {
   return null
 }
 
-function tokenHrpNetwork(tokenIdentifier: string): 'MAINNET' | 'REGTEST' | null {
-  if (
-    tokenIdentifier.startsWith('btknrt1') ||
-    tokenIdentifier.startsWith('btknt1') ||
-    tokenIdentifier.startsWith('btknl1') ||
-    tokenIdentifier.startsWith('btkns1')
-  ) {
-    return 'REGTEST'
-  }
+function tokenHrpNetwork(tokenIdentifier: string): 'MAINNET' | null {
   if (tokenIdentifier.startsWith('btkn1')) return 'MAINNET'
   return null
 }
@@ -75,7 +67,7 @@ function textField(meta: Record<string, unknown>, keys: string[]): string | unde
  */
 export function selectCanonicalUsdbToken(
   tokenBalances: unknown,
-  network: 'MAINNET' | 'REGTEST',
+  network: 'MAINNET',
 ): string {
   const matches: string[] = []
   for (const [tokenIdentifier, value] of tokenBalanceEntries(tokenBalances)) {
@@ -160,7 +152,7 @@ export async function sendUsdbFromPot(
 export async function readUsdbTokenIdentifier(
   mnemonic: string,
   accountNumber: number,
-  network: 'MAINNET' | 'REGTEST',
+  network: 'MAINNET',
 ): Promise<string> {
   const { SparkWallet } = await import('@buildonspark/spark-sdk')
   const { wallet } = await SparkWallet.initialize({

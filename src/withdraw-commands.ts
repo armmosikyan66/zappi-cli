@@ -191,7 +191,7 @@ export interface MoneyOutHooks {
   /** Test hook after the verified pot is chosen and before Nest or signing. */
   onContext?: (context: PotContext) => void
   /** Test double for Spark address derivation. Production uses the SDK. */
-  deriveAddress?: (seed: string, network: 'MAINNET' | 'REGTEST', accountIndex: number) => Promise<string>
+  deriveAddress?: (seed: string, network: 'MAINNET', accountIndex: number) => Promise<string>
 }
 
 /** `zappi-cli withdraw confirm <quoteId> [--auth <token>] [--pot <id>]` */

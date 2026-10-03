@@ -33,8 +33,8 @@ operation needs no human passphrase.
   encrypted provisioning record before success. Nest has not assigned a pot
   id yet. After the human registers, bind that record:
   `zappi-cli pots registry bind --provision <prov_id> --pot-id <id>`.
-- New pots are derivation mode `spark`, account index 0. Import does not
-  assume that: pass `--network`, `--account-index`, and `--address`, and the
+- New pots are derivation mode `spark`, account index 1, network MAINNET. Import
+  requires `--network MAINNET`, `--account-index 1`, and `--address`, and the
   CLI refuses to store a seed that does not reproduce that identity. The
   identity check and the write are one locked operation, so two different
   imports of the same pot cannot both succeed.
@@ -57,11 +57,11 @@ zappi-cli pots registry bind --provision <prov_id> --pot-id <id>
 # Explicit plaintext opt-out (warned). This is the only path that writes a key file.
 ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli propose --generate --mode free --key-file ~/.zappi/pot.txt
 
-# Import. Network, account index, and address are the original identity — not SPARK_NETWORK.
+# Import. Network, account index, and address are the original identity.
 ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli pots registry import \
-  --pot-id <id> --network REGTEST --account-index 0 --address <spark-address>
+  --pot-id <id> --network MAINNET --account-index 1 --address <spark-address>
 ZAPPI_POT_PASSPHRASE=<host-secret> zappi-cli pots registry import \
-  --pot-id <id> --network REGTEST --account-index 3 --address <spark-address> \
+  --pot-id <id> --network MAINNET --account-index 1 --address <spark-address> \
   --from-file ~/.zappi/pot-research.txt
 ```
 
@@ -161,8 +161,8 @@ and `ZAPPI_POT_ID` name different pots, the command fails closed. It does
 not sign the environment pot after dropping the flag. With no flag and no
 `ZAPPI_POT_ID`, the registry's active pot is used.
 
-- **Pre-sign gate**: the recipient Spark address is decoded and its network
-  (MAINNET vs REGTEST) must match the verified pot. The integer cent amount,
+- **Pre-sign gate**: the recipient Spark address is decoded and must be MAINNET,
+  matching the verified pot. The integer cent amount,
   canonical USDB token (ticker USDB, 6 decimals, identifier network matching
   the pot), source account, and (for `pay`) the resource id are bound
   before signing. The first `btkn` balance entry is not assumed to be USDB.

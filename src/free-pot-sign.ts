@@ -26,12 +26,12 @@ import {
 
 export function assertRecipientOnPotNetwork(
   receiver: string,
-  potNetwork: 'MAINNET' | 'REGTEST',
-): 'MAINNET' | 'REGTEST' {
+  potNetwork: 'MAINNET',
+): 'MAINNET' {
   const inspected = inspectSparkAddress(receiver)
   if (!inspected.valid || !inspected.network || inspected.network === 'FOREIGN') {
     throw new Error(
-      `Destination is not a valid Spark address for MAINNET/REGTEST: ${receiver}`,
+      `Destination is not a valid Spark address for MAINNET: ${receiver}`,
     )
   }
   if (inspected.network !== potNetwork) {
@@ -39,7 +39,7 @@ export function assertRecipientOnPotNetwork(
       `Recipient Spark network is ${inspected.network} but the pot network is ${potNetwork}. Refusing to sign.`,
     )
   }
-  return inspected.network
+  return potNetwork
 }
 
 export interface GateAndSignInput {
@@ -64,7 +64,7 @@ export interface GateAndSignInput {
   readTokenIdentifier?: (
     mnemonic: string,
     accountNumber: number,
-    network: 'MAINNET' | 'REGTEST',
+    network: 'MAINNET',
   ) => Promise<string>
   now?: () => number
 }

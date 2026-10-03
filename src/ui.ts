@@ -163,7 +163,7 @@ export function renderHelp(mode: OutputMode = 'pretty'): string {
     `  ${c.dim('ZAPPI_UNLOCK_TOKEN')}   Unlock bearer for consume`,
     `  ${c.dim('ZAPPI_POT_SPEND_MODE')}  free (default) or auth_required`,
     `  ${c.dim('ZAPPI_APP_ORIGIN')}     Web origin (default ${DEFAULT_ZAPPI_APP_ORIGIN})`,
-    `  ${c.dim('SPARK_NETWORK')}        REGTEST (default) or MAINNET`,
+    `  ${c.dim('SPARK_NETWORK')}        MAINNET (default). Any other value is rejected`,
     `  ${c.dim('ZAPPI_PROJECT_API_KEY')}  Project key for server-to-server wallet routes`,
     `  ${c.dim('ZAPPI_ACCESS_TOKEN')}    User JWT (overrides zappi-cli login)`,
     `  ${c.dim('ZAPPI_COOKIE')}         Optional cookie header forwarded for session auth`,

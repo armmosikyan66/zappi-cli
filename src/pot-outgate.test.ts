@@ -14,9 +14,9 @@ function makeContext(overrides: Partial<Pick<PotContext, 'potId' | 'sparkAddress
     potId: 'pot_1',
     sparkAddress: 'spark1source',
     spendMode: 'free' as const,
-    network: 'REGTEST' as const,
+    network: 'MAINNET' as const,
     derivationMode: 'spark' as const,
-    accountIndex: 0,
+    accountIndex: 1,
     source: 'registry' as const,
     getSeed: () => 'seed',
   }
@@ -31,7 +31,7 @@ function payIntent(overrides: Partial<MoneyOutIntent> = {}): MoneyOutIntent {
     receiver: 'spark1payto',
     amountCents: 25,
     asset: 'USDB',
-    network: 'REGTEST',
+    network: 'MAINNET',
     resourceId: 'res_1',
     ...overrides,
   }
@@ -45,7 +45,7 @@ function sendIntent(overrides: Partial<MoneyOutIntent> = {}): MoneyOutIntent {
     receiver: 'spark1friend',
     amountCents: 100,
     asset: 'USDB',
-    network: 'REGTEST',
+    network: 'MAINNET',
     ...overrides,
   }
 }
@@ -56,7 +56,7 @@ describe('canonicalIntent + intentHash', () => {
     const b: MoneyOutIntent = {
       kind: 'pay',
       resourceId: 'res_1',
-      network: 'REGTEST',
+      network: 'MAINNET',
       potId: 'pot_1',
       asset: 'USDB',
       amountCents: 25,
@@ -72,7 +72,6 @@ describe('canonicalIntent + intentHash', () => {
     assert.notEqual(intentHash(base), intentHash(payIntent({ amountCents: 26 })))
     assert.notEqual(intentHash(base), intentHash(payIntent({ receiver: 'spark1other' })))
     assert.notEqual(intentHash(base), intentHash(payIntent({ resourceId: 'res_2' })))
-    assert.notEqual(intentHash(base), intentHash(payIntent({ network: 'MAINNET' })))
     assert.notEqual(intentHash(base), intentHash(payIntent({ potId: 'pot_2' })))
   })
 })
@@ -109,13 +108,6 @@ describe('validateMoneyOutIntent', () => {
     assert.throws(
       () => validateMoneyOutIntent(payIntent({ potId: 'pot_2' }), makeContext()),
       /does not match the resolved pot/,
-    )
-  })
-
-  it('rejects a network mismatch', () => {
-    assert.throws(
-      () => validateMoneyOutIntent(payIntent({ network: 'MAINNET' }), makeContext({ network: 'REGTEST' })),
-      /does not match the pot network/,
     )
   })
 

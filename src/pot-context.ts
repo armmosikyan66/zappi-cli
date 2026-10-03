@@ -34,10 +34,10 @@ import {
 import { loadPotSeed } from './load-pot-seed.js'
 import { inspectSparkAddress } from './spark-address.js'
 
-export type SparkNetwork = 'MAINNET' | 'REGTEST'
+export type SparkNetwork = 'MAINNET'
 export type PotDerivationMode = 'spark'
 export const DEFAULT_POT_DERIVATION_MODE: PotDerivationMode = 'spark'
-export const DEFAULT_POT_ACCOUNT_INDEX = 0
+export const DEFAULT_POT_ACCOUNT_INDEX = 1
 
 export type PotSeedSource = 'registry' | 'env' | 'file'
 
@@ -241,11 +241,10 @@ function assertRecordMatchesSelectors(record: PotRecord, env: PotEnv): void {
 function resolveLegacyAccountIndex(env: PotEnv): number {
   const raw = env.ZAPPI_POT_ACCOUNT_INDEX?.trim()
   if (!raw) return DEFAULT_POT_ACCOUNT_INDEX
-  const parsed = Number(raw)
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error('ZAPPI_POT_ACCOUNT_INDEX must be a non-negative integer.')
+  if (raw !== String(DEFAULT_POT_ACCOUNT_INDEX)) {
+    throw new Error('ZAPPI_POT_ACCOUNT_INDEX must be 1.')
   }
-  return parsed
+  return DEFAULT_POT_ACCOUNT_INDEX
 }
 
 /* --------------------------- address verification ---------------------------- */

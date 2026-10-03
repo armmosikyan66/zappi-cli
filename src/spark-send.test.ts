@@ -74,7 +74,7 @@ describe('selectCanonicalUsdbToken', () => {
     )
     assert.throws(
       () => selectCanonicalUsdbToken({ btknrt1usdb: usdb('btknrt1usdb') }, 'MAINNET'),
-      /REGTEST/,
+      /canonical USDB/,
     )
     assert.throws(
       () =>

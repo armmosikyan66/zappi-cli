@@ -52,7 +52,6 @@ const USAGE = `Usage:
 
 On a terminal, bare propose asks before it generates or registers:
 existing pot or generate new → how the pot should spend
-→ Spark network (skipped when SPARK_NETWORK is set)
 → app origin (skipped when --origin, ZAPPI_APP_ORIGIN, or NEXT_PUBLIC_SITE_URL is set)
 → pot label (blank asks you to confirm auto pot_<unique> or type a custom name)
 → opens the Zappi register link.
@@ -128,9 +127,8 @@ export function isProposeFullySpecified(
 ): boolean {
   const hasPot = args.generate || Boolean(args.address?.trim())
   const hasLabel = Boolean(args.label?.trim())
-  const hasNetwork = Boolean(env.SPARK_NETWORK?.trim())
   const hasOrigin = args.originExplicit || hasAppOriginEnv(env)
-  return hasPot && args.modeExplicit && hasLabel && hasNetwork && hasOrigin
+  return hasPot && args.modeExplicit && hasLabel && hasOrigin
 }
 
 /** Map explicit flags onto wizard presets. Unset fields stay unset so the wizard asks. */
@@ -155,7 +153,7 @@ export function printRegisterDeepLink(input: {
   sparkAddress: string
   label?: string
   origin?: string
-  network?: 'MAINNET' | 'REGTEST'
+  network?: 'MAINNET'
   mode?: PotSpendMode
   ref?: string
 }): string {
@@ -251,7 +249,7 @@ async function executeFlagPropose(
       storedLine = [
         `Key file written (mode 0600): ${keyFile}`,
         'This file is plaintext. It is the only recoverable backup until you seal it.',
-        `  zappi-cli pots registry import --pot-id <id> --from-file ${keyFile} --network ${network} --account-index 0 --address ${generatedAddress}`,
+        `  zappi-cli pots registry import --pot-id <id> --from-file ${keyFile} --network ${network} --account-index 1 --address ${generatedAddress}`,
         'Anyone who reads this file can drain the pot. Do not cat, print, email, or paste it.',
       ].join('\n')
     } else {
@@ -261,7 +259,7 @@ async function executeFlagPropose(
           sparkAddress: generatedAddress,
           network,
           derivationMode: 'spark',
-          accountIndex: 0,
+          accountIndex: 1,
           seed: mnemonic,
         },
         passphrase,
@@ -273,7 +271,7 @@ async function executeFlagPropose(
         'Set ZAPPI_POT_PASSPHRASE as a host secret.',
         'After the pot is registered in Zappi, bind the provision to the Nest pot id:',
         `  zappi-cli pots registry bind --provision ${provisionId} --pot-id <id>`,
-        'New pots use derivation spark, account index 0. Do not print the seed.',
+        'New pots use derivation spark, account index 1. Do not print the seed.',
       ].join('\n')
     }
     const output = [printed, storedLine].join('\n')

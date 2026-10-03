@@ -45,7 +45,7 @@ export interface PotEnv {
    * opt-out. Required before that seed may sign. Not a secret.
    */
   ZAPPI_POT_SPARK_ADDRESS?: string
-  /** Original derivation index for a legacy seed. Defaults to 0 only when unset. */
+  /** Derivation index for a legacy seed. Only 1 is valid. Unset means 1. */
   ZAPPI_POT_ACCOUNT_INDEX?: string
   /**
    * Attach deviceCode (RFC 8628) for reclaim after approve (1-203).
@@ -147,12 +147,10 @@ function safeOrigin(origin: string): string {
   }
 }
 
-export function resolveSparkNetwork(
-  env: PotEnv = process.env,
-): 'MAINNET' | 'REGTEST' {
+export function resolveSparkNetwork(env: PotEnv = process.env): 'MAINNET' {
   const raw = env.SPARK_NETWORK?.trim().toUpperCase()
-  // Unset matches the dev API (REGTEST). Set MAINNET explicitly for production.
-  return raw === 'MAINNET' ? 'MAINNET' : 'REGTEST'
+  if (!raw || raw === 'MAINNET') return 'MAINNET'
+  throw new Error('SPARK_NETWORK must be MAINNET. Regtest is not supported.')
 }
 
 export function resolvePotSpendMode(

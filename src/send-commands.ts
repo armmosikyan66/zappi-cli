@@ -79,7 +79,7 @@ async function runSendSparkUsdb(
   const inspected = inspectSparkAddress(to)
   if (!inspected.valid || !inspected.network || inspected.network === 'FOREIGN') {
     throw new Error(
-      'Destination is not a valid Spark address for MAINNET/REGTEST: ' + to,
+      'Destination is not a valid Spark address for MAINNET: ' + to,
     )
   }
 

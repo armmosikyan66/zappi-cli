@@ -45,9 +45,9 @@ function baseInput(potId: string) {
     label: 'Research',
     sparkAddress: 'spark1exampleaddress0000000000000000',
     spendMode: 'free' as const,
-    network: 'REGTEST' as const,
+    network: 'MAINNET' as const,
     derivationMode: 'spark' as const,
-    accountIndex: 0,
+    accountIndex: 1,
     seed: PHRASE,
   }
 }
@@ -143,7 +143,7 @@ describe('pot-registry schema validation', () => {
     // JSON.parse creates __proto__ as an own key (DefineOwnProperty semantics),
     // unlike an object literal which would set the prototype instead.
     const raw = JSON.parse(
-      '{"version":1,"pots":{"__proto__":{"potId":"__proto__","sparkAddress":"x","spendMode":"free","network":"REGTEST","derivationMode":"spark","accountIndex":0,"apiUrl":"u","appOrigin":"o","createdAt":"c","saltB64":"","ivB64":"","tagB64":"","ciphertextB64":""}}}',
+      '{"version":1,"pots":{"__proto__":{"potId":"__proto__","sparkAddress":"x","spendMode":"free","network":"MAINNET","derivationMode":"spark","accountIndex":1,"apiUrl":"u","appOrigin":"o","createdAt":"c","saltB64":"","ivB64":"","tagB64":"","ciphertextB64":""}}}',
     )
     assert.throws(() => validateRegistryFile(raw), /prototype/)
   })
@@ -154,9 +154,9 @@ describe('pot-registry schema validation', () => {
       potId: 'pot_a',
       sparkAddress: 'spark1x',
       spendMode: 'free' as const,
-      network: 'REGTEST' as const,
+      network: 'MAINNET' as const,
       derivationMode: 'spark' as const,
-      accountIndex: 0,
+      accountIndex: 1,
       apiUrl: 'u',
       appOrigin: 'o',
       createdAt: 'c',
@@ -296,9 +296,9 @@ describe('canonicalAad', () => {
       potId: 'pot_a',
       sparkAddress: 'spark1x',
       spendMode: 'free' as const,
-      network: 'REGTEST' as const,
+      network: 'MAINNET' as const,
       derivationMode: 'spark' as const,
-      accountIndex: 0,
+      accountIndex: 1,
       apiUrl: 'u',
       appOrigin: 'o',
       createdAt: 'c',

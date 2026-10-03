@@ -94,8 +94,8 @@ describe('pots registry commands', () => {
           '--pot-id', 'pot_x',
           '--from-file', seedFile,
           '--label', 'Imported',
-          '--network', 'REGTEST',
-          '--account-index', '0',
+          '--network', 'MAINNET',
+          '--account-index', '1',
           '--address', SPARK_ADDRESS,
         ],
         'pretty',
@@ -117,7 +117,7 @@ describe('pots registry commands', () => {
       await assert.rejects(
         () =>
           runPotsRegistryImport(
-            ['--pot-id', 'pot_x', '--network', 'REGTEST', '--account-index', '0', '--address', SPARK_ADDRESS],
+            ['--pot-id', 'pot_x', '--network', 'MAINNET', '--account-index', '1', '--address', SPARK_ADDRESS],
             'pretty',
             {
             env,
@@ -204,9 +204,9 @@ function baseInput(potId: string) {
     label: 'Research',
     sparkAddress: SPARK_ADDRESS,
     spendMode: 'free' as const,
-    network: 'REGTEST' as const,
+    network: 'MAINNET' as const,
     derivationMode: 'spark' as const,
-    accountIndex: 0,
+    accountIndex: 1,
     seed: PHRASE,
   }
 }

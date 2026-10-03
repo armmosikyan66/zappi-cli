@@ -42,7 +42,7 @@ const PHRASE_B =
 const PASSPHRASE = 'a-very-long-high-entropy-host-secret-passphrase-0123456789'
 const ADDRESS = 'spark1exampleaddress0000000000000000'
 const ADDRESS_B = 'spark1otheridentity00000000000000000'
-const REGTEST = bech32m.encode('sparkrt', bech32m.toWords(new Uint8Array(32).fill(4)))
+const REGTEST = bech32m.encode('spark', bech32m.toWords(new Uint8Array(32).fill(4)))
 const POT = '11111111-1111-4111-8111-111111111111'
 
 function envIn(dir: string) {
@@ -52,7 +52,7 @@ function envIn(dir: string) {
     ZAPPI_API_URL: 'https://api.test.zappi.money',
     ZAPPI_APP_ORIGIN: 'https://app.test.zappi.money',
     ZAPPI_POT_PASSPHRASE: PASSPHRASE,
-    SPARK_NETWORK: 'REGTEST',
+    SPARK_NETWORK: 'MAINNET',
   }
 }
 
@@ -67,9 +67,9 @@ async function seal(
       potId,
       sparkAddress,
       spendMode: 'free',
-      network: 'REGTEST',
+      network: 'MAINNET',
       derivationMode: 'spark',
-      accountIndex: 0,
+      accountIndex: 1,
       seed,
     },
     PASSPHRASE,
@@ -82,9 +82,9 @@ function context(potId: string, sparkAddress = REGTEST): PotContext {
     potId,
     sparkAddress,
     spendMode: 'free',
-    network: 'REGTEST',
+    network: 'MAINNET',
     derivationMode: 'spark',
-    accountIndex: 0,
+    accountIndex: 1,
     source: 'registry',
     getSeed: () => PHRASE,
   }
@@ -131,7 +131,7 @@ describe('1-485 routed send keeps the explicit pot', () => {
       await seal(env, 'pot_b', ADDRESS_B)
       const seen: string[] = []
       const hooks = {
-        deriveAddress: async (_seed: string, _network: 'MAINNET' | 'REGTEST', _index: number) => ADDRESS_B,
+        deriveAddress: async (_seed: string, _network: 'MAINNET', _index: number) => ADDRESS_B,
         onContext: (ctx: PotContext) => {
           seen.push(ctx.potId)
           throw new Error('stop before network')
@@ -171,9 +171,9 @@ describe('1-486 import identity is locked with the write', () => {
       '--pot-id',
       'pot_a',
       '--network',
-      'REGTEST',
+      'MAINNET',
       '--account-index',
-      '0',
+      '1',
       '--address',
       address,
     ]
@@ -428,9 +428,9 @@ describe('1-489 backup size and label bounds', () => {
           label: 'a'.repeat(256),
           sparkAddress: ADDRESS,
           spendMode: 'free',
-          network: 'REGTEST',
+          network: 'MAINNET',
           derivationMode: 'spark',
-          accountIndex: 0,
+          accountIndex: 1,
           seed: PHRASE,
         },
         PASSPHRASE,
@@ -445,9 +445,9 @@ describe('1-489 backup size and label bounds', () => {
               label: 'b'.repeat(257),
               sparkAddress: ADDRESS_B,
               spendMode: 'free',
-              network: 'REGTEST',
+              network: 'MAINNET',
               derivationMode: 'spark',
-              accountIndex: 0,
+              accountIndex: 1,
               seed: PHRASE_B,
             },
             PASSPHRASE,
@@ -536,7 +536,7 @@ describe('1-492 canonical USDB stops a bad balance before signing', () => {
                   btkn1other: { tokenMetadata: { tokenTicker: 'OTHER', decimals: 8 } },
                   btkn1bare: { ownedBalance: '1' },
                 },
-                'REGTEST',
+                'MAINNET',
               ),
             sendUsdb: async () => {
               sends += 1
