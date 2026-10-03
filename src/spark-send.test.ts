@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   pickUsdbTokenIdentifier,
+  selectCanonicalUsdbToken,
   tokenBalanceEntries,
 } from './spark-send.js'
 
@@ -33,6 +34,56 @@ describe('pickUsdbTokenIdentifier', () => {
     assert.equal(pickUsdbTokenIdentifier(null), null)
     assert.equal(pickUsdbTokenIdentifier({}), null)
     assert.equal(pickUsdbTokenIdentifier(new Map()), null)
+  })
+})
+
+function usdb(id: string, extra: Record<string, unknown> = {}) {
+  return {
+    tokenMetadata: {
+      tokenTicker: 'USDB',
+      decimals: 6,
+      ...extra,
+    },
+  }
+}
+
+describe('selectCanonicalUsdbToken', () => {
+  it('selects USDB when an unrelated btkn token is listed first', () => {
+    const balances = new Map<string, unknown>([
+      ['btkn1other', { tokenMetadata: { tokenTicker: 'OTHER', decimals: 6 } }],
+      ['btkn1usdb', usdb('btkn1usdb')],
+    ])
+    assert.equal(selectCanonicalUsdbToken(balances, 'MAINNET'), 'btkn1usdb')
+  })
+
+  it('rejects a balance with no USDB metadata', () => {
+    assert.throws(
+      () => selectCanonicalUsdbToken({ btkn1bare: { ownedBalance: '1' } }, 'MAINNET'),
+      /canonical USDB/,
+    )
+  })
+
+  it('rejects contradictory decimals and the wrong network', () => {
+    assert.throws(
+      () =>
+        selectCanonicalUsdbToken(
+          { btkn1usdb: usdb('btkn1usdb', { decimals: 8 }) },
+          'MAINNET',
+        ),
+      /decimals/,
+    )
+    assert.throws(
+      () => selectCanonicalUsdbToken({ btknrt1usdb: usdb('btknrt1usdb') }, 'MAINNET'),
+      /REGTEST/,
+    )
+    assert.throws(
+      () =>
+        selectCanonicalUsdbToken(
+          { btkn1usdb: usdb('btkn1usdb', { network: 'REGTEST' }) },
+          'MAINNET',
+        ),
+      /metadata network/,
+    )
   })
 })
 

@@ -53,7 +53,8 @@ export const GCM_TAG_LEN = 16
 
 const FILE_MODE = 0o600
 const DIR_MODE = 0o700
-const MAX_FILE_BYTES = 1 << 20
+/** Shared by backup, restore, and live registry writes. */
+export const MAX_REGISTRY_FILE_BYTES = 1 << 20
 const MAX_POTS = 256
 const MAX_POT_ID_LEN = 128
 const MAX_LABEL_LEN = 256
@@ -479,7 +480,7 @@ function readRegistryFile(path: string): RegistryFile | null {
   let raw: string
   try {
     const stat = statSync(path)
-    if (stat.size > MAX_FILE_BYTES) {
+    if (stat.size > MAX_REGISTRY_FILE_BYTES) {
       throw new Error(`Registry file ${path} is too large (${stat.size} bytes).`)
     }
     raw = readFileSync(path, 'utf8')
@@ -498,6 +499,8 @@ function readRegistryFile(path: string): RegistryFile | null {
 
 /** Crash-safe atomic write: temp file (random name) → fsync → rename → dir fsync. */
 function writeRegistryFile(path: string, file: RegistryFile): void {
+  // Same bounds as read. A 257-character label must fail here, before rename.
+  const checked = validateRegistryFile(file)
   refuseWindows()
   mkdirSync(dirname(path), { recursive: true, mode: DIR_MODE })
   try {
@@ -505,8 +508,8 @@ function writeRegistryFile(path: string, file: RegistryFile): void {
   } catch {
     // dir may already exist with a tighter mode
   }
-  const body = `${JSON.stringify(file, null, 2)}\n`
-  if (Buffer.byteLength(body) > MAX_FILE_BYTES) {
+  const body = `${JSON.stringify(checked, null, 2)}\n`
+  if (Buffer.byteLength(body) > MAX_REGISTRY_FILE_BYTES) {
     throw new Error('Registry would exceed the size limit; refusing to write.')
   }
   const tmp = `${path}.${randomBytes(8).toString('hex')}.tmp`
@@ -701,6 +704,12 @@ export interface PotRegistryDeps {
   env?: PotEnv
   /** Override now for deterministic createdAt in tests. */
   now?: () => Date
+  /**
+   * Import sets this. Inside the registry lock, a different stored address,
+   * network, derivation mode, or account index is refused. The same identity
+   * may be re-sealed. The check is not done before the lock.
+   */
+  preserveIdentity?: boolean
 }
 
 function resolveEnv(env?: PotEnv): PotEnv {
@@ -743,6 +752,43 @@ export function authenticateRegistryFile(
   }
 }
 
+/**
+ * Decrypt every envelope, then derive each seed at the stored network and
+ * account index. The derived address must equal the stored Spark address.
+ * A throw means the caller must not replace the live registry. Ciphertext
+ * that authenticates with the wrong seed still fails here.
+ */
+export async function verifyRegistrySeedIdentities(
+  file: RegistryFile,
+  passphrase: string,
+  env: PotEnv,
+  deriveAddress: (
+    seed: string,
+    network: SparkNetwork,
+    accountIndex: number,
+  ) => Promise<string>,
+): Promise<void> {
+  authenticateRegistryFile(file, passphrase, env)
+  const records = [
+    ...Object.values(file.pots),
+    ...Object.values(file.provisions ?? {}),
+  ]
+  for (const record of records) {
+    if (record.derivationMode !== 'spark') {
+      throw new Error(
+        `Backup pot ${record.potId} derivation mode is not spark. Live registry was not replaced.`,
+      )
+    }
+    const seed = openSeed(record, passphrase, record)
+    const derived = await deriveAddress(seed, record.network, record.accountIndex)
+    if (derived !== record.sparkAddress) {
+      throw new Error(
+        `Backup pot ${record.potId} seed does not derive to the stored Spark address on ${record.network} account ${record.accountIndex}. Live registry was not replaced.`,
+      )
+    }
+  }
+}
+
 /** Seal a free-pot seed into the registry under its pot id. */
 export async function savePotSeed(
   input: SealPotSeedInput,
@@ -775,6 +821,19 @@ export async function savePotSeed(
     assertSafeRegistryPath(path)
     const file: RegistryFile =
       readRegistryFile(path) ?? { version: ENVELOPE_VERSION, pots: Object.create(null) }
+    const existing = file.pots[record.potId]
+    if (
+      deps.preserveIdentity &&
+      existing &&
+      (existing.sparkAddress !== record.sparkAddress ||
+        existing.network !== record.network ||
+        existing.accountIndex !== record.accountIndex ||
+        existing.derivationMode !== record.derivationMode)
+    ) {
+      throw new Error(
+        `Refusing to replace ${record.potId}: the stored pot is ${existing.network} account ${existing.accountIndex} ${existing.sparkAddress}. Import would change that identity.`,
+      )
+    }
     file.pots[record.potId] = record
     if (!file.activePotId) file.activePotId = record.potId
     writeRegistryFile(path, file)

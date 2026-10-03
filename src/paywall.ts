@@ -29,6 +29,7 @@ import { validateMoneyOutIntent, type MoneyOutIntent } from './pot-outgate.js'
 import { assertRecipientOnPotNetwork } from './free-pot-sign.js'
 import {
   beginOperation,
+  markFailed,
   markSettled,
   recordSubmitted,
   type JournalDeps,
@@ -155,6 +156,8 @@ export interface PayResourceOptions {
   ) => Promise<string>
   /** `--pot <id>`. Wins over `ZAPPI_POT_ID` when they differ (fail closed). */
   potFlag?: string
+  /** Caller `--idempotency-key`. Same intent and salt reconcile; a different salt is a different payment. */
+  externalIdempotencyKey?: string
   /** Default true: after settle, consume one grant unit when pricingMode is metered. */
   autoConsume?: boolean
   consumeUnits?: number
@@ -232,7 +235,11 @@ export async function payResourceResult(
     network: recipientNetwork,
     resourceId,
   }
-  const { idempotencyKey } = validateMoneyOutIntent(intent, context)
+  const { idempotencyKey } = validateMoneyOutIntent(intent, context, {
+    ...(options.externalIdempotencyKey
+      ? { externalIdempotencyKey: options.externalIdempotencyKey }
+      : {}),
+  })
   const mnemonic = context.getSeed()
 
   const readToken = options.readTokenIdentifier ?? readUsdbTokenIdentifier
@@ -247,15 +254,28 @@ export async function payResourceResult(
   if (jdeps) {
     const begin = await beginOperation(intent, idempotencyKey, jdeps)
     if (begin.action === 'sign') {
-      onStatus?.('Reading pot USDB token…')
-      const tokenIdentifier = await readToken(mnemonic, accountNumber, sparkNetwork)
-      onStatus?.(`Signing ${priceCents}¢ USDB…`)
-      const signed = await sendUsdb({
-        mnemonic, accountNumber, network: sparkNetwork, tokenIdentifier,
-        receiverSparkAddress: payTo, amountCents: priceCents,
-      })
-      sparkTxHash = signed.sparkTxHash
-      await recordSubmitted(idempotencyKey, sparkTxHash, jdeps)
+      let broadcastAttempted = false
+      try {
+        onStatus?.('Reading pot USDB token…')
+        const tokenIdentifier = await readToken(mnemonic, accountNumber, sparkNetwork)
+        onStatus?.(`Signing ${priceCents}¢ USDB…`)
+        broadcastAttempted = true
+        const signed = await sendUsdb({
+          mnemonic, accountNumber, network: sparkNetwork, tokenIdentifier,
+          receiverSparkAddress: payTo, amountCents: priceCents,
+        })
+        sparkTxHash = signed.sparkTxHash
+        await recordSubmitted(idempotencyKey, sparkTxHash, jdeps)
+      } catch (error) {
+        if (!broadcastAttempted) {
+          await markFailed(
+            idempotencyKey,
+            error instanceof Error ? error.message : 'pre-broadcast failure',
+            jdeps,
+          )
+        }
+        throw error
+      }
     } else if (begin.action === 'reconcile') {
       // Reconcile: retry settle with the existing tx hash, do NOT re-sign.
       sparkTxHash = begin.op.sparkTxHash ?? ''

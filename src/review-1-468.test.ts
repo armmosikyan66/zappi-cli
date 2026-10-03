@@ -293,6 +293,7 @@ describe('1-474 restore does not follow a symlink or accept tampered ciphertext'
         () =>
           runPotsRegistryRestore([backup], 'plain', {
             env: { ...env, ZAPPI_POT_REGISTRY_FILE: link },
+            deriveAddress: async () => ADDRESS,
           }),
         /symlink/,
       )

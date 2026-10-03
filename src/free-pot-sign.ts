@@ -12,6 +12,7 @@ import { resolvePotContext, type PotContext, type PotContextSelectors } from './
 import { validateMoneyOutIntent, type MoneyOutIntent, type MoneyOutKind } from './pot-outgate.js'
 import {
   beginOperation,
+  markFailed,
   markSettled,
   recordSubmitted,
   type JournalDeps,
@@ -49,6 +50,8 @@ export interface GateAndSignInput {
   amountCents: number
   resourceId?: string
   quoteExpiryMs?: number
+  /** Quoted routes must carry a finite expiry. Direct pay and internal send omit this. */
+  requireQuoteExpiry?: boolean
   /** Caller `--idempotency-key`. Same intent + same salt reconciles; a different salt is a different payment. */
   externalIdempotencyKey?: string
   /** When the quote names an account, it must match the verified context. */
@@ -106,43 +109,73 @@ export async function gateAndSignFreePot(input: GateAndSignInput): Promise<GateA
     ...(input.resourceId ? { resourceId: input.resourceId } : {}),
     ...(input.quoteExpiryMs != null ? { quoteExpiryMs: input.quoteExpiryMs } : {}),
   }
+  const now = () => (input.now ? input.now() : Date.now())
+  const assertFreshQuote = (): void => {
+    const required = input.requireQuoteExpiry === true || input.quoteExpiryMs != null
+    if (!required) return
+    if (input.quoteExpiryMs == null || !Number.isFinite(input.quoteExpiryMs)) {
+      throw new Error('Quote expiry is missing or invalid. Refusing to sign.')
+    }
+    if (input.quoteExpiryMs <= now()) {
+      throw new Error('Quote has expired. Re-fetch a quote before signing. Refusing to sign.')
+    }
+  }
+
   const { idempotencyKey } = validateMoneyOutIntent(intent, context, {
     ...(input.now ? { now: input.now } : {}),
     ...(input.externalIdempotencyKey
       ? { externalIdempotencyKey: input.externalIdempotencyKey }
       : {}),
+    // A journaled retry must be able to see a submitted hash before expiry rejects a new sign.
+    ...(input.journal ? { skipQuoteExpiry: true } : {}),
   })
 
   const send = input.sendUsdb ?? sendUsdbFromPot
   const jdeps = input.journal
   const signOnce = async (): Promise<string> => {
-    const mnemonic = context.getSeed()
-    let tokenIdentifier = input.tokenIdentifier
-    if (input.readTokenIdentifier) {
-      const fromPot = await input.readTokenIdentifier(
+    let broadcastAttempted = false
+    try {
+      assertFreshQuote()
+      const mnemonic = context.getSeed()
+      let tokenIdentifier = input.tokenIdentifier
+      if (input.readTokenIdentifier) {
+        const fromPot = await input.readTokenIdentifier(
+          mnemonic,
+          context.accountIndex,
+          context.network,
+        )
+        if (tokenIdentifier && tokenIdentifier !== fromPot) {
+          throw new Error(
+            'Quote token identifier does not match the pot USDB token. Refusing to sign.',
+          )
+        }
+        tokenIdentifier = fromPot
+      }
+      if (!tokenIdentifier) {
+        throw new Error('Missing USDB token identifier. Refusing to sign.')
+      }
+      // The lookup above can outlive the quote. Check again immediately before broadcast.
+      assertFreshQuote()
+      broadcastAttempted = true
+      const signed = await send({
         mnemonic,
-        context.accountIndex,
-        context.network,
-      )
-      if (tokenIdentifier && tokenIdentifier !== fromPot) {
-        throw new Error(
-          'Quote token identifier does not match the pot USDB token. Refusing to sign.',
+        accountNumber: context.accountIndex,
+        network: context.network,
+        tokenIdentifier,
+        receiverSparkAddress: input.receiver.trim(),
+        amountCents: input.amountCents,
+      })
+      return signed.sparkTxHash
+    } catch (error) {
+      if (jdeps && !broadcastAttempted) {
+        await markFailed(
+          idempotencyKey,
+          error instanceof Error ? error.message : 'pre-broadcast failure',
+          jdeps,
         )
       }
-      tokenIdentifier = fromPot
+      throw error
     }
-    if (!tokenIdentifier) {
-      throw new Error('Missing USDB token identifier. Refusing to sign.')
-    }
-    const signed = await send({
-      mnemonic,
-      accountNumber: context.accountIndex,
-      network: context.network,
-      tokenIdentifier,
-      receiverSparkAddress: input.receiver.trim(),
-      amountCents: input.amountCents,
-    })
-    return signed.sparkTxHash
   }
 
   if (!jdeps) {

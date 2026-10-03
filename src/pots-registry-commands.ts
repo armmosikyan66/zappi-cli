@@ -18,12 +18,12 @@ import {
   setActivePot,
   savePotSeed,
   getActivePot,
-  findPotRecord,
   validateRegistryFile,
-  authenticateRegistryFile,
   readRegistryAt,
   commitRegistryAt,
   bindProvisionedSeed,
+  verifyRegistrySeedIdentities,
+  MAX_REGISTRY_FILE_BYTES,
 } from './pot-registry.js'
 import {
   resolvePotPassphrase,
@@ -180,20 +180,10 @@ export async function runPotsRegistryImport(
       'Imported seed does not reproduce --address at that network and account index. Nothing was stored.',
     )
   }
-  const existing = await findPotRecord(potId, { env })
-  if (
-    existing &&
-    (existing.sparkAddress !== sparkAddress ||
-      existing.network !== network ||
-      existing.accountIndex !== accountIndex ||
-      existing.derivationMode !== 'spark')
-  ) {
-    throw new Error(
-      `Refusing to replace ${potId}: the stored pot is ${existing.network} account ${existing.accountIndex} ${existing.sparkAddress}. Import would change that identity.`,
-    )
-  }
   const passphrase = resolvePotPassphrase(env)
 
+  // Identity check and write share the registry lock. A concurrent import of a
+  // different identity cannot pass a check that happened before the lock.
   await savePotSeed(
     {
       potId,
@@ -206,7 +196,7 @@ export async function runPotsRegistryImport(
       seed,
     },
     passphrase,
-    { env, ...(deps.now ? { now: deps.now } : {}) },
+    { env, preserveIdentity: true, ...(deps.now ? { now: deps.now } : {}) },
   )
 
   const result = {
@@ -329,18 +319,22 @@ export async function runPotsRegistryRestore(
   if (!src) throw new Error('Usage: zappi-cli pots registry restore <path>')
   const env = depsEnv(deps)
   const dest = potRegistryPath(env)
-  readBoundedSecretFile(src)
-  const data = readFileSync(src, 'utf8')
+  const data = readBoundedRegistryBackup(src)
   let parsed: unknown
   try {
     parsed = JSON.parse(data)
   } catch {
     throw new Error(`Backup at ${src} is not valid JSON.`)
   }
-  // Schema first, then authenticate every envelope. A tampered or
-  // wrong-passphrase backup throws here and the live registry is not replaced.
+  // Schema, decrypt, then derive each seed to the stored address. A mismatch
+  // throws here and the live registry is not replaced. The backup file is only read.
   const file = validateRegistryFile(parsed)
-  authenticateRegistryFile(file, resolvePotPassphrase(env), env)
+  await verifyRegistrySeedIdentities(
+    file,
+    resolvePotPassphrase(env),
+    env,
+    deps.deriveAddress ?? defaultDeriveAddress,
+  )
   await commitRegistryAt(dest, file)
   const count = Object.keys(file.pots).length
   const result = { ok: true as const, command: 'pots registry restore' as const, path: dest, pots: count }
@@ -358,8 +352,17 @@ export async function runPotsRegistryRestore(
 
 const MAX_SECRET_FILE_BYTES = 64 * 1024
 
-/** Mode 0600, owned by us, not a symlink, bounded. Used for migration input and backups. */
+/** Phrase files stay small. Registry backups use {@link MAX_REGISTRY_FILE_BYTES}. */
 function readBoundedSecretFile(path: string): string {
+  return readBoundedFile(path, MAX_SECRET_FILE_BYTES)
+}
+
+function readBoundedRegistryBackup(path: string): string {
+  return readBoundedFile(path, MAX_REGISTRY_FILE_BYTES)
+}
+
+/** Mode 0600, owned by us, not a symlink, bounded. */
+function readBoundedFile(path: string, maxBytes: number): string {
   let stat: ReturnType<typeof lstatSync>
   try {
     stat = lstatSync(path)
@@ -378,8 +381,8 @@ function readBoundedSecretFile(path: string): string {
   if (typeof process.getuid === 'function' && stat.uid !== process.getuid()) {
     throw new Error(`Refusing to read ${path}: it is not owned by you.`)
   }
-  if (stat.size > MAX_SECRET_FILE_BYTES) {
-    throw new Error(`Refusing to read ${path}: file is larger than ${MAX_SECRET_FILE_BYTES} bytes.`)
+  if (stat.size > maxBytes) {
+    throw new Error(`Refusing to read ${path}: file is larger than ${maxBytes} bytes.`)
   }
   return readFileSync(path, 'utf8')
 }

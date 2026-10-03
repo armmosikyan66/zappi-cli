@@ -35,7 +35,13 @@ operation needs no human passphrase.
   `zappi-cli pots registry bind --provision <prov_id> --pot-id <id>`.
 - New pots are derivation mode `spark`, account index 0. Import does not
   assume that: pass `--network`, `--account-index`, and `--address`, and the
-  CLI refuses to store a seed that does not reproduce that identity.
+  CLI refuses to store a seed that does not reproduce that identity. The
+  identity check and the write are one locked operation, so two different
+  imports of the same pot cannot both succeed.
+- `pots bind <potId>` seals once. Repeating it, or an attach that is rejected
+  or interrupted, reuses that Spark address. It does not generate a replacement
+  seed. Labels longer than 256 characters are rejected before the registry is
+  written.
 - The mnemonic is never written to `process.env`, stdout, stderr, logs, or
   HTTP debug output. Browser and clipboard children are spawned with host
   secrets removed from their environment.
@@ -94,12 +100,19 @@ ZAPPI_POT_PASSPHRASE=<old> zappi-cli pots registry rotate-passphrase   # prompts
   permission checks as a normal write. The destination must not be a symlink.
   Store the copy on offline media. It stays decryptable with the passphrase
   that sealed it.
-- **Restore** authenticates every envelope with `ZAPPI_POT_PASSPHRASE` and
-  checks trusted API/app origins before replacing the live file. A corrupt
-  backup, a wrong passphrase, tampered ciphertext, or a symlink destination
-  leaves the live registry untouched. A stale backup restores the original
-  pot identities (network, account index, address). It does not apply the
-  current `SPARK_NETWORK` or account 0 as new defaults.
+- **Restore** authenticates every envelope with `ZAPPI_POT_PASSPHRASE`,
+  checks trusted API/app origins, and derives each seed at the stored
+  network and account index. The derived address must match the stored
+  Spark address. A corrupt backup, a wrong passphrase, tampered ciphertext,
+  an authentic backup whose seed does not match that identity, or a symlink
+  destination leaves the live registry untouched. The backup file is not
+  modified. A stale backup restores the original pot identities (network,
+  account index, address). It does not apply the current `SPARK_NETWORK` or
+  account 0 as new defaults.
+- Backup and restore share one size limit (1 MiB). A backup the writer
+  accepted can be restored, including files larger than a 64 KiB phrase
+  file. Phrase files (`--from-file`, `--key-file`) stay capped at 64 KiB.
+  Anything over the registry limit is refused before the live file is replaced.
 - **Rotation** re-seals every pot under a new passphrase, using the same
   locked atomic write. Retained old ciphertext and old backups **remain
   decryptable with the old secret**. Re-encryption does not revoke seed
@@ -142,21 +155,28 @@ durable pending-operation journal (Linear 1-461, extended by 1-468). That
 includes `pay`, direct Spark `send`, `send internal`, `send external`, and
 `withdraw confirm`. Auth-required pots never enter this signer.
 
-Selectors: `--pot` wins over `--pot-id` and `ZAPPI_POT_ID`. If two of those
-name different pots, the command fails closed. With no flag and no
+Selectors: `--pot` and `--pot-id` are forwarded through `send internal`,
+`send external`, direct Spark `send`, and `withdraw confirm`. If the flag
+and `ZAPPI_POT_ID` name different pots, the command fails closed. It does
+not sign the environment pot after dropping the flag. With no flag and no
 `ZAPPI_POT_ID`, the registry's active pot is used.
 
 - **Pre-sign gate**: the recipient Spark address is decoded and its network
   (MAINNET vs REGTEST) must match the verified pot. The integer cent amount,
-  USDB token id, source account, and (for `pay`) the resource id are bound
-  before signing. A quote whose account, token, amount, or expiry does not
-  match is rejected. The gate does not treat "intent copied from the context"
-  as proof that the recipient is on that network.
+  canonical USDB token (ticker USDB, 6 decimals, identifier network matching
+  the pot), source account, and (for `pay`) the resource id are bound
+  before signing. The first `btkn` balance entry is not assumed to be USDB.
+  A quote whose account, token, amount, or expiry does not match is rejected.
+  Quoted sends require a finite expiry. It is checked again immediately
+  before broadcast, after token lookup. A missing or invalid expiry is
+  refused. An already submitted transaction is reconciled even if that quote
+  has since expired; the CLI does not sign a replacement for that reason.
 - **Idempotency**: the journal key is the canonical intent plus the optional
   `--idempotency-key` salt. The same intent and salt reconcile (no second
-  signature). A different salt is a different payment. Direct Spark send,
-  internal send, and external send all pass that salt through. Omitting it
-  does not mix in the current time, so a retry of the same command reconciles.
+  signature). A different salt is a different payment. `pay`, direct Spark
+  send, internal send, and external send all pass that salt through.
+  Omitting it does not mix in the current time, so a retry of the same
+  command reconciles.
 - **Journal failures fail closed.** Only a missing journal file starts empty.
   An oversized, unreadable, or corrupt journal stops signing and is not
   replaced. The CLI does not drop old operations to make room.
@@ -164,8 +184,12 @@ name different pots, the command fails closed. With no flag and no
   cross-process lock): around every submission the gate records a pending op.
   On timeout, crash, or ambiguous settlement the same op is reconciled — a
   `submitted` op (tx hash known, settlement unconfirmed) is retried with that
-  hash and **not** re-signed; a `pending` op with no tx hash (outcome unknown)
-  **fails closed**. The CLI never issues a second payment for the same intent.
+  hash and **not** re-signed; a `pending` op with no tx hash (outcome unknown,
+  including a signer that threw after broadcast was attempted)
+  **fails closed**. A proven failure before broadcast (token lookup, expired
+  quote, missing token) is marked `failed` and a later retry of that intent
+  may sign. The CLI never issues a second payment for an intent whose
+  broadcast outcome is unknown.
 - **Caps** (defense in depth, not protection from raw-seed compromise):
   `ZAPPI_POT_MAX_PER_PAYMENT_CENTS` (per-payment) and
   `ZAPPI_POT_MAX_CUMULATIVE_CENTS_24H` (trailing 24h) are enforced across

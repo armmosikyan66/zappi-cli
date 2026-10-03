@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { resolveZappiClient } from './client.js'
 import { parseArgs } from './args.js'
 import { promptOpenLink } from './wizard-io.js'
@@ -8,7 +9,7 @@ import {
   resolveSparkNetwork,
   type PotEnv,
 } from './env.js'
-import { savePotSeed } from './pot-registry.js'
+import { findPotRecord, savePotSeed } from './pot-registry.js'
 import {
   resolveAttachDeviceCode,
   writeAttachDeviceCode,
@@ -43,6 +44,38 @@ function jsonOut(result: unknown): string {
 const POT_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+export interface PotBindClient {
+  previewPotAttach(potId: string): Promise<{
+    exists: boolean
+    bindable: boolean
+    status?: string
+    spendMode?: string
+  }>
+  createPotAttach(input: {
+    potId: string
+    sparkAddress: string
+    spendMode: 'free'
+    label?: string
+  }): Promise<{
+    approveUrl: string
+    requestId: string
+    expiresAt: string
+    deviceCode?: string
+    spendMode?: string
+  }>
+  pollPotAttach(requestId: string): Promise<{
+    status: string
+    potId?: string | null
+    grantId?: string | null
+  }>
+}
+
+export interface PotBindDeps {
+  client?: PotBindClient
+  deriveSparkAddress?: (mnemonic: string, network: 'MAINNET' | 'REGTEST') => Promise<string>
+  generateMnemonic?: () => string
+}
+
 /**
  * `zappi-cli pots bind <potId> [--label L] [--key-file <path>] [--no-poll]`
  *
@@ -56,6 +89,7 @@ export async function runPotBind(
   argv: string[],
   mode: OutputMode,
   env: PotEnv = process.env,
+  deps: PotBindDeps = {},
 ): Promise<string> {
   const { positionals, strings, booleans } = parseArgs(argv)
   const potId = positionals[0]?.trim() ?? ''
@@ -79,7 +113,9 @@ export async function runPotBind(
     )
   }
 
-  const client = await resolveZappiClient(env)
+  const liveClient = deps.client ? null : await resolveZappiClient(env)
+  const client = deps.client ?? liveClient
+  if (!client) throw new Error('Pot bind has no Zappi client.')
 
   // 1. Confirm the pot exists, is free, and is pending (addressless) before
   //    generating a key. Public preview — no address or secrets returned.
@@ -95,20 +131,40 @@ export async function runPotBind(
     )
   }
 
-  // 2. Require the unlock secret, then generate. The pot id is already known,
-  // so the default path seals into the registry. --key-file is the plaintext opt-out.
+  // 2. Require the unlock secret before any new mnemonic. A pot that already
+  // has a sealed seed is reused. Repeating bind, or an attach that is rejected
+  // or interrupted, must not replace that seed.
   const passphrase = resolvePotPassphrase(env)
   const network = resolveSparkNetwork(env)
-  const { generateMnemonic } = await import('@scure/bip39')
-  const { wordlist } = await import('@scure/bip39/wordlists/english.js')
-  const mnemonic = generateMnemonic(wordlist, 128)
-  const sparkAddress = await deriveSparkAddress(mnemonic, network)
   const label = strings.label?.trim() || undefined
+  const existing = await findPotRecord(potId, { env })
   let keyFile: string | undefined
-  if (strings['key-file']?.trim()) {
+  let sparkAddress: string
+  if (existing) {
+    if (existing.network !== network || existing.derivationMode !== 'spark') {
+      throw new Error(
+        `Pot ${potId} is already sealed as ${existing.network} ${existing.derivationMode}. Refusing to replace that identity.`,
+      )
+    }
+    if (strings['key-file']?.trim()) {
+      throw new Error(
+        `Pot ${potId} already has a sealed seed. Refusing to write a new key file over it.`,
+      )
+    }
+    sparkAddress = existing.sparkAddress
+  } else if (strings['key-file']?.trim()) {
     keyFile = resolveKeyFilePath(strings['key-file'], defaultKeyFile(label))
+    if (existsSync(keyFile)) {
+      throw new Error(
+        `Refusing to overwrite an existing key file (${keyFile}). Repeating bind must not replace the original secret.`,
+      )
+    }
+    const mnemonic = await freshMnemonic(deps)
+    sparkAddress = await (deps.deriveSparkAddress ?? deriveSparkAddress)(mnemonic, network)
     writeKeyFile(keyFile, mnemonic, sparkAddress, label)
   } else {
+    const mnemonic = await freshMnemonic(deps)
+    sparkAddress = await (deps.deriveSparkAddress ?? deriveSparkAddress)(mnemonic, network)
     await savePotSeed(
       {
         potId,
@@ -201,8 +257,8 @@ export async function runPotBind(
   let potClientTokenReceived = false
   let potClientTokenPath: string | null = null
 
-  if (poll.status === 'approved') {
-    const reclaimed = await reclaimIfPossible(client, pending.requestId, env)
+  if (poll.status === 'approved' && liveClient) {
+    const reclaimed = await reclaimIfPossible(liveClient, pending.requestId, env)
     if (reclaimed.potId) resolvedPotId = reclaimed.potId
     if (reclaimed.grantId) grantId = reclaimed.grantId
     potClientTokenReceived = reclaimed.potClientTokenReceived
@@ -257,6 +313,13 @@ export async function runPotBind(
     ),
   )
   return lines.join(NL)
+}
+
+async function freshMnemonic(deps: PotBindDeps): Promise<string> {
+  if (deps.generateMnemonic) return deps.generateMnemonic()
+  const { generateMnemonic } = await import('@scure/bip39')
+  const { wordlist } = await import('@scure/bip39/wordlists/english.js')
+  return generateMnemonic(wordlist, 128)
 }
 
 /** Shared error wrapper for bind commands. */

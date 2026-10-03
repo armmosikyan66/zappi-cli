@@ -31,7 +31,10 @@ Signing uses one immutable context: pot id, Spark address, spend mode
   `ZAPPI_POT_SPARK_ADDRESS`. A mismatch, `auth_required`, or an unknown
   spend mode fails before the seed is used.
 - Import and restore keep the original network and account index. They do
-  not substitute `SPARK_NETWORK` or account 0.
+  not substitute `SPARK_NETWORK` or account 0. Restore also derives the
+  decrypted seed and requires that address. Import's identity check is
+  inside the registry lock.
+- `pots bind` does not replace a seed that is already sealed for that pot.
 
 ## 3. What this CLI does not enforce
 
@@ -53,9 +56,12 @@ Signing uses one immutable context: pot id, Spark address, spend mode
 
 `pay`, Spark `send`, `send internal`, `send external`, and `withdraw confirm`
 go through the verified context, the pre-sign gate, and the pending-operation
-journal. The recipient address network must match the pot. `--idempotency-key`
-is mixed into the journal key on those routes. The same intent and key
-reconcile; a different key is a different payment.
+journal. The recipient address network must match the pot. The USDB token
+must be the canonical one (ticker USDB, 6 decimals, matching network), not
+the first `btkn` entry. `--idempotency-key` is mixed into the journal key
+on `pay` and on send. The same intent and key reconcile; a different key is
+a different payment. `--pot` is carried through routed sends. A known
+failure before broadcast can be retried; an unknown broadcast cannot.
 
 An unreadable or oversized journal stops signing. The CLI does not reset
 cap history to recover.
