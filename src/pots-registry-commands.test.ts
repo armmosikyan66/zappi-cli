@@ -154,7 +154,10 @@ describe('pots registry commands', () => {
       // Corrupt the live registry, then restore from backup.
       writeFileSync(env.ZAPPI_POT_REGISTRY_FILE, 'corrupt', { mode: 0o600 })
       chmodSync(env.ZAPPI_POT_REGISTRY_FILE, 0o600)
-      await runPotsRegistryRestore([backupPath], 'plain', { env })
+      await runPotsRegistryRestore([backupPath], 'plain', {
+        env,
+        deriveAddress: async () => SPARK_ADDRESS,
+      })
       const out = await runPotsRegistryList('plain', { env })
       assert.match(out, /pot_a/)
     } finally {

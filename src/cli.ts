@@ -64,6 +64,7 @@ export interface PayCliArgs {
   noConsume: boolean
   units: number
   potFlag?: string
+  idempotencyKey?: string
 }
 
 export interface ConsumeCliArgs {
@@ -87,6 +88,9 @@ export function parsePayCliArgs(argv: string[]): PayCliArgs {
       index += 1
     } else if (arg === '--units' && next) {
       parsed.units = parsePositiveUnits(next)
+      index += 1
+    } else if (arg === '--idempotency-key' && next) {
+      parsed.idempotencyKey = next
       index += 1
     } else if (!arg.startsWith('-') && !parsed.resourceArg) {
       parsed.resourceArg = arg
@@ -201,7 +205,7 @@ export async function runCli(
     const args = parsePayCliArgs(rest)
     if (!args.resourceArg) {
       throw new Error(
-        'Usage: zappi-cli pay <resourceIdOrUrl> [--no-consume] [--units N] [--json]',
+        'Usage: zappi-cli pay <resourceIdOrUrl> [--pot <id>] [--idempotency-key <k>] [--no-consume] [--units N] [--json]',
       )
     }
     const spinner = createSpinner('Paying…', mode)
@@ -211,6 +215,7 @@ export async function runCli(
         autoConsume: !args.noConsume,
         consumeUnits: args.units,
         ...(args.potFlag ? { potFlag: args.potFlag } : {}),
+        ...(args.idempotencyKey ? { externalIdempotencyKey: args.idempotencyKey } : {}),
         onStatus: (label) => spinner.setText(label),
         journal: {},
       })

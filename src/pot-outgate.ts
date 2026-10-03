@@ -88,6 +88,11 @@ export interface ValidateMoneyOutOptions {
   now?: () => number
   /** Optional external idempotency salt (`--idempotency-key`). */
   externalIdempotencyKey?: string
+  /**
+   * Journaled routes look up an existing tx hash before rejecting an expired
+   * quote. The sign path checks expiry itself, immediately before broadcast.
+   */
+  skipQuoteExpiry?: boolean
 }
 
 /**
@@ -157,8 +162,9 @@ export function validateMoneyOutIntent(
     }
   }
 
-  // Quote expiry (routed sends).
-  if (intent.quoteExpiryMs != null && intent.quoteExpiryMs <= now) {
+  // Quote expiry (routed sends). Journaled retries skip this so a submitted
+  // hash can be reconciled after the quote clock runs out.
+  if (!options.skipQuoteExpiry && intent.quoteExpiryMs != null && intent.quoteExpiryMs <= now) {
     throw new Error('Quote has expired. Re-fetch a quote before signing.')
   }
 

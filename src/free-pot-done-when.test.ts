@@ -93,7 +93,10 @@ describe('1-462 identity survives rotation and stale-backup restore', () => {
       const replaced = await loadPotSeedFromRegistry('pot_a', PASSPHRASE, { env })
       assert.equal(replaced.record.sparkAddress, ADDRESS_B)
 
-      await runPotsRegistryRestore([backup], 'plain', { env })
+      await runPotsRegistryRestore([backup], 'plain', {
+        env,
+        deriveAddress: async () => ADDRESS_A,
+      })
       const restored = await loadPotSeedFromRegistry('pot_a', PASSPHRASE, { env })
       assert.equal(restored.record.sparkAddress, ADDRESS_A)
       assert.equal(restored.seed, PHRASE)

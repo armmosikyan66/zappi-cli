@@ -161,6 +161,8 @@ npm test          # tsc → node --test dist/ (mocked HTTP + Spark)
 npm run build
 ```
 
+`package-lock.json` resolves `@zappimoney/zappi-sdk` from the npm registry (`0.3.8`). A clean checkout does not use a sibling `../zappi-sdk` link.
+
 **Labels:** active pot names are unique per Zappi project (case-insensitive). Nest returns `409 AGENT_POT_LABEL_EXISTS` if the name is taken when you register in the app.
 
 

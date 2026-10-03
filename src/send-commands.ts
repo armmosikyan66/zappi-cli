@@ -16,10 +16,10 @@ import {
   successLine,
   warnLine,
 } from './ui.js'
-import { runSendExternal, runSendInternal } from './withdraw-commands.js'
+import { runSendExternal, runSendInternal, type MoneyOutHooks } from './withdraw-commands.js'
 import { resolvePotContext, type PotContext } from './pot-context.js'
 import { validateMoneyOutIntent, type MoneyOutIntent } from './pot-outgate.js'
-import { beginOperation, markSettled, recordSubmitted, type JournalDeps } from './pending-ops.js'
+import { beginOperation, markFailed, markSettled, recordSubmitted, type JournalDeps } from './pending-ops.js'
 
 const NL = String.fromCharCode(10)
 const SEND_USAGE =
@@ -120,12 +120,25 @@ async function runSendSparkUsdb(
   if (jdeps) {
     const begin = await beginOperation(intent, idempotencyKey, jdeps)
     if (begin.action === 'sign') {
-      const tokenIdentifier = await readUsdbTokenIdentifier(mnemonic, context.accountIndex, potNetwork)
-      const signed = await sendUsdbFromPot({
-        mnemonic, accountNumber: context.accountIndex, network: potNetwork,
-        tokenIdentifier, receiverSparkAddress: to.trim(), amountCents,
-      })
-      sparkTxHash = signed.sparkTxHash
+      let broadcastAttempted = false
+      try {
+        const tokenIdentifier = await readUsdbTokenIdentifier(mnemonic, context.accountIndex, potNetwork)
+        broadcastAttempted = true
+        const signed = await sendUsdbFromPot({
+          mnemonic, accountNumber: context.accountIndex, network: potNetwork,
+          tokenIdentifier, receiverSparkAddress: to.trim(), amountCents,
+        })
+        sparkTxHash = signed.sparkTxHash
+      } catch (error) {
+        if (!broadcastAttempted) {
+          await markFailed(
+            idempotencyKey,
+            error instanceof Error ? error.message : 'pre-broadcast failure',
+            jdeps,
+          )
+        }
+        throw error
+      }
       // Spark P2P: the tx hash is the settlement. Record submitted + settled.
       await recordSubmitted(idempotencyKey, sparkTxHash, jdeps)
       await markSettled(idempotencyKey, jdeps)
@@ -178,10 +191,15 @@ async function runSendSparkUsdb(
  * Unified pot send (1-315). Free-pot path first.
  * Keeps `pay` = paywall only.
  */
+function withPot(args: string[], potFlag?: string): string[] {
+  return potFlag ? [...args, '--pot', potFlag] : args
+}
+
 export async function runSend(
   argv: string[],
   mode: OutputMode,
   env: NodeJS.ProcessEnv = process.env,
+  hooks?: MoneyOutHooks,
 ): Promise<string> {
   const { strings, booleans } = parseArgs(argv)
   const to = strings.to
@@ -198,8 +216,14 @@ export async function runSend(
   }
   const potId = potFlag ?? env.ZAPPI_POT_ID
   const potEnv: NodeJS.ProcessEnv = env
-  const resolveContext = (e: PotEnv) =>
-    resolvePotContext(potFlag ? { potFlag } : {}, { env: e })
+  const resolveContext = async (e: PotEnv) => {
+    const context = await resolvePotContext(potFlag ? { potFlag } : {}, {
+      env: e,
+      ...(hooks?.deriveAddress ? { deriveAddress: hooks.deriveAddress } : {}),
+    })
+    hooks?.onContext?.(context)
+    return context
+  }
 
   if (booleans['dry-run']) {
     const plan = {
@@ -250,16 +274,19 @@ export async function runSend(
   }
 
   if (route === 'internal') {
-    const forwarded = [
-      '--to',
-      stripAt(to),
-      '--amount',
-      String(amountCents),
-      ...(strings.memo ? ['--memo', strings.memo] : []),
-      ...(strings.auth ? ['--auth', strings.auth] : []),
-      ...(idempotencyKey ? ['--idempotency-key', idempotencyKey] : []),
-    ]
-    return runSendInternal(forwarded, mode, potEnv)
+    const forwarded = withPot(
+      [
+        '--to',
+        stripAt(to),
+        '--amount',
+        String(amountCents),
+        ...(strings.memo ? ['--memo', strings.memo] : []),
+        ...(strings.auth ? ['--auth', strings.auth] : []),
+        ...(idempotencyKey ? ['--idempotency-key', idempotencyKey] : []),
+      ],
+      potFlag,
+    )
+    return runSendInternal(forwarded, mode, potEnv, hooks)
   }
 
   if (!strings.asset || !strings.network) {
@@ -285,19 +312,22 @@ export async function runSend(
     )
   }
 
-  const forwarded = [
-    '--asset',
-    strings.asset,
-    '--network',
-    strings.network,
-    '--address',
-    to,
-    '--amount',
-    String(amountCents),
-    ...(strings.auth ? ['--auth', strings.auth] : []),
-    ...(idempotencyKey ? ['--idempotency-key', idempotencyKey] : []),
-  ]
-  return runSendExternal(forwarded, mode, potEnv)
+  const forwarded = withPot(
+    [
+      '--asset',
+      strings.asset,
+      '--network',
+      strings.network,
+      '--address',
+      to,
+      '--amount',
+      String(amountCents),
+      ...(strings.auth ? ['--auth', strings.auth] : []),
+      ...(idempotencyKey ? ['--idempotency-key', idempotencyKey] : []),
+    ],
+    potFlag,
+  )
+  return runSendExternal(forwarded, mode, potEnv, hooks)
 }
 
 export { runSendSparkUsdb }
