@@ -85,8 +85,28 @@ describe('pots commands', () => {
     const out = await runPotDepositAddress(['p1', '--source-chain', 'base'], 'json', ENV)
     const parsed = JSON.parse(out)
     assert.equal(parsed.depositAddress, '0xabc')
+    assert.equal(parsed.qrPayload, '0xabc')
     assert.equal(calls[0].url, 'https://api.test/api/wallet/pots/p1/deposit-address')
     assert.equal((calls[0].body as { sourceChain: string }).sourceChain, 'base')
+  })
+
+  it('runPotDepositAddress pretty mode prints the address and a QR', async () => {
+    globalThis.fetch = mockFetch(() =>
+      jsonResponse({
+        potId: 'p1',
+        depositAddress: 'So11111111111111111111111111111111111111112',
+        sourceAsset: 'USDC',
+        sourceChain: 'solana',
+      }),
+    ).fetch
+    const out = await runPotDepositAddress(
+      ['p1', '--source-chain', 'solana'],
+      'pretty',
+      ENV,
+    )
+    assert.match(out, /^So11111111111111111111111111111111111111112$/m)
+    assert.match(out, /[█▀▄]/)
+    assert.match(out, /USDC/)
   })
 
   it('runPotGrants creates a grant with --create', async () => {
