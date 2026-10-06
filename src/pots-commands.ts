@@ -1,4 +1,5 @@
 import { resolveZappiClient } from './client.js'
+import { formatDepositCard, potDepositQrPayload } from './deposit-view.js'
 import { parseArgs, parseIntFlag } from './args.js'
 import { type PotEnv } from './env.js'
 import {
@@ -98,16 +99,27 @@ export async function runPotDepositAddress(
   const body: Record<string, unknown> = {}
   if (strings['source-chain']) body.sourceChain = strings['source-chain']
   const res = await client.createPotDepositAddress(id, body)
-  const result = { ok: true as const, command: 'pots deposit-address' as const, ...res }
-  if (mode === 'json') return jsonOut(result)
-  if (mode === 'plain') {
-    return [`pot: ${res.potId}`, `deposit: ${res.depositAddress}`].join(NL)
+  const qrPayload = potDepositQrPayload(res)
+  const result = {
+    ok: true as const,
+    command: 'pots deposit-address' as const,
+    ...res,
+    qrPayload,
   }
-  return [
-    heading('Pot deposit address', mode),
-    kv('pot', res.potId, mode),
-    kv('deposit', res.depositAddress, mode),
-  ].join(NL)
+  if (mode === 'json') return jsonOut(result)
+  return formatDepositCard(
+    {
+      title: 'Pot deposit address',
+      address: res.depositAddress,
+      qrPayload,
+      fields: [
+        ['pot', res.potId],
+        ['asset', res.sourceAsset ?? ''],
+        ['network', res.sourceChain ?? ''],
+      ],
+    },
+    mode,
+  )
 }
 
 /** `zappi-cli pots grants <id> [--create] [--revoke <grantId>] [--scopes read,deposit]` */

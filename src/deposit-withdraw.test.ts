@@ -79,6 +79,20 @@ describe('deposit commands', () => {
   it('runDepositAddress throws without asset/network', async () => {
     await assert.rejects(() => runDepositAddress([], 'json', ENV), /Usage/)
   })
+
+  it('runDepositAddress pretty mode prints the address and a QR', async () => {
+    globalThis.fetch = mockFetch(() =>
+      jsonResponse({ address: '0xabc', asset: 'usdc', network: 'solana' }),
+    ).fetch
+    const out = await runDepositAddress(
+      ['--asset', 'usdc', '--network', 'solana'],
+      'pretty',
+      ENV,
+    )
+    assert.match(out, /^0xabc$/m)
+    assert.match(out, /[█▀▄]/)
+    assert.doesNotMatch(out, /qrPayload/)
+  })
 })
 
 describe('withdraw commands (no signing)', () => {

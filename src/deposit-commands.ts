@@ -1,6 +1,7 @@
 import { resolveZappiClient } from './client.js'
 import { parseArgs } from './args.js'
 import type { CashierCombo } from '@zappimoney/zappi-sdk'
+import { formatDepositCard } from './deposit-view.js'
 import { type PotEnv } from './env.js'
 import {
   errorLine,
@@ -61,15 +62,20 @@ export async function runDepositAddress(
   const dest = await client.getDepositDestination({ asset, network } as CashierCombo)
   const result = { ok: true as const, command: 'deposit-address' as const, ...dest }
   if (mode === 'json') return jsonOut(result)
-  if (mode === 'plain') {
-    return `asset: ${asset} network: ${network} address: ${JSON.stringify(dest)}`
-  }
-  return [
-    heading('Deposit address', mode),
-    kv('asset', asset, mode),
-    kv('network', network, mode),
-    kv('address', JSON.stringify(dest), mode),
-  ].join(NL)
+  return formatDepositCard(
+    {
+      title: 'Deposit address',
+      address: dest.address,
+      qrPayload: dest.qrPayload,
+      fields: [
+        ['asset', dest.asset],
+        ['network', dest.network],
+        ['arrival', dest.estimatedArrivalCopy],
+        ['fees', dest.feesCopy],
+      ],
+    },
+    mode,
+  )
 }
 
 /** Shared error wrapper for deposit commands. */
