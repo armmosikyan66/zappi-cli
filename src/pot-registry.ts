@@ -53,7 +53,8 @@ export const GCM_TAG_LEN = 16
 
 const FILE_MODE = 0o600
 const DIR_MODE = 0o700
-const MAX_FILE_BYTES = 1 << 20
+/** Shared by backup, restore, and live registry writes. */
+export const MAX_REGISTRY_FILE_BYTES = 1 << 20
 const MAX_POTS = 256
 const MAX_POT_ID_LEN = 128
 const MAX_LABEL_LEN = 256
@@ -66,7 +67,7 @@ const LOCK_POLL_MS = 25
 
 const PROTOTYPE_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
-export type SparkNetwork = 'MAINNET' | 'REGTEST'
+export type SparkNetwork = 'MAINNET'
 export type PotDerivationMode = 'spark'
 export const DEFAULT_POT_DERIVATION_MODE: PotDerivationMode = 'spark'
 
@@ -94,6 +95,11 @@ export interface RegistryFile {
   version: typeof ENVELOPE_VERSION
   activePotId?: string
   pots: Record<string, PotRecord>
+  /**
+   * Seeds sealed before Nest has assigned a pot id. Not selectable for signing
+   * until `bindProvisionedSeed` moves one into `pots` under the real id.
+   */
+  provisions?: Record<string, PotRecord>
 }
 
 export interface SealPotSeedInput
@@ -243,13 +249,16 @@ export function validatePotRecord(raw: unknown, expectedPotId: string): PotRecor
   if (r.spendMode !== 'free') {
     throw new Error('Registry only stores free pots. Auth_required pots are not signed here.')
   }
-  if (r.network !== 'MAINNET' && r.network !== 'REGTEST') {
-    throw new Error('Registry network must be MAINNET or REGTEST.')
+  if (r.network !== 'MAINNET') {
+    throw new Error('Registry network must be MAINNET.')
   }
   if (r.derivationMode !== 'spark') {
     throw new Error('Registry derivationMode must be "spark" (v1).')
   }
   const accountIndex = assertInt(r.accountIndex, 'accountIndex', 0)
+  if (accountIndex !== 1) {
+    throw new Error('Registry accountIndex must be 1.')
+  }
   const apiUrl = assertString(r.apiUrl, 'apiUrl', MAX_URL_LEN)
   const appOrigin = assertString(r.appOrigin, 'appOrigin', MAX_URL_LEN)
   const createdAt = assertString(r.createdAt, 'createdAt', 64)
@@ -308,10 +317,37 @@ export function validateRegistryFile(raw: unknown): RegistryFile {
     }
     pots[key] = validatePotRecord((potsRaw as Record<string, unknown>)[key], key)
   }
+  const provisionsRaw = (raw as Record<string, unknown>).provisions
+  const provisions: Record<string, PotRecord> = Object.create(null)
+  if (provisionsRaw !== undefined) {
+    if (!isPlainObject(provisionsRaw)) {
+      throw new Error('Registry provisions field is not an object.')
+    }
+    for (const key of Object.keys(provisionsRaw)) {
+      if (PROTOTYPE_KEYS.has(key)) {
+        throw new Error(`Registry provision key "${key}" is not allowed (prototype pollution).`)
+      }
+      if (key.length === 0 || key.length > MAX_POT_ID_LEN) {
+        throw new Error('Registry provision key is missing or too long.')
+      }
+      provisions[key] = validatePotRecord(
+        (provisionsRaw as Record<string, unknown>)[key],
+        key,
+      )
+    }
+  }
+  if (keys.length + Object.keys(provisions).length > MAX_POTS) {
+    throw new Error(`Registry holds too many pots (${keys.length} > ${MAX_POTS}).`)
+  }
   if (activePotId !== undefined && !(activePotId in pots)) {
     throw new Error('Registry activePotId does not refer to a stored pot.')
   }
-  return { version: ENVELOPE_VERSION, ...(activePotId ? { activePotId } : {}), pots }
+  return {
+    version: ENVELOPE_VERSION,
+    ...(activePotId ? { activePotId } : {}),
+    pots,
+    ...(Object.keys(provisions).length > 0 ? { provisions } : {}),
+  }
 }
 
 /* --------------------------------- Storage --------------------------------- */
@@ -324,6 +360,74 @@ function refuseWindows(): void {
         'Run the signer on macOS/Linux, or see docs/signer-boundary.md §6.',
     )
   }
+}
+
+/**
+ * Create the registry/journal directory before any lock file is opened.
+ * A missing parent used to make `openSync(path.lock)` throw ENOENT on a fresh
+ * host. Existing symlinks, non-directories, group/other permissions, and
+ * foreign owners fail closed. Newly created directories are chmod 0700 after
+ * mkdir (umask can widen the requested mode). Ancestors that already exist
+ * are refused when they are symlinks, but are not required to be mode 0700
+ * (the home directory is not).
+ */
+export function ensureSecureDirectory(dir: string, label = 'registry'): void {
+  refuseWindows()
+  const parent = dirname(dir)
+  if (parent !== dir) {
+    let parentStat: ReturnType<typeof lstatSync>
+    try {
+      parentStat = lstatSync(parent)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      ensureSecureDirectory(parent, label)
+      parentStat = lstatSync(parent)
+    }
+    if (parentStat.isSymbolicLink()) {
+      throw new Error(`Refusing to use a symlink for the ${label} parent: ${parent}`)
+    }
+    if (!parentStat.isDirectory()) {
+      throw new Error(`${label} parent ${parent} is not a directory.`)
+    }
+  }
+
+  let created = false
+  let stat: ReturnType<typeof lstatSync>
+  try {
+    stat = lstatSync(dir)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    try {
+      mkdirSync(dir, { mode: DIR_MODE })
+      created = true
+    } catch (mkdirError) {
+      if ((mkdirError as NodeJS.ErrnoException).code !== 'EEXIST') throw mkdirError
+    }
+    if (created) {
+      try {
+        chmodSync(dir, DIR_MODE)
+      } catch {
+        // re-checked below
+      }
+    }
+    stat = lstatSync(dir)
+  }
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Refusing to use a symlink for the ${label}: ${dir}`)
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`${label} path ${dir} is not a directory.`)
+  }
+  if (created) {
+    try {
+      chmodSync(dir, DIR_MODE)
+    } catch {
+      // re-checked below
+    }
+    stat = lstatSync(dir)
+  }
+  assertRestrictiveMode(dir, stat.mode & 0o777, 'directory')
+  assertOwnedByUs(dir, stat, 'directory')
 }
 
 function assertNoSymlink(path: string, stat: { isSymbolicLink?: () => boolean }): void {
@@ -354,8 +458,13 @@ function assertSafeRegistryPath(path: string): void {
   let dirStat
   try {
     dirStat = lstatSync(dirname(path))
-  } catch {
-    return // dir does not exist yet; created on write
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(
+        `Registry directory ${dirname(path)} does not exist. It must be created securely before use.`,
+      )
+    }
+    throw error
   }
   assertNoSymlink(dirname(path), dirStat)
   assertRestrictiveMode(dirname(path), dirStat.mode & 0o777, 'directory')
@@ -374,7 +483,7 @@ function readRegistryFile(path: string): RegistryFile | null {
   let raw: string
   try {
     const stat = statSync(path)
-    if (stat.size > MAX_FILE_BYTES) {
+    if (stat.size > MAX_REGISTRY_FILE_BYTES) {
       throw new Error(`Registry file ${path} is too large (${stat.size} bytes).`)
     }
     raw = readFileSync(path, 'utf8')
@@ -393,6 +502,8 @@ function readRegistryFile(path: string): RegistryFile | null {
 
 /** Crash-safe atomic write: temp file (random name) → fsync → rename → dir fsync. */
 function writeRegistryFile(path: string, file: RegistryFile): void {
+  // Same bounds as read. A 257-character label must fail here, before rename.
+  const checked = validateRegistryFile(file)
   refuseWindows()
   mkdirSync(dirname(path), { recursive: true, mode: DIR_MODE })
   try {
@@ -400,8 +511,8 @@ function writeRegistryFile(path: string, file: RegistryFile): void {
   } catch {
     // dir may already exist with a tighter mode
   }
-  const body = `${JSON.stringify(file, null, 2)}\n`
-  if (Buffer.byteLength(body) > MAX_FILE_BYTES) {
+  const body = `${JSON.stringify(checked, null, 2)}\n`
+  if (Buffer.byteLength(body) > MAX_REGISTRY_FILE_BYTES) {
     throw new Error('Registry would exceed the size limit; refusing to write.')
   }
   const tmp = `${path}.${randomBytes(8).toString('hex')}.tmp`
@@ -543,7 +654,51 @@ async function withFileLock<T>(path: string, fn: () => T | Promise<T>): Promise<
 
 /** In-process mutex + cross-process file lock around a read-modify-write. */
 function withRegistryLock<T>(path: string, fn: () => T | Promise<T>): Promise<T> {
-  return withProcessLock(path, () => withFileLock(path, fn))
+  return withProcessLock(path, async () => {
+    // Parent must exist before the lock file is created. Competing fresh-host
+    // initializers share this path: mkdir is idempotent, then the file lock
+    // serializes the first write.
+    ensureSecureDirectory(dirname(path), 'registry')
+    return withFileLock(path, fn)
+  })
+}
+
+/** Read the registry under the same lock and path checks as writers. */
+export async function readRegistryAt(path: string): Promise<RegistryFile | null> {
+  return withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    return readRegistryFile(path)
+  })
+}
+
+/**
+ * Atomically replace the registry. Refuses a symlink destination (rename
+ * replaces the directory entry; it does not follow a final symlink, and a
+ * symlink is rejected before the write).
+ */
+export async function commitRegistryAt(path: string, file: RegistryFile): Promise<void> {
+  const checked = validateRegistryFile(file)
+  await withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    writeRegistryFile(path, checked)
+  })
+}
+
+/**
+ * Read-modify-write under one lock. `mutate` must not write; the commit
+ * happens only if it returns. A throw leaves the live file untouched.
+ */
+export async function updateRegistryAt(
+  path: string,
+  mutate: (file: RegistryFile) => RegistryFile,
+): Promise<void> {
+  await withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    const file = readRegistryFile(path)
+    if (!file) throw new Error('Free-pot seed registry is empty.')
+    const next = validateRegistryFile(mutate(file))
+    writeRegistryFile(path, next)
+  })
 }
 
 /* ------------------------------- Public API -------------------------------- */
@@ -552,6 +707,12 @@ export interface PotRegistryDeps {
   env?: PotEnv
   /** Override now for deterministic createdAt in tests. */
   now?: () => Date
+  /**
+   * Import sets this. Inside the registry lock, a different stored address,
+   * network, derivation mode, or account index is refused. The same identity
+   * may be re-sealed. The check is not done before the lock.
+   */
+  preserveIdentity?: boolean
 }
 
 function resolveEnv(env?: PotEnv): PotEnv {
@@ -571,6 +732,63 @@ function assertEndpointsTrusted(record: PotRecord, env: PotEnv): void {
       'Registry pot endpoints do not match the trusted configuration. ' +
         'Refusing to sign against an untrusted API/app origin (fail closed).',
     )
+  }
+}
+
+/**
+ * Decrypt every envelope and check trusted endpoints before a restore or
+ * rotation commit. A throw means the caller must not replace the live file.
+ * The opened seeds are dropped; this does not export them.
+ */
+export function authenticateRegistryFile(
+  file: RegistryFile,
+  passphrase: string,
+  env: PotEnv,
+): void {
+  const records = [
+    ...Object.values(file.pots),
+    ...Object.values(file.provisions ?? {}),
+  ]
+  for (const record of records) {
+    assertEndpointsTrusted(record, env)
+    openSeed(record, passphrase, record)
+  }
+}
+
+/**
+ * Decrypt every envelope, then derive each seed at the stored network and
+ * account index. The derived address must equal the stored Spark address.
+ * A throw means the caller must not replace the live registry. Ciphertext
+ * that authenticates with the wrong seed still fails here.
+ */
+export async function verifyRegistrySeedIdentities(
+  file: RegistryFile,
+  passphrase: string,
+  env: PotEnv,
+  deriveAddress: (
+    seed: string,
+    network: SparkNetwork,
+    accountIndex: number,
+  ) => Promise<string>,
+): Promise<void> {
+  authenticateRegistryFile(file, passphrase, env)
+  const records = [
+    ...Object.values(file.pots),
+    ...Object.values(file.provisions ?? {}),
+  ]
+  for (const record of records) {
+    if (record.derivationMode !== 'spark') {
+      throw new Error(
+        `Backup pot ${record.potId} derivation mode is not spark. Live registry was not replaced.`,
+      )
+    }
+    const seed = openSeed(record, passphrase, record)
+    const derived = await deriveAddress(seed, record.network, record.accountIndex)
+    if (derived !== record.sparkAddress) {
+      throw new Error(
+        `Backup pot ${record.potId} seed does not derive to the stored Spark address on ${record.network} account ${record.accountIndex}. Live registry was not replaced.`,
+      )
+    }
   }
 }
 
@@ -606,11 +824,140 @@ export async function savePotSeed(
     assertSafeRegistryPath(path)
     const file: RegistryFile =
       readRegistryFile(path) ?? { version: ENVELOPE_VERSION, pots: Object.create(null) }
+    const existing = file.pots[record.potId]
+    if (
+      deps.preserveIdentity &&
+      existing &&
+      (existing.sparkAddress !== record.sparkAddress ||
+        existing.network !== record.network ||
+        existing.accountIndex !== record.accountIndex ||
+        existing.derivationMode !== record.derivationMode)
+    ) {
+      throw new Error(
+        `Refusing to replace ${record.potId}: the stored pot is ${existing.network} account ${existing.accountIndex} ${existing.sparkAddress}. Import would change that identity.`,
+      )
+    }
     file.pots[record.potId] = record
     if (!file.activePotId) file.activePotId = record.potId
     writeRegistryFile(path, file)
   })
   return record
+}
+
+export interface ProvisionSeedInput {
+  label?: string
+  sparkAddress: string
+  network: SparkNetwork
+  derivationMode: PotDerivationMode
+  accountIndex: number
+  seed: string
+}
+
+/**
+ * Seal a newly generated seed before Nest has a pot id. The record lives under
+ * `provisions`, not `pots`, so it cannot be selected for signing until
+ * {@link bindProvisionedSeed}.
+ */
+export async function saveProvisionedSeed(
+  input: ProvisionSeedInput,
+  passphrase: string,
+  deps: PotRegistryDeps = {},
+): Promise<{ provisionId: string; record: PotRecord }> {
+  const env = resolveEnv(deps.env)
+  refuseWindows()
+  const provisionId = `prov_${randomBytes(8).toString('hex')}`
+  const { apiUrl, appOrigin } = trustedEndpoints(env)
+  const createdAt = (deps.now ?? (() => new Date()))().toISOString()
+  const meta: PotMetadata = {
+    potId: provisionId,
+    ...(input.label ? { label: input.label } : {}),
+    sparkAddress: input.sparkAddress,
+    spendMode: 'free',
+    network: input.network,
+    derivationMode: input.derivationMode,
+    accountIndex: input.accountIndex,
+    apiUrl,
+    appOrigin,
+    createdAt,
+  }
+  const record: PotRecord = { ...meta, ...sealSeed(input.seed, passphrase, meta) }
+  const path = potRegistryPath(env)
+  await withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    const file: RegistryFile =
+      readRegistryFile(path) ?? { version: ENVELOPE_VERSION, pots: Object.create(null) }
+    const provisions = file.provisions ?? Object.create(null)
+    provisions[provisionId] = record
+    file.provisions = provisions
+    writeRegistryFile(path, file)
+  })
+  return { provisionId, record }
+}
+
+/**
+ * Move a provisioning record onto the Nest pot id. Refuses when that id
+ * already holds a different address, network, or account index. Re-seals
+ * because the authenticated pot id is part of the AAD.
+ */
+export async function bindProvisionedSeed(
+  provisionId: string,
+  potId: string,
+  passphrase: string,
+  deps: PotRegistryDeps = {},
+): Promise<PotRecord> {
+  const env = resolveEnv(deps.env)
+  refuseWindows()
+  if (!potId.trim() || potId === provisionId) {
+    throw new Error('Pass the Nest pot id to bind. It must differ from the local provision id.')
+  }
+  const path = potRegistryPath(env)
+  let bound: PotRecord | undefined
+  await withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    const file = readRegistryFile(path)
+    const provision = file?.provisions?.[provisionId]
+    if (!file || !provision) {
+      throw new Error(`Provision ${provisionId} is not in the registry.`)
+    }
+    assertEndpointsTrusted(provision, env)
+    const seed = openSeed(provision, passphrase, provision)
+    const existing = file.pots[potId]
+    if (
+      existing &&
+      (existing.sparkAddress !== provision.sparkAddress ||
+        existing.network !== provision.network ||
+        existing.accountIndex !== provision.accountIndex ||
+        existing.derivationMode !== provision.derivationMode)
+    ) {
+      throw new Error(
+        `Refusing to bind ${provisionId} onto ${potId}: that pot already has a different address, network, or account index.`,
+      )
+    }
+    const { apiUrl, appOrigin } = trustedEndpoints(env)
+    const meta: PotMetadata = {
+      potId,
+      ...(provision.label ? { label: provision.label } : {}),
+      sparkAddress: provision.sparkAddress,
+      spendMode: 'free',
+      network: provision.network,
+      derivationMode: provision.derivationMode,
+      accountIndex: provision.accountIndex,
+      apiUrl,
+      appOrigin,
+      createdAt: existing?.createdAt ?? provision.createdAt,
+    }
+    const record: PotRecord = { ...meta, ...sealSeed(seed, passphrase, meta) }
+    file.pots[potId] = record
+    if (!file.activePotId) file.activePotId = potId
+    if (file.provisions) delete file.provisions[provisionId]
+    if (file.provisions && Object.keys(file.provisions).length === 0) {
+      delete file.provisions
+    }
+    writeRegistryFile(path, file)
+    bound = record
+  })
+  if (!bound) throw new Error(`Provision ${provisionId} is not in the registry.`)
+  return bound
 }
 
 /** Decrypt + authenticate the seed for one pot id. Fails closed on any mismatch. */
@@ -726,6 +1073,25 @@ export async function getPotRecord(
     if (!file) throw new Error(`Pot ${potId} is not in the free-pot seed registry.`)
     const record = file.pots[potId]
     if (!record) throw new Error(`Pot ${potId} is not in the free-pot seed registry.`)
+    assertEndpointsTrusted(record, env)
+    return record
+  })
+}
+
+/** Like getPotRecord but returns null when the pot is absent (no throw). Endpoints still checked. */
+export async function findPotRecord(
+  potId: string,
+  deps: PotRegistryDeps = {},
+): Promise<PotRecord | null> {
+  const env = resolveEnv(deps.env)
+  refuseWindows()
+  const path = potRegistryPath(env)
+  return withRegistryLock(path, () => {
+    assertSafeRegistryPath(path)
+    const file = readRegistryFile(path)
+    if (!file) return null
+    const record = file.pots[potId]
+    if (!record) return null
     assertEndpointsTrusted(record, env)
     return record
   })

@@ -52,7 +52,7 @@ describe('parseProposeRegisterArgs', () => {
     assert.equal(parsed.originExplicit, false)
   })
 
-  it('treats a full flag set as specified only when network is set too', () => {
+  it('treats a full flag set as specified without SPARK_NETWORK', () => {
     const argv = [
       '--generate',
       '--label',
@@ -64,7 +64,7 @@ describe('parseProposeRegisterArgs', () => {
     ]
     const parsed = parseProposeRegisterArgs(argv, {})
     assert.equal(parsed.originExplicit, true)
-    assert.equal(isProposeFullySpecified(parsed, {}), false)
+    assert.equal(isProposeFullySpecified(parsed, {}), true)
     assert.equal(isProposeFullySpecified(parsed, { SPARK_NETWORK: 'MAINNET' }), true)
     assert.equal(
       isProposeFullySpecified(parseProposeRegisterArgs(['--generate', '--label', 'Research', '--mode', 'free'], {}), {
@@ -78,9 +78,9 @@ describe('parseProposeRegisterArgs', () => {
   it('presets keep unset spend mode and origin so the wizard can ask', () => {
     const parsed = parseProposeRegisterArgs(
       ['--generate', '--label', 'Research', '--key-file', '/tmp/pot.txt'],
-      { SPARK_NETWORK: 'REGTEST' },
+      { SPARK_NETWORK: 'MAINNET' },
     )
-    const presets = wizardPresetsFromArgs(parsed, { SPARK_NETWORK: 'REGTEST' })
+    const presets = wizardPresetsFromArgs(parsed, { SPARK_NETWORK: 'MAINNET' })
     assert.equal(presets.mode, 'generate')
     assert.equal(presets.label, 'Research')
     assert.equal(presets.keyFile, '/tmp/pot.txt')
@@ -164,6 +164,18 @@ describe('parseProposeRegisterArgs', () => {
       /does not invent one/,
     )
   })
+
+  it('non-TTY --generate fails before generating when the passphrase is missing', async () => {
+    await assert.rejects(
+      () =>
+        runProposeRegister(
+          ['--generate', '--label', 'Research', '--mode', 'free', '--origin', 'https://zappi.money'],
+          { SPARK_NETWORK: 'MAINNET' },
+          { isTTY: false },
+        ),
+      /ZAPPI_POT_PASSPHRASE/,
+    )
+  })
 })
 
 describe('printRegisterDeepLink', () => {
@@ -223,7 +235,7 @@ describe('renderHelp', () => {
     assert.match(help, /agent host/)
     assert.match(help, /ZAPPI_APP_ORIGIN.*https:\/\/dev\.zappi\.money/)
     assert.match(help, /ZAPPI_API_URL.*https:\/\/api-dev\.zappi\.money/)
-    assert.match(help, /SPARK_NETWORK.*REGTEST/)
+    assert.match(help, /SPARK_NETWORK.*MAINNET/)
     assert.doesNotMatch(help, /402 → settle/)
     assert.doesNotMatch(help, /Bech32m|spark1|Spark/)
     assert.match(help, /https:\/\/api-dev\.zappi\.money with https:\/\/dev\.zappi\.money/)

@@ -20,6 +20,12 @@ export interface PotEnv {
   ZAPPI_POT_PASSPHRASE?: string
   /** Override path for the encrypted free-pot seed registry. (1-454/1-456) */
   ZAPPI_POT_REGISTRY_FILE?: string
+  /** Override path for the durable pending-operation journal. (1-456 stage 5) */
+  ZAPPI_POT_PENDING_OPS_FILE?: string
+  /** Per-payment cap (cents) for free-pot money-out paths. Defense in depth. (1-456 stage 5) */
+  ZAPPI_POT_MAX_PER_PAYMENT_CENTS?: string
+  /** Cumulative cap (cents) over the trailing 24h for free-pot money-out. (1-456 stage 5) */
+  ZAPPI_POT_MAX_CUMULATIVE_CENTS_24H?: string
   /** Runtime spend mode. `auth_required` refuses CLI free-sign (1-200). */
   ZAPPI_POT_SPEND_MODE?: string
   NEXT_PUBLIC_SITE_URL?: string
@@ -34,6 +40,13 @@ export interface PotEnv {
   ZAPPI_USER_AGENT?: string
   /** Override for `zappi-cli login` credential file. Default `~/.zappi/credentials.json`. */
   ZAPPI_CREDENTIALS_FILE?: string
+  /**
+   * Expected Spark address for a legacy `ZAPPI_POT_SEED` / `ZAPPI_POT_KEY_FILE`
+   * opt-out. Required before that seed may sign. Not a secret.
+   */
+  ZAPPI_POT_SPARK_ADDRESS?: string
+  /** Derivation index for a legacy seed. Only 1 is valid. Unset means 1. */
+  ZAPPI_POT_ACCOUNT_INDEX?: string
   /**
    * Attach deviceCode (RFC 8628) for reclaim after approve (1-203).
    * Host secret — never print. Wins over `~/.zappi/attach-device-<requestId>.txt`.
@@ -134,12 +147,10 @@ function safeOrigin(origin: string): string {
   }
 }
 
-export function resolveSparkNetwork(
-  env: PotEnv = process.env,
-): 'MAINNET' | 'REGTEST' {
+export function resolveSparkNetwork(env: PotEnv = process.env): 'MAINNET' {
   const raw = env.SPARK_NETWORK?.trim().toUpperCase()
-  // Unset matches the dev API (REGTEST). Set MAINNET explicitly for production.
-  return raw === 'MAINNET' ? 'MAINNET' : 'REGTEST'
+  if (!raw || raw === 'MAINNET') return 'MAINNET'
+  throw new Error('SPARK_NETWORK must be MAINNET. Regtest is not supported.')
 }
 
 export function resolvePotSpendMode(
@@ -260,6 +271,8 @@ export function parsePositiveUnits(
  * mirrors `resolveUnlockToken` so docs examples are not treated as secrets.
  * This is a free-pot registry secret, NOT the human device wallet passphrase.
  */
+export const MIN_POT_PASSPHRASE_LENGTH = 16
+
 export function resolvePotPassphrase(env: PotEnv = process.env): string {
   const fromEnv = env.ZAPPI_POT_PASSPHRASE?.trim()
   if (!fromEnv) {
@@ -272,7 +285,29 @@ export function resolvePotPassphrase(env: PotEnv = process.env): string {
       'ZAPPI_POT_PASSPHRASE is still a placeholder. Set it as a host secret — do not paste it into chat.',
     )
   }
+  if (fromEnv.length < MIN_POT_PASSPHRASE_LENGTH) {
+    throw new Error(
+      `ZAPPI_POT_PASSPHRASE must be at least ${MIN_POT_PASSPHRASE_LENGTH} characters. Set a high-entropy host secret.`,
+    )
+  }
   return fromEnv
+}
+
+/**
+ * Spend mode for the free signer. Unset means free. `auth_required` and any
+ * other value are rejected by the signer before it reads a seed. This does
+ * not change the auth-required request/approve path, which uses
+ * {@link resolvePotSpendMode}.
+ */
+export function assertFreeSignerSpendMode(env: PotEnv = process.env): void {
+  const raw = env.ZAPPI_POT_SPEND_MODE?.trim().toLowerCase()
+  if (!raw || raw === 'free') return
+  if (raw === 'auth_required') {
+    throw new Error(AUTH_REQUIRED_PAY_ERROR)
+  }
+  throw new Error(
+    `Unknown ZAPPI_POT_SPEND_MODE "${raw}". Refusing to sign. Expected free or auth_required.`,
+  )
 }
 
 /** Registry file path. Default `~/.zappi/pots.json`; override `ZAPPI_POT_REGISTRY_FILE`. */

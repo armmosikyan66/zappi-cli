@@ -63,6 +63,8 @@ export interface PayCliArgs {
   resourceArg?: string
   noConsume: boolean
   units: number
+  potFlag?: string
+  idempotencyKey?: string
 }
 
 export interface ConsumeCliArgs {
@@ -78,8 +80,17 @@ export function parsePayCliArgs(argv: string[]): PayCliArgs {
     const next = argv[index + 1]
     if (arg === '--no-consume') {
       parsed.noConsume = true
+    } else if ((arg === '--pot' || arg === '--pot-id') && next) {
+      if (parsed.potFlag && parsed.potFlag !== next) {
+        throw new Error(`Conflicting pot selectors: ${parsed.potFlag} and ${next}. Pick one.`)
+      }
+      parsed.potFlag = next
+      index += 1
     } else if (arg === '--units' && next) {
       parsed.units = parsePositiveUnits(next)
+      index += 1
+    } else if (arg === '--idempotency-key' && next) {
+      parsed.idempotencyKey = next
       index += 1
     } else if (!arg.startsWith('-') && !parsed.resourceArg) {
       parsed.resourceArg = arg
@@ -194,7 +205,7 @@ export async function runCli(
     const args = parsePayCliArgs(rest)
     if (!args.resourceArg) {
       throw new Error(
-        'Usage: zappi-cli pay <resourceIdOrUrl> [--no-consume] [--units N] [--json]',
+        'Usage: zappi-cli pay <resourceIdOrUrl> [--pot <id>] [--idempotency-key <k>] [--no-consume] [--units N] [--json]',
       )
     }
     const spinner = createSpinner('Paying…', mode)
@@ -203,7 +214,10 @@ export async function runCli(
       const result = await payResourceResult(parseResourceId(args.resourceArg), {
         autoConsume: !args.noConsume,
         consumeUnits: args.units,
+        ...(args.potFlag ? { potFlag: args.potFlag } : {}),
+        ...(args.idempotencyKey ? { externalIdempotencyKey: args.idempotencyKey } : {}),
         onStatus: (label) => spinner.setText(label),
+        journal: {},
       })
       spinner.succeed(
         result.status === 'already_unlocked' ? 'Already unlocked' : 'Settled',
@@ -326,8 +340,14 @@ export async function runCli(
     if (sub === 'attach') return runPotAttach(subRest, mode)
     if (sub === 'attach-status') return runPotAttachStatus(subRest, mode)
     if (sub === 'bind') return runPotBind(subRest, mode)
+    if (sub === 'registry') {
+      const regSub = subRest.find((a) => !a.startsWith('-'))
+      const regRest = regSub ? subRest.filter((a) => a !== regSub) : subRest
+      const { runPotsRegistry } = await import('./pots-registry-commands.js')
+      return runPotsRegistry(regSub, regRest, mode)
+    }
     throw new Error(
-      `Usage: zappi-cli pots <list|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status|bind> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
+      `Usage: zappi-cli pots <list|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status|bind|registry> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
     )
   }
 

@@ -1,112 +1,83 @@
-# Free-pot signer boundary contract
+# Free-pot signer boundary
 
 > Linear: [1-456](https://linear.app/skribz/issue/1-456/securitycli-harden-free-pot-seed-registry-and-signing) ·
-> [1-457](https://linear.app/skribz/issue/1-457/1-4561-establish-the-free-pot-signer-boundary) ·
-> Source design: [1-454](https://linear.app/skribz/issue/1-454/encrypted-free-pot-seed-registry-for-zappi-cli-auto-sign-bots) ·
-> Hosting boundary: [1-445](https://linear.app/skribz/issue/1-445/free-pot-signing-cli-signs-key-stays-off-the-shared-grok-computer)
+> Operator guide: [free-pot-registry-ops.md](./free-pot-registry-ops.md)
 
-This document is the **boundary contract** for the free-pot seed registry and
-signer. It defines what the signer may hold, who it may serve, and what it may
-**never** do. Tasks 1-456.2 through 1-456.6 implement against this contract; any
-change to the contract must update this file first.
+The free-pot signer holds an independent pot seed, decrypts it in memory,
+and signs USDB spends. It is not the main wallet and it is not an
+auth-required pot.
 
-Scope: **free pots only** (`spendMode: free`, agent-held seed). The
-`auth_required` path, the pot client token (`zpc_`), and the request/approve
-flow are **unchanged**. Only negative boundary tests may touch auth-required
-pots, to prove they cannot enter the free signer.
+## 1. What this host stores
 
-## 1. Trusted signer host
+- Free-pot seeds live as ciphertext in `~/.zappi/pots.json` (mode 0600,
+  directory 0700). The unlock secret is `ZAPPI_POT_PASSPHRASE`.
+- A newly generated seed is sealed into a provisioning record before the
+  command reports success. The Nest pot id is applied later with
+  `pots registry bind`. Until then the record cannot be selected for signing.
+- `--key-file` is an explicit plaintext opt-out. That file is the migration
+  backup. The default path does not write it.
+- The decrypted seed is a local variable. It is not exported to
+  `process.env` and it is stripped from browser and clipboard child
+  environments.
 
-The pot seed and the registry unlock secret live on a **trusted, dedicated
-signer host** — a machine only the bot that owns the pot uses. They do **not**
-live on the shared bot computer (e.g. a shared Grok box), and they are never
-sent into chat.
+## 2. Identity
 
-This CLI is that signer. It holds the encrypted registry, decrypts a pot's seed
-into memory per pot id, signs the USDB spend to Spark, and drops the seed. Nest
-only checks the signed result; it never sees the words.
+Signing uses one immutable context: pot id, Spark address, spend mode
+`free`, network, derivation mode, and account index.
 
-The pairing/transport boundary between this signer and the bot that requests
-spends is defined by [1-445]. **This contract reuses 1-445's flow; it does not
-redesign it.** Until 1-445 lands, the signer operates local-only: the bot and
-the signer share the same host, and the seed never leaves it. When 1-445
-ships, the same boundary contract applies over its transport — no new
-decrypt/export surface is added here.
+- Registry records are the identity for pots that have been sealed. The
+  seed-derived address must match the stored address.
+- A legacy `ZAPPI_POT_SEED` or `ZAPPI_POT_KEY_FILE` also requires
+  `ZAPPI_POT_SPARK_ADDRESS`. A mismatch, `auth_required`, or an unknown
+  spend mode fails before the seed is used.
+- Import and restore keep the original network and account index. They do
+  not substitute `SPARK_NETWORK` or account 0. Restore also derives the
+  decrypted seed and requires that address. Import's identity check is
+  inside the registry lock.
+- `pots bind` does not replace a seed that is already sealed for that pot.
 
-## 2. Per-bot, per-pot — no cross-pot capability
+## 3. What this CLI does not enforce
 
-Each bot may request operations **only for its authorized pot**. The signer
-exposes no generic decrypt/export endpoint and no cross-pot signer capability.
+- It does **not** detect a main-wallet mnemonic. Do not put a main-wallet
+  seed in `ZAPPI_POT_SEED`, a key file, or `pots registry import`. Free-pot
+  seeds are independent; the CLI cannot prove a phrase is not also a main
+  wallet.
+- It does **not** isolate the signer from the rest of the host account.
+  Another process running as the same user can read the registry if it can
+  read mode 0600 files owned by that user. Run the signer on a trusted host.
+- `pots registry remove` deletes the local entry only. It does not revoke
+  on-chain access and it does not guarantee memory or disk zeroization.
+- Re-encryption and passphrase rotation do **not** invalidate old
+  ciphertext or old backups. Those copies still decrypt with the old
+  secret. Rotation does not revoke an exposed seed. A compromised seed
+  needs a fresh pot and a separately human-authorized fund move.
 
-A single encrypted registry is **not** isolation between mutually untrusted
-same-user processes. Two bots that share a user share the registry file; if
-one is compromised, the attacker that obtains the unlock secret can read every
-free-pot seed in that registry. This is accepted blast radius, not a security
-property:
+## 4. Money-out
 
-- The registry is keyed by pot id; selection is explicit per operation.
-- The signer never offers "list all seeds", "export seed", or "sign for any
-  pot" primitives. Every operation names one pot id and binds to that pot's
-  immutable context (see 1-456.2).
-- Same-user sibling blast radius (shared host) stays a small-balance leash —
-  documented, not fixed by encryption. Operators must keep free-pot balances
-  small and provision one signer host per mutually-untrusted process.
+`pay`, Spark `send`, `send internal`, `send external`, and `withdraw confirm`
+go through the verified context, the pre-sign gate, and the pending-operation
+journal. The recipient address network must match the pot. The USDB token
+must be the canonical one (ticker USDB, 6 decimals, matching network), not
+the first `btkn` entry. `--idempotency-key` is mixed into the journal key
+on `pay` and on send. The same intent and key reconcile; a different key is
+a different payment. `--pot` is carried through routed sends. A known
+failure before broadcast can be retried; an unknown broadcast cannot.
 
-## 3. Seed independence — never the main wallet
+An unreadable or oversized journal stops signing. The CLI does not reset
+cap history to recover.
 
-The free-pot seed registry holds **only free-pot seeds**. It must:
+Auth-required pots, client tokens, and the request/approve flow are
+unchanged and do not enter this signer.
 
-- **Never** store the main-wallet seed.
-- **Never** derive free-pot seeds from the main-wallet seed. Free pots use
-  independent seed material (a fresh mnemonic per pot, generated by
-  `@scure/bip39`).
-- **Never** accept a main-wallet seed as `ZAPPI_POT_SEED` or via import. Import
-  is for free-pot recovery phrases only; the signer refuses anything that
-  looks like a main-wallet credential.
+## 5. Inherited settlement risk (release blocker)
 
-## 4. What encryption and CLI caps cannot prevent
+[1-220](https://linear.app/skribz/issue/1-220/zappi-buyer-mcp-server-http-paywall-tools)
+and [1-316](https://linear.app/skribz/issue/1-316/cli-typesafe-jev-pre-sign-gate-transfer-must-match-402)
+remain an inherited payer-attribution / settlement-claim risk in the
+backend settle path. Local registry and pre-sign checks do not close it.
+See [free-pot-registry-ops.md](./free-pot-registry-ops.md) §10.
 
-Encryption and CLI spend caps are **defense in depth**, not a boundary against
-host compromise. Operators must understand:
+## 6. Windows
 
-- **Signer-host compromise drains the pot.** Anyone who controls the signer
-  host can read the decrypted seed from memory or patch the signer to sign
-  arbitrary spends. The encrypted registry only protects the seed at rest.
-- **Raw-seed exposure drains the pot.** Anyone who obtains a free pot's 12/24
-  words can drain it and all future top-ups, on any machine. The registry,
-  passphrases, and caps cannot revoke an exposed seed.
-- **Re-encryption does not revoke a seed.** Rotating the unlock secret or
-  re-sealing the registry invalidates old ciphertext, but it does **not**
-  invalidate old backups or revoke a seed that was already exposed. A
-  compromised seed requires a **fresh independent pot** and a separately
-  human-authorized fund migration (out of scope for 1-456; see 1-456.4).
-- **CLI caps do not stop raw-seed theft.** Per-payment and cumulative caps
-  limit a signed spend, not a thief who has the seed and signs elsewhere.
-
-## 5. Non-goals (explicit)
-
-- No new per-payment approval mechanism for free pots. Free pots stay
-  non-interactive; that is the product.
-- No `auth_required` changes, no main-wallet work, no broad backend rewrite.
-- No on-chain revocation from `pots remove` (local access removal only).
-- No guaranteed memory/disk zeroization (best-effort only; documented in
-  1-456.4).
-
-## 6. Baseline (recorded 2026-10-02)
-
-Per 1-456's instruction to verify the implementation baseline and distinguish
-reproduced defects from design-review assumptions:
-
-- Current code (`main` @ v0.3.8) has **no encrypted registry**. `propose
-  --generate` writes the mnemonic as a **plaintext** `~/.zappi/pot-*.txt` file
-  (`pot-key-file.ts`), and `load-pot-seed.ts` reads from `ZAPPI_POT_SEED` or
-  `ZAPPI_POT_KEY_FILE` only.
-- 1-454 is "In Review" in Linear but has **no branch or PR** in this repo and
-  **no merged code**. Its design is the source for the registry shape; 1-456
-  supersedes its unsafe-fallback, setup-order, and "zeroize" suggestions.
-- 1-445 (remote signer / pairing transport) is "Todo" — not built. Until it
-  lands, the signer is local-only (§1).
-
-Reproduced defects from this baseline (plaintext seed at rest, seed in env
-available to `/proc/<pid>/environ`, no per-pot context binding, no pre-sign
-intent gate, no idempotent journal) are tracked in 1-456.2–1-456.6, not here.
+Not supported. Permission checks here are POSIX mode and uid. chmod is not
+an ACL. Run the signer on macOS or Linux.

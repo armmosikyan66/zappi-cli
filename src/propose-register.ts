@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { openUrl as openUrlSanitized } from './wizard-io.js'
 import {
   buildRegisterDeepLink,
   parseRegisterDeepLinkQuery,
@@ -17,7 +17,8 @@ import {
   runProposeWizard,
   type WizardPresets,
 } from './propose-wizard.js'
-import { resolveAppOrigin, resolveSparkNetwork, type PotEnv } from './env.js'
+import { resolveAppOrigin, resolvePotPassphrase, resolveSparkNetwork, type PotEnv } from './env.js'
+import { saveProvisionedSeed } from './pot-registry.js'
 
 export {
   defaultKeyFile,
@@ -51,7 +52,6 @@ const USAGE = `Usage:
 
 On a terminal, bare propose asks before it generates or registers:
 existing pot or generate new → how the pot should spend
-→ Spark network (skipped when SPARK_NETWORK is set)
 → app origin (skipped when --origin, ZAPPI_APP_ORIGIN, or NEXT_PUBLIC_SITE_URL is set)
 → pot label (blank asks you to confirm auto pot_<unique> or type a custom name)
 → opens the Zappi register link.
@@ -127,9 +127,8 @@ export function isProposeFullySpecified(
 ): boolean {
   const hasPot = args.generate || Boolean(args.address?.trim())
   const hasLabel = Boolean(args.label?.trim())
-  const hasNetwork = Boolean(env.SPARK_NETWORK?.trim())
   const hasOrigin = args.originExplicit || hasAppOriginEnv(env)
-  return hasPot && args.modeExplicit && hasLabel && hasNetwork && hasOrigin
+  return hasPot && args.modeExplicit && hasLabel && hasOrigin
 }
 
 /** Map explicit flags onto wizard presets. Unset fields stay unset so the wizard asks. */
@@ -154,7 +153,7 @@ export function printRegisterDeepLink(input: {
   sparkAddress: string
   label?: string
   origin?: string
-  network?: 'MAINNET' | 'REGTEST'
+  network?: 'MAINNET'
   mode?: PotSpendMode
   ref?: string
 }): string {
@@ -204,9 +203,7 @@ export function printRegisterDeepLink(input: {
 }
 
 function openUrl(href: string) {
-  const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
-  const child = spawn(command, [href], { stdio: 'ignore', detached: true })
-  child.unref()
+  openUrlSanitized(href)
 }
 
 export interface ProposeRegisterDeps {
@@ -230,13 +227,10 @@ async function executeFlagPropose(
     }
     const { generateMnemonic } = await import('@scure/bip39')
     const { wordlist } = await import('@scure/bip39/wordlists/english.js')
+    // Require a high-entropy host secret before the mnemonic exists.
+    const passphrase = resolvePotPassphrase(env)
     const mnemonic = generateMnemonic(wordlist, 128)
     const generatedAddress = await deriveSparkAddress(mnemonic, network)
-    const keyFile = resolveKeyFilePath(
-      args.keyFile,
-      defaultKeyFile(args.label),
-    )
-    writeKeyFile(keyFile, mnemonic, generatedAddress, args.label)
     const printed = printRegisterDeepLink({
       sparkAddress: generatedAddress,
       label: args.label,
@@ -245,11 +239,42 @@ async function executeFlagPropose(
       mode: args.mode,
       ref: args.ref,
     })
-    const output = [
-      printed,
-      `Key file written (mode 0600): ${keyFile}`,
-      'Set ZAPPI_POT_SEED as a host secret. Do not cat or print the file.',
-    ].join('\n')
+    // `--key-file` is an explicit plaintext opt-out. The default seals the
+    // mnemonic into an encrypted provisioning record before success. The Nest
+    // pot id is not known yet; bind it after the human registers.
+    let storedLine: string
+    if (args.keyFile?.trim()) {
+      const keyFile = resolveKeyFilePath(args.keyFile, defaultKeyFile(args.label))
+      writeKeyFile(keyFile, mnemonic, generatedAddress, args.label)
+      storedLine = [
+        `Key file written (mode 0600): ${keyFile}`,
+        'This file is plaintext. It is the only recoverable backup until you seal it.',
+        `  zappi-cli pots registry import --pot-id <id> --from-file ${keyFile} --network ${network} --account-index 1 --address ${generatedAddress}`,
+        'Anyone who reads this file can drain the pot. Do not cat, print, email, or paste it.',
+      ].join('\n')
+    } else {
+      const { provisionId } = await saveProvisionedSeed(
+        {
+          ...(args.label ? { label: args.label } : {}),
+          sparkAddress: generatedAddress,
+          network,
+          derivationMode: 'spark',
+          accountIndex: 1,
+          seed: mnemonic,
+        },
+        passphrase,
+        { env },
+      )
+      storedLine = [
+        `Seed sealed in the encrypted registry as provision ${provisionId}.`,
+        'No plaintext key file was written.',
+        'Set ZAPPI_POT_PASSPHRASE as a host secret.',
+        'After the pot is registered in Zappi, bind the provision to the Nest pot id:',
+        `  zappi-cli pots registry bind --provision ${provisionId} --pot-id <id>`,
+        'New pots use derivation spark, account index 1. Do not print the seed.',
+      ].join('\n')
+    }
+    const output = [printed, storedLine].join('\n')
     if (args.open) {
       const href = buildRegisterDeepLink({
         sparkAddress: generatedAddress,

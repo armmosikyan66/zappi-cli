@@ -8,15 +8,12 @@ import {
   potResolveSendTarget,
   potSendExternal,
   potSendInternal,
-  requirePotId,
 } from './pot-send.js'
 import { parseArgs, parseIntFlag } from './args.js'
-import { loadPotSeed } from './load-pot-seed.js'
-import { resolveSparkNetwork, type PotEnv } from './env.js'
-import {
-  readUsdbTokenIdentifier,
-  sendUsdbFromPot,
-} from './spark-send.js'
+import { assertFreeSignerSpendMode, type PotEnv } from './env.js'
+import { readUsdbTokenIdentifier } from './spark-send.js'
+import { gateAndSignFreePot } from './free-pot-sign.js'
+import { resolvePotContext, type PotContext } from './pot-context.js'
 import {
   errorLine,
   heading,
@@ -30,6 +27,16 @@ import {
 const NL = '\n'
 const USDB_MICRO_UNITS_PER_CENT = 10_000n
 const UNKNOWN = 'unknown'
+
+/** Finite epoch millis. Expired values are returned so a journaled retry can reconcile before a new sign. */
+function parseQuoteExpiry(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const ms = Date.parse(value)
+    if (Number.isFinite(ms)) return ms
+  }
+  throw new Error('Quote expiry is missing or invalid. Refusing to sign.')
+}
 
 function jsonOut(result: unknown): string {
   return JSON.stringify(result, null, 2)
@@ -46,35 +53,37 @@ function withdrawError(message: string, mode: OutputMode): string {
  * Spark USDB transfers from the host pot seed. The pot key never leaves the
  * host; only the resulting `sparkTxHash` is sent to nest.
  */
-function buildPotSigner(env: PotEnv): TwoPhaseSigner {
-  const mnemonic = loadPotSeed(env)
-  const network = resolveSparkNetwork(env)
+function buildPotSigner(
+  env: PotEnv,
+  externalIdempotencyKey?: string,
+  potFlag?: string,
+  context?: PotContext,
+): TwoPhaseSigner {
   return {
     async transferUsdb(params: {
       tokenIdentifier: string
       tokenAmount: bigint
       receiverSparkAddress: string
     }): Promise<{ sparkTxHash: string }> {
-      // tokenAmount is in micro-USDB units; convert back to cents.
+      if (params.tokenAmount % USDB_MICRO_UNITS_PER_CENT !== 0n) {
+        throw new Error('Withdraw amount is not an exact number of cents. Refusing to sign.')
+      }
       const amountCents = Number(params.tokenAmount / USDB_MICRO_UNITS_PER_CENT)
-      const { sparkTxHash } = await sendUsdbFromPot({
-        mnemonic,
-        accountNumber: 0,
-        network,
-        tokenIdentifier: params.tokenIdentifier,
-        receiverSparkAddress: params.receiverSparkAddress,
+      const { sparkTxHash } = await gateAndSignFreePot({
+        env,
+        ...(potFlag ? { selectors: { potFlag } } : {}),
+        ...(context ? { resolveContext: async () => context } : {}),
+        kind: 'send',
+        receiver: params.receiverSparkAddress,
         amountCents,
+        tokenIdentifier: params.tokenIdentifier,
+        ...(externalIdempotencyKey ? { externalIdempotencyKey } : {}),
+        journal: { env },
+        readTokenIdentifier: readUsdbTokenIdentifier,
       })
       return { sparkTxHash }
     },
   }
-}
-
-/** Read the USDB token identifier for the configured pot (used by send internal). */
-async function readPotTokenIdentifier(env: PotEnv): Promise<string> {
-  const mnemonic = loadPotSeed(env)
-  const network = resolveSparkNetwork(env)
-  return readUsdbTokenIdentifier(mnemonic, 0, network)
 }
 
 /** Build a WithdrawalRequest from CLI string flags. */
@@ -178,17 +187,38 @@ export async function runWithdrawQuote(
   ].join(NL)
 }
 
-/** `zappi-cli withdraw confirm <quoteId> [--auth <token>]` */
+export interface MoneyOutHooks {
+  /** Test hook after the verified pot is chosen and before Nest or signing. */
+  onContext?: (context: PotContext) => void
+  /** Test double for Spark address derivation. Production uses the SDK. */
+  deriveAddress?: (seed: string, network: 'MAINNET', accountIndex: number) => Promise<string>
+}
+
+/** `zappi-cli withdraw confirm <quoteId> [--auth <token>] [--pot <id>]` */
 export async function runWithdrawConfirm(
   argv: string[],
   mode: OutputMode,
   env: PotEnv = process.env,
+  hooks?: MoneyOutHooks,
 ): Promise<string> {
   const { positionals, strings } = parseArgs(argv)
   const quoteId = positionals[0]
   if (!quoteId) throw new Error('Usage: zappi-cli withdraw confirm <quoteId> [--auth <token>]')
+  const potFlag = strings.pot ?? strings['pot-id']
+  if (strings.pot && strings['pot-id'] && strings.pot !== strings['pot-id']) {
+    throw new Error(
+      `Conflicting pot selectors: --pot ${strings.pot} but --pot-id ${strings['pot-id']}. Pick one.`,
+    )
+  }
+  assertFreeSignerSpendMode(env)
+  // Resolve before Nest so --pot B cannot fall through to ZAPPI_POT_ID A.
+  const context = await resolvePotContext(potFlag ? { potFlag } : {}, {
+    env,
+    ...(hooks?.deriveAddress ? { deriveAddress: hooks.deriveAddress } : {}),
+  })
+  hooks?.onContext?.(context)
   const client = await resolveZappiClient(env)
-  const signer = buildPotSigner(env)
+  const signer = buildPotSigner(env, quoteId, potFlag, context)
   const authorizationToken = strings.auth ?? null
   const confirmation = await runTwoPhaseWithdraw(client, signer, {
     quoteId,
@@ -240,6 +270,7 @@ export async function runSendInternal(
   argv: string[],
   mode: OutputMode,
   env: PotEnv = process.env,
+  hooks?: MoneyOutHooks,
 ): Promise<string> {
   const { strings } = parseArgs(argv)
   const recipientUserId = strings.to
@@ -249,12 +280,22 @@ export async function runSendInternal(
     )
   }
   const amountCents = parseIntFlag(strings.amount, 'amount')
-  const potId = requirePotId(env)
+  assertFreeSignerSpendMode(env)
+  const potFlag = strings.pot ?? strings['pot-id']
+  if (strings.pot && strings['pot-id'] && strings.pot !== strings['pot-id']) {
+    throw new Error(
+      `Conflicting pot selectors: --pot ${strings.pot} but --pot-id ${strings['pot-id']}. Pick one.`,
+    )
+  }
+  const context = await resolvePotContext(potFlag ? { potFlag } : {}, {
+    env,
+    ...(hooks?.deriveAddress ? { deriveAddress: hooks.deriveAddress } : {}),
+  })
+  hooks?.onContext?.(context)
+  const potId = context.potId
   const client = await resolveZappiClient(env)
   const authorizationToken = strings.auth ?? null
-  const idempotencyKey =
-    strings['idempotency-key'] ??
-    ('cli:send:' + recipientUserId + ':' + amountCents + ':' + Date.now())
+  const callerKey = strings['idempotency-key']
 
   const target = await potResolveSendTarget(client, potId, recipientUserId)
   if (!target.destinationSparkAddress) {
@@ -266,6 +307,10 @@ export async function runSendInternal(
         ').',
     )
   }
+
+  const idempotencyKey =
+    callerKey ??
+    ['internal', potId, recipientUserId, String(amountCents), target.destinationSparkAddress].join('\u0000')
 
   await potSendInternal(
     client,
@@ -279,17 +324,17 @@ export async function runSendInternal(
     authorizationToken,
   )
 
-  const tokenIdentifier = await readPotTokenIdentifier(env)
-  const mnemonic = loadPotSeed(env)
-  const network = resolveSparkNetwork(env)
-  const { sparkTxHash } = await sendUsdbFromPot({
-    mnemonic,
-    accountNumber: 0,
-    network,
-    tokenIdentifier,
-    receiverSparkAddress: target.destinationSparkAddress,
+  const signed = await gateAndSignFreePot({
+    env,
+    kind: 'send',
+    receiver: target.destinationSparkAddress,
     amountCents,
+    externalIdempotencyKey: idempotencyKey,
+    journal: { env },
+    resolveContext: async () => context,
+    readTokenIdentifier: readUsdbTokenIdentifier,
   })
+  const sparkTxHash = signed.sparkTxHash
 
   const confirmation = await potSendInternal(
     client,
@@ -345,6 +390,7 @@ export async function runSendExternal(
   argv: string[],
   mode: OutputMode,
   env: PotEnv = process.env,
+  hooks?: MoneyOutHooks,
 ): Promise<string> {
   const { strings } = parseArgs(argv)
   const asset = strings.asset
@@ -357,12 +403,30 @@ export async function runSendExternal(
     )
   }
   const amountCents = parseIntFlag(amount, 'amount')
-  const potId = requirePotId(env)
+  assertFreeSignerSpendMode(env)
+  const potFlag = strings.pot ?? strings['pot-id']
+  if (strings.pot && strings['pot-id'] && strings.pot !== strings['pot-id']) {
+    throw new Error(
+      `Conflicting pot selectors: --pot ${strings.pot} but --pot-id ${strings['pot-id']}. Pick one.`,
+    )
+  }
+  const context = await resolvePotContext(potFlag ? { potFlag } : {}, {
+    env,
+    ...(hooks?.deriveAddress ? { deriveAddress: hooks.deriveAddress } : {}),
+  })
+  hooks?.onContext?.(context)
+  if (asset.toUpperCase() !== 'USDB') {
+    throw new Error(
+      `External send asset ${asset} is unsupported on the free signer; this CLI can only sign USDB.`,
+    )
+  }
+  const potId = context.potId
   const client = await resolveZappiClient(env)
   const authorizationToken = strings.auth ?? null
+  const callerKey = strings['idempotency-key']
   const idempotencyKey =
-    strings['idempotency-key'] ??
-    ('cli:sendext:' + asset + ':' + network + ':' + amountCents + ':' + Date.now())
+    callerKey ??
+    ['external', potId, asset.toUpperCase(), network, address, String(amountCents)].join('\u0000')
 
   const first = await potSendExternal(
     client,
@@ -384,19 +448,30 @@ export async function runSendExternal(
     first.tokenIdentifier &&
     first.sendAmount
   ) {
-    const mnemonic = loadPotSeed(env)
-    const sparkNetwork = resolveSparkNetwork(env)
     const sendAmountUnits = BigInt(first.sendAmount)
-    const amountCentsFromUnits = Number(
-      sendAmountUnits / USDB_MICRO_UNITS_PER_CENT,
-    )
-    const { sparkTxHash } = await sendUsdbFromPot({
-      mnemonic,
-      accountNumber: first.accountNumber ?? 0,
-      network: sparkNetwork,
-      tokenIdentifier: first.tokenIdentifier,
-      receiverSparkAddress: first.depositAddress,
+    if (sendAmountUnits % USDB_MICRO_UNITS_PER_CENT !== 0n) {
+      throw new Error('Quote send amount is not an exact number of cents. Refusing to sign.')
+    }
+    const amountCentsFromUnits = Number(sendAmountUnits / USDB_MICRO_UNITS_PER_CENT)
+    if (amountCentsFromUnits !== amountCents) {
+      throw new Error(
+        `Quote send amount ${amountCentsFromUnits}¢ does not match the requested ${amountCents}¢. Refusing to sign.`,
+      )
+    }
+    const quoteExpiryMs = parseQuoteExpiry(first.expiresAt)
+    const signed = await gateAndSignFreePot({
+      env,
+      kind: 'send',
+      receiver: first.depositAddress,
       amountCents: amountCentsFromUnits,
+      tokenIdentifier: first.tokenIdentifier,
+      ...(first.accountNumber !== undefined ? { accountNumber: first.accountNumber } : {}),
+      quoteExpiryMs,
+      requireQuoteExpiry: true,
+      externalIdempotencyKey: idempotencyKey,
+      journal: { env },
+      resolveContext: async () => context,
+      readTokenIdentifier: readUsdbTokenIdentifier,
     })
     final = await potSendExternal(
       client,
@@ -407,7 +482,7 @@ export async function runSendExternal(
         address,
         amountCents,
         idempotencyKey,
-        sparkTxHash,
+        sparkTxHash: signed.sparkTxHash,
       },
       authorizationToken,
     )

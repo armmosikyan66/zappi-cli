@@ -1,6 +1,5 @@
 import { parseArgs, parseIntFlag } from './args.js'
-import { loadPotSeed } from './load-pot-seed.js'
-import { resolveSparkNetwork, type PotEnv } from './env.js'
+import { type PotEnv } from './env.js'
 import {
   inspectSparkAddress,
   looksLikeSparkAddress,
@@ -17,7 +16,10 @@ import {
   successLine,
   warnLine,
 } from './ui.js'
-import { runSendExternal, runSendInternal } from './withdraw-commands.js'
+import { runSendExternal, runSendInternal, type MoneyOutHooks } from './withdraw-commands.js'
+import { resolvePotContext, type PotContext } from './pot-context.js'
+import { validateMoneyOutIntent, type MoneyOutIntent } from './pot-outgate.js'
+import { beginOperation, markFailed, markSettled, recordSubmitted, type JournalDeps } from './pending-ops.js'
 
 const NL = String.fromCharCode(10)
 const SEND_USAGE =
@@ -70,34 +72,98 @@ async function runSendSparkUsdb(
   amountCents: number,
   mode: OutputMode,
   env: PotEnv,
+  resolveContext: (env: PotEnv) => Promise<PotContext> = (e) => resolvePotContext({}, { env: e }),
+  jdeps?: JournalDeps,
+  externalIdempotencyKey?: string,
 ): Promise<string> {
   const inspected = inspectSparkAddress(to)
   if (!inspected.valid || !inspected.network || inspected.network === 'FOREIGN') {
     throw new Error(
-      'Destination is not a valid Spark address for MAINNET/REGTEST: ' + to,
+      'Destination is not a valid Spark address for MAINNET: ' + to,
     )
   }
-  const potNetwork = resolveSparkNetwork(env)
+
+  // Resolve the immutable, verified source-pot context (registry-authoritative
+  // by default; legacy env/file opt-out via resolvePotContext's legacy branch).
+  // (1-456 stage 5 / 1-461)
+  const context = await resolveContext(env)
+  const potNetwork = context.network
   if (inspected.network !== potNetwork) {
     throw new Error(
       'Spark address network is ' +
         inspected.network +
-        ' but pot SPARK_NETWORK is ' +
+        ' but the pot network is ' +
         potNetwork +
         '.',
     )
   }
 
-  const mnemonic = loadPotSeed(env)
-  const tokenIdentifier = await readUsdbTokenIdentifier(mnemonic, 0, potNetwork)
-  const { sparkTxHash } = await sendUsdbFromPot({
-    mnemonic,
-    accountNumber: 0,
-    network: potNetwork,
-    tokenIdentifier,
-    receiverSparkAddress: to.trim(),
+  // Deterministic pre-sign gate: bind the immutable intent (recipient, amount,
+  // asset, network, source pot) to the verified context before signing.
+  // (1-316/1-461)
+  const intent: MoneyOutIntent = {
+    kind: 'send',
+    potId: context.potId,
+    sourceAddress: context.sparkAddress,
+    receiver: to.trim(),
     amountCents,
+    asset: 'USDB',
+    network: context.network,
+  }
+  const { idempotencyKey } = validateMoneyOutIntent(intent, context, {
+    ...(externalIdempotencyKey ? { externalIdempotencyKey } : {}),
   })
+
+  const mnemonic = context.getSeed()
+  let sparkTxHash: string
+  let reconciled = false
+  if (jdeps) {
+    const begin = await beginOperation(intent, idempotencyKey, jdeps)
+    if (begin.action === 'sign') {
+      let broadcastAttempted = false
+      try {
+        const tokenIdentifier = await readUsdbTokenIdentifier(mnemonic, context.accountIndex, potNetwork)
+        broadcastAttempted = true
+        const signed = await sendUsdbFromPot({
+          mnemonic, accountNumber: context.accountIndex, network: potNetwork,
+          tokenIdentifier, receiverSparkAddress: to.trim(), amountCents,
+        })
+        sparkTxHash = signed.sparkTxHash
+      } catch (error) {
+        if (!broadcastAttempted) {
+          await markFailed(
+            idempotencyKey,
+            error instanceof Error ? error.message : 'pre-broadcast failure',
+            jdeps,
+          )
+        }
+        throw error
+      }
+      // Spark P2P: the tx hash is the settlement. Record submitted + settled.
+      await recordSubmitted(idempotencyKey, sparkTxHash, jdeps)
+      await markSettled(idempotencyKey, jdeps)
+    } else if (begin.action === 'reconcile') {
+      sparkTxHash = begin.op.sparkTxHash ?? ''
+      if (!sparkTxHash) throw new Error('Pending send op has no tx hash to reconcile. Refusing to re-sign.')
+      reconciled = true
+    } else if (begin.action === 'done') {
+      sparkTxHash = begin.op.sparkTxHash ?? ''
+      reconciled = true
+    } else {
+      throw new Error(
+        `A prior send to ${to.trim()} is in an unknown state (no tx hash recorded). ` +
+          'Refusing to sign again — reconcile the pending operation manually. ' +
+          `Idempotency key: ${idempotencyKey.slice(0, 16)}…`,
+      )
+    }
+  } else {
+    const tokenIdentifier = await readUsdbTokenIdentifier(mnemonic, context.accountIndex, potNetwork)
+    const signed = await sendUsdbFromPot({
+      mnemonic, accountNumber: context.accountIndex, network: potNetwork,
+      tokenIdentifier, receiverSparkAddress: to.trim(), amountCents,
+    })
+    sparkTxHash = signed.sparkTxHash
+  }
 
   const result = {
     ok: true as const,
@@ -108,12 +174,12 @@ async function runSendSparkUsdb(
     network: potNetwork,
     sparkTxHash,
   }
-  if (mode === 'json') return jsonOut(result)
+  if (mode === 'json') return jsonOut({ ...result, reconciled })
   if (mode === 'plain') {
-    return 'tx: ' + sparkTxHash + ' amountCents: ' + amountCents
+    return 'tx: ' + sparkTxHash + ' amountCents: ' + amountCents + (reconciled ? ' (reconciled)' : '')
   }
   return [
-    successLine('Spark USDB send complete', mode),
+    successLine(reconciled ? 'Spark USDB send reconciled (no second payment)' : 'Spark USDB send complete', mode),
     kv('to', to.trim(), mode),
     kv('amount', amountCents + '¢', mode),
     kv('network', potNetwork, mode),
@@ -125,10 +191,15 @@ async function runSendSparkUsdb(
  * Unified pot send (1-315). Free-pot path first.
  * Keeps `pay` = paywall only.
  */
+function withPot(args: string[], potFlag?: string): string[] {
+  return potFlag ? [...args, '--pot', potFlag] : args
+}
+
 export async function runSend(
   argv: string[],
   mode: OutputMode,
   env: NodeJS.ProcessEnv = process.env,
+  hooks?: MoneyOutHooks,
 ): Promise<string> {
   const { strings, booleans } = parseArgs(argv)
   const to = strings.to
@@ -137,11 +208,22 @@ export async function runSend(
   const amountCents = resolveAmountCents(strings)
   const route = classifySendTarget(to, strings)
   const idempotencyKey = strings['idempotency-key']
-  const potId = strings['pot-id'] ?? env.ZAPPI_POT_ID
-  const potEnv: NodeJS.ProcessEnv =
-    strings['pot-id'] != null && strings['pot-id'] !== ''
-      ? { ...env, ZAPPI_POT_ID: strings['pot-id'] }
-      : env
+  const potFlag = strings.pot ?? strings['pot-id']
+  if (strings.pot && strings['pot-id'] && strings.pot !== strings['pot-id']) {
+    throw new Error(
+      `Conflicting pot selectors: --pot ${strings.pot} but --pot-id ${strings['pot-id']}. Pick one.`,
+    )
+  }
+  const potId = potFlag ?? env.ZAPPI_POT_ID
+  const potEnv: NodeJS.ProcessEnv = env
+  const resolveContext = async (e: PotEnv) => {
+    const context = await resolvePotContext(potFlag ? { potFlag } : {}, {
+      env: e,
+      ...(hooks?.deriveAddress ? { deriveAddress: hooks.deriveAddress } : {}),
+    })
+    hooks?.onContext?.(context)
+    return context
+  }
 
   if (booleans['dry-run']) {
     const plan = {
@@ -180,20 +262,31 @@ export async function runSend(
   }
 
   if (route === 'spark') {
-    return runSendSparkUsdb(to, amountCents, mode, potEnv)
+    return runSendSparkUsdb(
+      to,
+      amountCents,
+      mode,
+      potEnv,
+      resolveContext,
+      { env: potEnv },
+      idempotencyKey,
+    )
   }
 
   if (route === 'internal') {
-    const forwarded = [
-      '--to',
-      stripAt(to),
-      '--amount',
-      String(amountCents),
-      ...(strings.memo ? ['--memo', strings.memo] : []),
-      ...(strings.auth ? ['--auth', strings.auth] : []),
-      ...(idempotencyKey ? ['--idempotency-key', idempotencyKey] : []),
-    ]
-    return runSendInternal(forwarded, mode, potEnv)
+    const forwarded = withPot(
+      [
+        '--to',
+        stripAt(to),
+        '--amount',
+        String(amountCents),
+        ...(strings.memo ? ['--memo', strings.memo] : []),
+        ...(strings.auth ? ['--auth', strings.auth] : []),
+        ...(idempotencyKey ? ['--idempotency-key', idempotencyKey] : []),
+      ],
+      potFlag,
+    )
+    return runSendInternal(forwarded, mode, potEnv, hooks)
   }
 
   if (!strings.asset || !strings.network) {
@@ -208,22 +301,33 @@ export async function runSend(
 
   // Don't invent Orchestra labels for Spark USDB — redirect spark destinations.
   if (looksLikeSparkAddress(to) || /^(usdb|spark)$/i.test(strings.asset) || /^spark$/i.test(strings.network)) {
-    return runSendSparkUsdb(to, amountCents, mode, potEnv)
+    return runSendSparkUsdb(
+      to,
+      amountCents,
+      mode,
+      potEnv,
+      resolveContext,
+      { env: potEnv },
+      idempotencyKey,
+    )
   }
 
-  const forwarded = [
-    '--asset',
-    strings.asset,
-    '--network',
-    strings.network,
-    '--address',
-    to,
-    '--amount',
-    String(amountCents),
-    ...(strings.auth ? ['--auth', strings.auth] : []),
-    ...(idempotencyKey ? ['--idempotency-key', idempotencyKey] : []),
-  ]
-  return runSendExternal(forwarded, mode, potEnv)
+  const forwarded = withPot(
+    [
+      '--asset',
+      strings.asset,
+      '--network',
+      strings.network,
+      '--address',
+      to,
+      '--amount',
+      String(amountCents),
+      ...(strings.auth ? ['--auth', strings.auth] : []),
+      ...(idempotencyKey ? ['--idempotency-key', idempotencyKey] : []),
+    ],
+    potFlag,
+  )
+  return runSendExternal(forwarded, mode, potEnv, hooks)
 }
 
 export { runSendSparkUsdb }
