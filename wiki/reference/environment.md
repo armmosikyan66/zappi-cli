@@ -21,7 +21,7 @@ Resolvers live in `src/env.ts`. Defaults are production. Staging must set API an
 | `NEXT_PUBLIC_SITE_URL` | Fallback app origin when `ZAPPI_APP_ORIGIN` is unset. | propose, invite. |
 | `ZAPPI_UNLOCK_TOKEN` | Unlock bearer. Wins over `--unlock-token`. | [[commands/consume]]. |
 | `ZAPPI_POT_SPEND_MODE` | `auth_required` or anything else → `free`. | [[commands/pay]] refuses free-sign when `auth_required`. [[commands/invite]] and [[commands/consume]] fail closed until attached. |
-| `SPARK_NETWORK` | `REGTEST` if that exact word (case-insensitive); otherwise `MAINNET`. | Address checks, Spark sends. |
+| `SPARK_NETWORK` | `MAINNET` when unset or `MAINNET`. Any other value throws. Account index is 1. | Address checks, Spark sends. |
 | `ZAPPI_PROJECT_API_KEY` | Project key. Wins over the access token. | Wallet and pots. |
 | `ZAPPI_ACCESS_TOKEN` | User access JWT when no project key. | Wallet and pots. |
 | `ZAPPI_COOKIE` | Optional cookie forwarded with session auth (example `zappi_access=…`). | Wallet and pots, session only. |

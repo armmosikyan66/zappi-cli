@@ -1,6 +1,6 @@
-import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { randomBytes } from 'node:crypto'
+import { spawnSanitized } from './child-env.js'
 
 /** Small unique id: 8 hex chars, collision-safe for label suffixes. */
 export function shortUniqueId(bytes = 4): string {
@@ -16,7 +16,7 @@ export function generatePotLabel(seedValue?: string): string {
 
 export function openUrl(href: string) {
   const command = process.platform === 'darwin' ? 'open' : 'xdg-open'
-  const child = spawn(command, [href], { stdio: 'ignore', detached: true })
+  const child = spawnSanitized(command, [href], { stdio: 'ignore', detached: true })
   child.unref()
 }
 
@@ -30,7 +30,9 @@ async function spawnCopyToClipboard(text: string): Promise<boolean> {
   const parts = command.split(' ')
   return await new Promise((resolve) => {
     try {
-      const child = spawn(parts[0], parts.slice(1), { stdio: ['pipe', 'ignore'] })
+      const child = spawnSanitized(parts[0] ?? '', parts.slice(1), {
+        stdio: ['pipe', 'ignore'],
+      })
       child.on('error', () => resolve(false))
       child.on('spawn', () => {
         if (!child.stdin) {
@@ -135,6 +137,30 @@ export async function ask(prompt: string): Promise<string> {
   if (interfaceClosed) return ''
   return await new Promise<string>((resolve) => {
     pendingResolver = resolve
+  })
+}
+
+/**
+ * Read a secret (mnemonic/passphrase) from a TTY without echoing it. The value
+ * is kept in memory only — never written to argv, shell history, stdout, or logs.
+ * On a non-TTY (piped) stdin the line is still read but not echoed; callers that
+ * need a secret in CI must pipe it or use `--from-file`, never a CLI flag.
+ */
+export async function askSecret(prompt: string): Promise<string> {
+  process.stdout.write(`${prompt} `)
+  const rl = ensureReadline()
+  rl.resume()
+  const buffered = pendingLines.shift()
+  if (buffered != null) {
+    process.stdout.write('\n')
+    return buffered
+  }
+  if (interfaceClosed) return ''
+  return await new Promise<string>((resolve) => {
+    pendingResolver = (value: string) => {
+      process.stdout.write('\n')
+      resolve(value)
+    }
   })
 }
 

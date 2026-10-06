@@ -7,7 +7,6 @@ import { bech32m } from '@scure/base'
 import {
   LABEL_CONFIRM_PROMPT,
   LOCAL_APP_ORIGIN,
-  NETWORK_PROMPT,
   ORIGIN_PROMPT,
   runProposeWizard,
 } from './propose-wizard.js'
@@ -15,12 +14,6 @@ import { generatePotLabel } from './wizard-io.js'
 
 const ADDRESS =
   'spark1pgssyele0qrcjdheeq2a0zmpwdwvj3r4f4stkuju0fp36g6grapv2w7l8am2cp'
-
-// Valid Bech32m regtest address (HRP sparkrt, 32-byte program).
-const REGTEST_ADDRESS = bech32m.encode(
-  'sparkrt',
-  bech32m.toWords(new Uint8Array(32).fill(1)),
-)
 
 function makeDeps(overrides: Partial<Record<'ask' | 'select' | 'promptOpenLink', unknown>> = {}) {
   const prompts: string[] = []
@@ -40,7 +33,6 @@ function makeDeps(overrides: Partial<Record<'ask' | 'select' | 'promptOpenLink',
         return queued
       }
       // Fallbacks when a test only queues mode + spend. Do not invent these in production.
-      if (prompt === NETWORK_PROMPT || /Spark network/i.test(prompt)) return 'MAINNET'
       if (prompt === ORIGIN_PROMPT || /Zappi app/i.test(prompt)) return 'https://zappi.money'
       if (prompt === LABEL_CONFIRM_PROMPT || /That name is blank/i.test(prompt)) return 'auto'
       if (prompt.includes('spend') || prompt.includes('Auth')) return 'free'
@@ -52,9 +44,17 @@ function makeDeps(overrides: Partial<Record<'ask' | 'select' | 'promptOpenLink',
       return (overrides.promptOpenLink as { action: string; auto: boolean }) ?? { action: 'opened', auto: false }
     },
     generateMnemonic: () => 'test mnemonic words only for unit tests never use',
-    deriveAddress: async (_mnemonic: string, _network: 'MAINNET' | 'REGTEST') => ADDRESS,
+    deriveAddress: async (_mnemonic: string, _network: 'MAINNET') => ADDRESS,
     writeKeyFile: (_path: string, _mnemonic: string, _address: string, _label?: string) => undefined,
     defaultKeyFile: (label?: string) => `/tmp/fake-pot-${label ?? 'x'}.txt`,
+    resolvePassphrase: () => 'test-passphrase-host-secret',
+    sealProvision: async (_input: {
+      seed: string
+      sparkAddress: string
+      label?: string
+      network: 'MAINNET'
+      passphrase: string
+    }) => ({ provisionId: 'prov_test' }),
   }
   return { deps, prompts }
 }
@@ -136,7 +136,7 @@ describe('runProposeWizard', () => {
 
   it('existing mode: blank label confirms auto pot_<id> before register', async () => {
     const { deps, prompts } = makeDeps({
-      select: ['existing', 'free', 'MAINNET', 'https://zappi.money', 'auto'],
+      select: ['existing', 'free', 'https://zappi.money', 'auto'],
       ask: [ADDRESS, ''],
       promptOpenLink: { action: 'opened', auto: false },
     })
@@ -176,49 +176,53 @@ describe('runProposeWizard', () => {
     )
   })
 
-  it('generate mode: asks label then key file, writes 0600 key file, builds link', async () => {
-    const written: Array<{ path: string; label?: string }> = []
+  it('generate mode: asks label, seals the seed, and does not write a key file', async () => {
+    const written: string[] = []
+    const sealed: string[] = []
     const { deps, prompts } = makeDeps({
       select: ['generate', 'free'],
-      ask: ['Research', ''], // label, blank key-file → default suggested
+      ask: ['Research'],
     })
-    deps.writeKeyFile = (path: string, _m: string, _a: string, label?: string) => {
-      written.push({ path, label })
+    deps.writeKeyFile = (path: string) => {
+      written.push(path)
+    }
+    deps.sealProvision = async (input) => {
+      sealed.push(input.sparkAddress)
+      assert.equal(input.seed.includes('test mnemonic'), true)
+      return { provisionId: 'prov_research' }
     }
     const result = await runProposeWizard([], {}, deps)
 
     assert.equal(result.mode, 'generate')
     assert.equal(result.label, 'Research')
-    assert.equal(written.length, 1)
-    assert.equal(written[0].label, 'Research')
-    assert.match(written[0].path, /fake-pot-Research/)
+    assert.equal(written.length, 0)
+    assert.equal(sealed.length, 1)
+    assert.equal(result.provisionId, 'prov_research')
     assert.match(result.output, /Pot created successfully/)
-    assert.match(result.output, /Disconnect cannot stop on-chain spend/)
-    assert.match(result.output, /fake-pot-Research/)
+    assert.match(result.output, /prov_research/)
+    assert.match(result.output, /No plaintext key file/)
     assert.ok(!result.output.includes('test mnemonic words'))
     assert.match(result.href!, /https:\/\/zappi\.money\//)
-    assert.ok(
-      prompts.some((p) => p.startsWith('Pot key file')),
-      'key-file prompt does not say mnemonic',
-    )
+    assert.ok(!prompts.some((p) => p.startsWith('Pot key file')))
     assert.ok(!prompts.some((p) => /mnemonic/i.test(p)))
   })
 
-  it('generate mode: a directory answer writes the suggested filename inside it', async () => {
+  it('generate mode: an explicit --key-file directory writes the suggested filename inside it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'zappi-wiz-'))
     const written: string[] = []
     const { deps } = makeDeps({
       select: ['generate', 'free'],
-      ask: ['Research', dir],
+      ask: ['Research'],
     })
     deps.defaultKeyFile = () => '/tmp/pot-research-1.txt'
     deps.writeKeyFile = (path: string) => {
       written.push(path)
     }
     try {
-      const result = await runProposeWizard([], {}, deps)
+      const result = await runProposeWizard([], {}, deps, { keyFile: dir })
       assert.equal(written[0], join(dir, 'pot-research-1.txt'))
       assert.equal(result.keyFile, join(dir, 'pot-research-1.txt'))
+      assert.match(result.output, /plaintext/)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -228,21 +232,23 @@ describe('runProposeWizard', () => {
     const written: Array<{ path: string; label?: string }> = []
     const events: string[] = []
     const { deps, prompts } = makeDeps({
-      select: ['generate', 'free', 'MAINNET', 'https://zappi.money', 'auto'],
+      select: ['generate', 'free', 'https://zappi.money', 'auto'],
       ask: ['', ''],
     })
     deps.generateMnemonic = () => {
       events.push(`prompts:${prompts.length}`)
       return 'test mnemonic words only for unit tests never use'
     }
-    deps.writeKeyFile = (path: string, _m: string, _a: string, label?: string) => {
-      written.push({ path, label })
+    deps.sealProvision = async () => {
+      written.push({ path: 'sealed', label: 'sealed' })
+      return { provisionId: 'prov_auto' }
     }
     const result = await runProposeWizard([], {}, deps)
     assert.match(result.label, /^pot_[0-9a-f]{8}$/)
-    assert.match(written[0].path, /fake-pot-pot_/)
+    assert.equal(written.length, 1)
+    assert.equal(result.provisionId, 'prov_auto')
     assert.ok(prompts.includes(LABEL_CONFIRM_PROMPT))
-    assert.ok(prompts.includes(NETWORK_PROMPT))
+    assert.ok(!prompts.includes('Which Spark network'))
     assert.ok(prompts.includes(ORIGIN_PROMPT))
     assert.match(events[0], /^prompts:/)
     const seen = Number(events[0].slice('prompts:'.length))
@@ -344,70 +350,70 @@ describe('runProposeWizard', () => {
     assert.match(result.output, /Link copied to clipboard/)
   })
 
-  it('respects ZAPPI_APP_ORIGIN and REGTEST network without prompting', async () => {
+  it('uses MAINNET and the app origin without asking for a network', async () => {
     const { deps, prompts } = makeDeps({
       select: ['existing', 'free'],
-      ask: [REGTEST_ADDRESS, 'Dev'],
+      ask: [ADDRESS, 'Dev'],
       promptOpenLink: { action: 'opened', auto: false },
     })
     const result = await runProposeWizard(
       [],
-      { ZAPPI_APP_ORIGIN: 'https://dev.zappi.money', SPARK_NETWORK: 'REGTEST' },
+      { ZAPPI_APP_ORIGIN: 'https://dev.zappi.money' },
       deps,
     )
     assert.match(result.href!, /https:\/\/dev\.zappi\.money\//)
-    assert.equal(result.network, 'REGTEST')
-    assert.ok(!prompts.includes(NETWORK_PROMPT))
+    assert.equal(result.network, 'MAINNET')
+    assert.ok(!prompts.some((p) => /Spark network/i.test(p)))
     assert.ok(!prompts.includes(ORIGIN_PROMPT))
   })
 
-  it('rejects a mainnet address when network is REGTEST', async () => {
-    const answers = [ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS]
+  it('rejects a regtest address on MAINNET', async () => {
+    const regtest = bech32m.encode('sparkrt', bech32m.toWords(new Uint8Array(32).fill(2)))
+    const answers = [regtest, regtest, regtest, regtest, regtest, regtest]
     const { deps } = makeDeps({ select: ['existing', 'free'], ask: answers })
     await assert.rejects(
-      () => runProposeWizard([], { SPARK_NETWORK: 'REGTEST' }, deps),
+      () => runProposeWizard([], {}, deps),
       /Cancelled/,
     )
   })
 
-  it('asks network and origin before generate when env is unset', async () => {
+  it('asks origin before generate and derives on MAINNET when env is unset', async () => {
     const events: string[] = []
     const { deps, prompts } = makeDeps({
-      select: ['generate', 'free', 'REGTEST', LOCAL_APP_ORIGIN, 'auto'],
+      select: ['generate', 'free', LOCAL_APP_ORIGIN, 'auto'],
       ask: ['', ''],
     })
     deps.generateMnemonic = () => {
       events.push('generate')
       return 'test mnemonic words only for unit tests never use'
     }
-    deps.deriveAddress = async (_mnemonic: string, network: 'MAINNET' | 'REGTEST') => {
+    deps.deriveAddress = async (_mnemonic: string, network: 'MAINNET') => {
       events.push(`derive:${network}`)
-      return REGTEST_ADDRESS
+      return ADDRESS
     }
     const result = await runProposeWizard([], {}, deps)
-    assert.deepEqual(events, ['generate', 'derive:REGTEST'])
-    assert.equal(result.network, 'REGTEST')
+    assert.deepEqual(events, ['generate', 'derive:MAINNET'])
+    assert.equal(result.network, 'MAINNET')
     assert.equal(result.origin, LOCAL_APP_ORIGIN)
     assert.match(result.href!, /^http:\/\/localhost:3000\//)
     assert.match(result.label, /^pot_[0-9a-f]{8}$/)
-    assert.ok(prompts.indexOf(NETWORK_PROMPT) < prompts.indexOf(ORIGIN_PROMPT))
     assert.ok(prompts.indexOf(ORIGIN_PROMPT) < prompts.indexOf(LABEL_CONFIRM_PROMPT))
     assert.ok(!result.output.includes('test mnemonic words'))
   })
 
-  it('prompts for network when SPARK_NETWORK is blank', async () => {
+  it('uses MAINNET when SPARK_NETWORK is blank', async () => {
     const { deps, prompts } = makeDeps({
-      select: ['generate', 'free', 'MAINNET', 'https://zappi.money'],
+      select: ['generate', 'free', 'https://zappi.money'],
       ask: ['Research', ''],
     })
     const result = await runProposeWizard([], { SPARK_NETWORK: '   ' }, deps)
-    assert.ok(prompts.includes(NETWORK_PROMPT))
+    assert.ok(!prompts.some((p) => /Spark network/i.test(p)))
     assert.equal(result.network, 'MAINNET')
   })
 
   it('skips the origin prompt when NEXT_PUBLIC_SITE_URL is set', async () => {
     const { deps, prompts } = makeDeps({
-      select: ['existing', 'free', 'MAINNET'],
+      select: ['existing', 'free'],
       ask: [ADDRESS, 'Research'],
       promptOpenLink: { action: 'opened', auto: false },
     })
@@ -416,15 +422,15 @@ describe('runProposeWizard', () => {
       { NEXT_PUBLIC_SITE_URL: 'http://localhost:3000/app' },
       deps,
     )
-    assert.ok(prompts.includes(NETWORK_PROMPT))
     assert.ok(!prompts.includes(ORIGIN_PROMPT))
     assert.equal(result.origin, 'http://localhost:3000')
+    assert.equal(result.network, 'MAINNET')
     assert.match(result.href!, /^http:\/\/localhost:3000\//)
   })
 
   it('uses a custom origin after an invalid entry', async () => {
     const { deps, prompts } = makeDeps({
-      select: ['existing', 'free', 'MAINNET', 'custom'],
+      select: ['existing', 'free', 'custom'],
       ask: ['notaurl', 'http://127.0.0.1:4000/pots', ADDRESS, 'Lab'],
       promptOpenLink: { action: 'opened', auto: false },
     })
@@ -437,7 +443,7 @@ describe('runProposeWizard', () => {
 
   it('cancels a blank custom origin with guidance', async () => {
     const { deps } = makeDeps({
-      select: ['existing', 'free', 'MAINNET', 'custom'],
+      select: ['existing', 'free', 'custom'],
       ask: [''],
     })
     await assert.rejects(
@@ -446,19 +452,19 @@ describe('runProposeWizard', () => {
     )
   })
 
-  it('refuses an unknown network instead of inventing MAINNET', async () => {
+  it('rejects SPARK_NETWORK other than MAINNET', async () => {
     const { deps } = makeDeps({
-      select: ['generate', 'free', 'testnet'],
+      select: ['generate', 'free'],
     })
     await assert.rejects(
-      () => runProposeWizard([], {}, deps),
-      /Choose MAINNET or REGTEST/,
+      () => runProposeWizard([], { SPARK_NETWORK: 'REGTEST' }, deps),
+      /SPARK_NETWORK must be MAINNET/,
     )
   })
 
   it('blank label then custom name uses the typed name', async () => {
     const { deps, prompts } = makeDeps({
-      select: ['generate', 'free', 'MAINNET', 'https://zappi.money', 'custom'],
+      select: ['generate', 'free', 'https://zappi.money', 'custom'],
       ask: ['', 'Research', ''],
     })
     const result = await runProposeWizard([], {}, deps)
@@ -469,7 +475,7 @@ describe('runProposeWizard', () => {
 
   it('a blank custom name accepts auto pot_<unique>', async () => {
     const { deps } = makeDeps({
-      select: ['generate', 'free', 'MAINNET', 'https://zappi.money', 'custom'],
+      select: ['generate', 'free', 'https://zappi.money', 'custom'],
       ask: ['   ', '', ''],
     })
     const result = await runProposeWizard([], {}, deps)
@@ -487,10 +493,10 @@ describe('runProposeWizard', () => {
 
   it('presets skip questions flags already answered', async () => {
     const { deps, prompts } = makeDeps({
-      select: ['REGTEST'],
+      select: [],
       ask: [''],
     })
-    deps.deriveAddress = async () => REGTEST_ADDRESS
+    deps.deriveAddress = async () => ADDRESS
     const result = await runProposeWizard([], {}, deps, {
       mode: 'generate',
       spendMode: 'free',
@@ -499,14 +505,15 @@ describe('runProposeWizard', () => {
     })
     assert.equal(result.mode, 'generate')
     assert.equal(result.label, 'Research')
-    assert.equal(result.network, 'REGTEST')
+    assert.equal(result.network, 'MAINNET')
     assert.equal(result.origin, 'http://localhost:3000')
     assert.ok(!prompts.some((p) => p.includes('Do you already have a pot')))
     assert.ok(!prompts.some((p) => p === 'How should this pot spend?'))
     assert.ok(!prompts.includes(ORIGIN_PROMPT))
     assert.ok(!prompts.includes(LABEL_CONFIRM_PROMPT))
-    assert.ok(prompts.includes(NETWORK_PROMPT))
-    assert.ok(prompts.some((p) => p.startsWith('Pot key file')))
+    assert.ok(!prompts.some((p) => /Spark network/i.test(p)))
+    assert.ok(!prompts.some((p) => p.startsWith('Pot key file')))
+    assert.equal(result.provisionId, 'prov_test')
   })
 
   it('rejects a preset origin that is not http(s)', async () => {
@@ -525,5 +532,35 @@ describe('runProposeWizard', () => {
         }),
       /http\(s\) URL/,
     )
+  })
+
+  it('generate mode: missing passphrase fails before generating or writing a key', async () => {
+    let wrote = false
+    const { deps } = makeDeps({
+      select: ['generate', 'free'],
+      ask: ['Research', ''],
+    })
+    deps.resolvePassphrase = () => {
+      throw new Error('Set ZAPPI_POT_PASSPHRASE as a host secret to unlock the free-pot seed registry.')
+    }
+    deps.writeKeyFile = () => {
+      wrote = true
+    }
+    await assert.rejects(
+      () => runProposeWizard([], { SPARK_NETWORK: 'MAINNET' }, deps),
+      /ZAPPI_POT_PASSPHRASE/,
+    )
+    assert.equal(wrote, false, 'must not write a key file when the passphrase is missing')
+  })
+
+  it('generate mode: success output says the seed was sealed and never prints it', async () => {
+    const { deps } = makeDeps({
+      select: ['generate', 'free'],
+      ask: ['Research'],
+    })
+    const result = await runProposeWizard([], { SPARK_NETWORK: 'MAINNET' }, deps)
+    assert.match(result.output, /No plaintext key file/)
+    assert.match(result.output, /pots registry bind --provision prov_test/)
+    assert.ok(!result.output.includes('test mnemonic words'))
   })
 })

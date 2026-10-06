@@ -18,7 +18,9 @@ import {
   PRODUCTION_ZAPPI_APP_ORIGIN,
   STAGING_ZAPPI_APP_ORIGIN,
   resolveAppOrigin,
+  resolvePotPassphrase,
   resolveSparkNetwork,
+  type PotEnv,
 } from './env.js'
 import {
   ask,
@@ -51,15 +53,6 @@ export const AUTH_MODE_OPTIONS: SelectOption[] = [
 ]
 
 const AUTH_MODE_PROMPT = 'How should this pot spend?'
-
-/** Asked only when `SPARK_NETWORK` is unset. REGTEST is first because the default API is staging. */
-export const NETWORK_PROMPT =
-  'Which Spark network matches the Zappi app you will register in?'
-
-export const NETWORK_OPTIONS: SelectOption[] = [
-  { label: 'REGTEST', value: 'REGTEST' },
-  { label: 'MAINNET', value: 'MAINNET' },
-]
 
 /** Local web. Chosen only when the human picks it or sets `ZAPPI_APP_ORIGIN`. */
 export const LOCAL_APP_ORIGIN = LOCAL_ZAPPI_APP_ORIGIN
@@ -95,9 +88,10 @@ function formatFreeSuccess(input: {
   sparkAddress: string
   label: string
   href: string
-  network: 'MAINNET' | 'REGTEST'
+  network: 'MAINNET'
   origin: string
   keyFile?: string
+  provisionId?: string
   openResult?: { action: string; auto: boolean }
 }): string {
   const lines = [
@@ -109,7 +103,13 @@ function formatFreeSuccess(input: {
   ]
   if (input.keyFile) {
     lines.push(kv('key file', input.keyFile))
-    lines.push(infoLine('Set ZAPPI_POT_SEED as a host secret. Do not cat the file.'))
+    lines.push(infoLine('This file is plaintext. It is an explicit legacy opt-out and the only recoverable backup until you import it.'))
+    lines.push(infoLine(`  zappi-cli pots registry import --pot-id <id> --from-file ${input.keyFile} --network ${input.network} --account-index 1 --address ${input.sparkAddress}`))
+    lines.push(infoLine('Anyone who reads this file can drain the pot. Do not cat, print, email, or paste it.'))
+  } else if (input.provisionId) {
+    lines.push(infoLine(`Seed sealed as provision ${input.provisionId}. No plaintext key file was written.`))
+    lines.push(infoLine('Set ZAPPI_POT_PASSPHRASE as a host secret.'))
+    lines.push(infoLine(`After registration, bind it: zappi-cli pots registry bind --provision ${input.provisionId} --pot-id <id>`))
   } else {
     lines.push(infoLine('Store the pot key as ZAPPI_POT_SEED or a mode 0600 file.'))
   }
@@ -136,26 +136,47 @@ export interface WizardDeps {
   ask: (prompt: string) => Promise<string>
   select: (prompt: string, options: SelectOption[]) => Promise<string>
   generateMnemonic: () => string
-  deriveAddress: (mnemonic: string, network: 'MAINNET' | 'REGTEST') => Promise<string>
+  deriveAddress: (mnemonic: string, network: 'MAINNET') => Promise<string>
   writeKeyFile: (path: string, mnemonic: string, sparkAddress: string, label?: string) => void
   defaultKeyFile: (label?: string) => string
   promptOpenLink: (href: string, options?: { autoOpenMs?: number; headline?: string; openBrowser?: boolean }) => Promise<{ action: string; auto: boolean }>
+  /**
+   * Require the host-managed unlock secret before unattended pot creation.
+   * Missing/placeholder throws before any mnemonic is generated or written.
+   * (1-456 stage 4 / 1-460)
+   */
+  resolvePassphrase: (env: PotEnvSubset) => string
+  /**
+   * Seal a generated mnemonic before success. Default writes an encrypted
+   * provisioning record. Tests replace this so they do not touch `~/.zappi`.
+   */
+  sealProvision: (input: {
+    seed: string
+    sparkAddress: string
+    label?: string
+    network: 'MAINNET'
+    passphrase: string
+    env: PotEnvSubset
+  }) => Promise<{ provisionId: string }>
 }
 
 export interface PotEnvSubset {
   ZAPPI_APP_ORIGIN?: string
   NEXT_PUBLIC_SITE_URL?: string
   SPARK_NETWORK?: string
+  /** Unlock secret for the encrypted free-pot seed registry. (1-456 stage 4) */
+  ZAPPI_POT_PASSPHRASE?: string
 }
 
 export interface RunProposeWizardResult {
   mode: WizardMode
   spendMode: PotSpendMode
   label: string
-  network: 'MAINNET' | 'REGTEST'
+  network: 'MAINNET'
   origin: string
   sparkAddress?: string
   keyFile?: string
+  provisionId?: string
   href?: string
   openResult?: { action: string; auto: boolean }
   output: string
@@ -175,10 +196,6 @@ const MODE_PROMPT = `Do you already have a pot, or should this host generate a n
 
 const LABEL_HINT = '(blank = confirm auto-name pot_<unique>)'
 
-export function hasSparkNetworkEnv(env: PotEnvSubset): boolean {
-  return Boolean(env.SPARK_NETWORK?.trim())
-}
-
 export function hasAppOriginEnv(env: PotEnvSubset): boolean {
   return Boolean(env.ZAPPI_APP_ORIGIN?.trim() || env.NEXT_PUBLIC_SITE_URL?.trim())
 }
@@ -197,16 +214,8 @@ export function parseHttpOrigin(raw: string): string | null {
 const ORIGIN_GUIDANCE =
   'Choose a Zappi app origin: staging (https://dev.zappi.money), production (https://zappi.money), local (http://localhost:3000), or a custom http(s) URL.'
 
-async function resolveWizardNetwork(
-  env: PotEnvSubset,
-  selectFn: WizardDeps['select'],
-): Promise<'MAINNET' | 'REGTEST'> {
-  if (hasSparkNetworkEnv(env)) return resolveSparkNetwork(env)
-  const choice = (await selectFn(NETWORK_PROMPT, NETWORK_OPTIONS)).trim().toUpperCase()
-  if (choice === 'MAINNET' || choice === 'REGTEST') return choice
-  throw new Error(
-    'Choose MAINNET or REGTEST. The network must match the Zappi app you will register in.',
-  )
+function resolveWizardNetwork(env: PotEnvSubset): 'MAINNET' {
+  return resolveSparkNetwork(env)
 }
 
 async function askCustomOrigin(askFn: WizardDeps['ask']): Promise<string> {
@@ -279,6 +288,24 @@ export async function runProposeWizard(
     writeKeyFile: deps.writeKeyFile ?? writeKeyFile,
     defaultKeyFile: deps.defaultKeyFile ?? defaultKeyFile,
     promptOpenLink: deps.promptOpenLink ?? promptOpenLink,
+    resolvePassphrase: deps.resolvePassphrase ?? ((e) => resolvePotPassphrase(e as PotEnv)),
+    sealProvision:
+      deps.sealProvision ??
+      (async (input) => {
+        const { saveProvisionedSeed } = await import('./pot-registry.js')
+        return saveProvisionedSeed(
+          {
+            ...(input.label ? { label: input.label } : {}),
+            sparkAddress: input.sparkAddress,
+            network: input.network,
+            derivationMode: 'spark',
+            accountIndex: 1,
+            seed: input.seed,
+          },
+          input.passphrase,
+          { env: input.env as PotEnv },
+        )
+      }),
   }
 
   const inviteRef = inviteRefFromArgv(argv)
@@ -304,7 +331,7 @@ export async function runProposeWizard(
   }
 
   // Step 3 — network, then app origin. Both happen before generate/register.
-  const network = await resolveWizardNetwork(env, d.select)
+  const network = resolveWizardNetwork(env)
   const origin = await resolveWizardOrigin(env, d.ask, d.select, presets.origin)
 
   if (mode === 'existing') {
@@ -436,8 +463,11 @@ export async function runProposeWizard(
     )
   }
 
+  // Require the host-managed unlock secret BEFORE the mnemonic exists.
+  const passphrase = d.resolvePassphrase(env)
+
   // generate mode ---------------------------------------------------------
-  // Label first (feeds the key-file name). Blank confirms auto pot_<unique>.
+  // Label first. Blank confirms auto pot_<unique>.
   const label = presets.label?.trim()
     ? presets.label.trim()
     : await resolveWizardLabel(
@@ -446,20 +476,29 @@ export async function runProposeWizard(
         `Name your new pot ${LABEL_HINT}:`,
       )
 
-  // Key file confirmation. A directory (or trailing slash) writes
-  // the suggested filename inside it so we never EISDIR after generating.
-  const suggested = d.defaultKeyFile(label)
-  const keyFile = presets.keyFile?.trim()
-    ? resolveKeyFilePath(presets.keyFile, suggested)
-    : resolveKeyFilePath(
-        await d.ask(`Pot key file [${suggested}]:`),
-        suggested,
-      )
-
   process.stdout.write('Generating pot key…\n')
   const mnemonic = d.generateMnemonic()
   const sparkAddress = await d.deriveAddress(mnemonic, network)
-  d.writeKeyFile(keyFile, mnemonic, sparkAddress, label)
+
+  // `--key-file` is the explicit plaintext opt-out. Otherwise the mnemonic
+  // stays in memory and is sealed before this function reports success.
+  let keyFile: string | undefined
+  let provisionId: string | undefined
+  if (presets.keyFile?.trim()) {
+    const suggested = d.defaultKeyFile(label)
+    keyFile = resolveKeyFilePath(presets.keyFile, suggested)
+    d.writeKeyFile(keyFile, mnemonic, sparkAddress, label)
+  } else {
+    const sealed = await d.sealProvision({
+      seed: mnemonic,
+      sparkAddress,
+      label,
+      network,
+      passphrase,
+      env,
+    })
+    provisionId = sealed.provisionId
+  }
 
   const href = buildRegisterDeepLink({
     sparkAddress,
@@ -482,6 +521,7 @@ export async function runProposeWizard(
     network,
     origin,
     keyFile,
+    provisionId,
     openResult,
   })
   return {
@@ -492,6 +532,7 @@ export async function runProposeWizard(
     origin,
     sparkAddress,
     keyFile,
+    provisionId,
     href,
     openResult,
     output,

@@ -42,8 +42,7 @@ terminal into their Zappi account. It opens the normal Zappi sign-in screen
 The wizard asks whether the pot already exists or should be generated, how it
 should spend (`free` or `auth_required`). Generating a key is only for `free`.
 An approval-required pot is created in Zappi; this host never stores that key.
-Which Spark network matches the app
-(MAINNET or REGTEST, skipped when `SPARK_NETWORK` is set), and which app origin
+Spark is MAINNET (account index 1). `SPARK_NETWORK` unset is MAINNET; any other value is rejected. The wizard asks which app origin
 to open (local, staging, production, or a custom URL — skipped when
 `ZAPPI_APP_ORIGIN` or `NEXT_PUBLIC_SITE_URL` is set). A label you type is kept.
 A blank label asks you to confirm auto `pot_<unique>` or a custom name. It then

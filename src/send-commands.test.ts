@@ -1,6 +1,22 @@
 import assert from 'node:assert/strict'
+import { bech32m } from '@scure/base'
 import { describe, it } from 'node:test'
-import { classifySendTarget } from './send-commands.js'
+import { classifySendTarget, runSendSparkUsdb } from './send-commands.js'
+import type { PotContext } from './pot-context.js'
+
+function fakeContext(overrides: Partial<Pick<PotContext, 'potId' | 'sparkAddress' | 'network' | 'accountIndex'>> = {}): PotContext {
+  return Object.freeze({
+    potId: 'pot_1',
+    sparkAddress: 'spark1source',
+    spendMode: 'free' as const,
+    network: 'MAINNET' as const,
+    derivationMode: 'spark' as const,
+    accountIndex: 1,
+    source: 'registry' as const,
+    getSeed: () => 'seed',
+    ...overrides,
+  }) as PotContext
+}
 
 describe('classifySendTarget', () => {
   it('routes @user to internal', () => {
@@ -40,5 +56,26 @@ describe('classifySendTarget', () => {
 
   it('routes asset without network as external (caller must supply network)', () => {
     assert.equal(classifySendTarget('bc1qabc', { asset: 'btc' }), 'external')
+  })
+})
+
+describe('runSendSparkUsdb pre-sign gate', () => {
+  // Valid MAINNET spark address (bech32m, HRP spark).
+  const MAINNET_ADDR =
+    'spark1pgssyele0qrcjdheeq2a0zmpwdwvj3r4f4stkuju0fp36g6grapv2w7l8am2cp'
+
+  it('rejects a regtest receiver before signing (no SDK call)', async () => {
+    const regtest = bech32m.encode('sparkrt', bech32m.toWords(new Uint8Array(32).fill(4)))
+    await assert.rejects(
+      () =>
+        runSendSparkUsdb(
+          regtest,
+          100,
+          'plain',
+          { ZAPPI_POT_ID: 'pot_1' },
+          () => Promise.resolve(fakeContext()),
+        ),
+      /Spark address network is REGTEST but the pot network is MAINNET/,
+    )
   })
 })
