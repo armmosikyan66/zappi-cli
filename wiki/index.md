@@ -1,10 +1,10 @@
 ---
 type: index
 tags: [meta, cli]
-updated: 2026-09-30
+updated: 2026-10-06
 source_count: 3
 page_count: 22
-last_change: 2026-09-30 Clean Code skill in .agents/skills and wiki.
+last_change: 2026-10-06 Pointer to the zappi-cli-mcp wiki.
 ---
 
 # zappi-cli Wiki
@@ -37,6 +37,7 @@ LLM-maintained knowledge base for `@zappimoney/zappi-cli` (`zappi-cli`). The age
 ## Overview
 
 - [[overview]] — what the CLI is, two surfaces (buyer vs wallet), and what it will not do.
+- The stdio MCP wrapper is a separate package. Its wiki starts at `packages/zappi-cli-mcp/wiki/index.md`. It calls this CLI in-process. It does not replace this wiki.
 
 ## Usages
 

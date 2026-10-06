@@ -1,10 +1,14 @@
 ---
 type: log
 tags: [meta]
-updated: 2026-09-30
+updated: 2026-10-06
 ---
 
 # Wiki Log
+
+## [2026-10-06] manual | Pointer to zappi-cli-mcp wiki
+- touched: wiki/index.md
+- notes: `@zappimoney/zappi-cli-mcp` has its own wiki at `packages/zappi-cli-mcp/wiki`. This CLI wiki stays the command reference. The MCP server calls `runCli` and does not replace these pages.
 
 ## [2026-10-01] manual | Remove TypeSafe judge
 - deleted: src/eval/
