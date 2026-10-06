@@ -140,7 +140,7 @@ export async function createSpendRequestResult(
   if (input.memo) body.memo = input.memo
 
   const response = await fetchPaywall(
-    `/api/wallet/self-custody/pots/${encodeURIComponent(potId)}/spend-requests`,
+    `/api/wallet/pots/${encodeURIComponent(potId)}/spend-requests`,
     {
       method: 'POST',
       headers: {

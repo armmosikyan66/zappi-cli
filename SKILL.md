@@ -131,7 +131,7 @@ Auth-required pot balance uses the attach token **inside** the CLI:
 ```bash
 zappi-cli balance --pot <potId>
 # or ZAPPI_POT_ID set; uses x-zappi-pot-client against
-# GET /api/wallet/self-custody/pots/:potId/balance
+# GET /api/wallet/pots/:potId/client/balance
 ```
 
 Wallet-scope `balance` (no `--pot` / no pot id) still needs `zappi-cli login` or env session credentials. If login apiUrl mismatches the resolved API, run `zappi-cli login` again or `zappi-cli logout` — never bypass.

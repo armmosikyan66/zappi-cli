@@ -137,7 +137,7 @@ describe('runBalance', () => {
     assert.equal(parsed.stale, false)
     assert.equal(
       calls[0].url,
-      'https://api.test/api/wallet/self-custody/pots/p-agent/balance',
+      'https://api.test/api/wallet/pots/p-agent/client/balance',
     )
     assert.equal(calls[0].method, 'GET')
     assert.equal(calls[0].headers['x-zappi-pot-client'], 'zpc_test_token_value')
@@ -166,7 +166,7 @@ describe('runBalance', () => {
     assert.equal(parsed.auth, 'pot_client')
     assert.equal(
       calls[0].url,
-      'https://api.test/api/wallet/self-custody/pots/p2/balance',
+      'https://api.test/api/wallet/pots/p2/client/balance',
     )
     assert.equal(calls[0].headers['x-zappi-pot-client'], 'zpc_agent_only')
   })

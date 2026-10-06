@@ -102,7 +102,7 @@ describe('createSpendRequestResult', () => {
     assert.ok(seen)
     assert.match(
       seen.url,
-      /\/api\/wallet\/self-custody\/pots\/pot_1\/spend-requests$/,
+      /\/api\/wallet\/pots\/pot_1\/spend-requests$/,
     )
     const headers = new Headers(seen.init?.headers)
     assert.equal(headers.get('x-zappi-pot-client'), TOKEN)

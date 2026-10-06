@@ -183,7 +183,7 @@ export interface PotClientBalance {
 /**
  * GET pot balance with the attach token only — no user login.
  * Nest zappi-nest#84 tip 5dc4f07:
- * `GET /api/wallet/self-custody/pots/:potId/balance` + `x-zappi-pot-client`
+ * `GET /api/wallet/pots/:potId/client/balance` + `x-zappi-pot-client`
  * Allowlist with spend-requests POST+GET.
  */
 export async function fetchPotClientBalance(
@@ -193,7 +193,7 @@ export async function fetchPotClientBalance(
 ): Promise<PotClientBalance> {
   const clientToken = resolvePotClientToken(env)
   const response = await fetchPaywall(
-    `/api/wallet/self-custody/pots/${encodeURIComponent(potId)}/balance`,
+    `/api/wallet/pots/${encodeURIComponent(potId)}/client/balance`,
     {
       method: 'GET',
       headers: {

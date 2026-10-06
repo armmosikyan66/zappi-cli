@@ -37,7 +37,7 @@ Rejected flags: `--seed`, `--mnemonic`, `--phrase`, `--recovery`, `--access-toke
 
 ## Steps
 
-1. POST `/api/wallet/self-custody/pots/$ZAPPI_POT_ID/spend-requests` with header `x-zappi-pot-client` and body `{ amountCents, destinationAddress }` (plus optional `destinationChain`, `memo`).
+1. POST `/api/wallet/pots/$ZAPPI_POT_ID/spend-requests` with header `x-zappi-pot-client` and body `{ amountCents, destinationAddress }` (plus optional `destinationChain`, `memo`).
 2. Expect 200 or 201 and a ticket `id`.
 3. Build or strip the approve URL to `/?panel=pots&spend=<id>` with **no** `code=` and **no** `zpc_`. If the URL would leak either, refuse to print it.
 
