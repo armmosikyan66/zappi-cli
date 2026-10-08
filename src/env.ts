@@ -180,7 +180,7 @@ export function hostHasPotClientToken(env: PotEnv = process.env): boolean {
 
 /** Fail closed: no attach → no request. Do not ask the human to paste zpc_. */
 export const POT_NOT_ATTACHED_ERROR =
-  'This pot is not attached to the account. The bot cannot request, pay, consume, or invite until pairing is approved. Run `zappi-cli pots attach --spend-mode auth_required` and paste only the pairing URL. If the link does not open, they paste the verification code on the Zappi pairing page — not in chat. Do not print or check a verification code. Do not ask for a zpc_ token, session token, pot seed, or recovery phrase.'
+  'This pot is not attached to the account. The bot cannot request, pay, consume, or invite until pairing is approved. Run `zappi-cli pots attach --pot <potId> --spend-mode auth_required` and paste only the pairing URL. If the link does not open, they paste the verification code on the Zappi pairing page — not in chat. Do not print or check a verification code. Do not ask for a zpc_ token, session token, pot seed, or recovery phrase.'
 
 /**
  * Pot client token for `request`. Env wins, else `~/.zappi/pot-client-*.txt`

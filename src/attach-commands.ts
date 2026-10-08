@@ -14,6 +14,14 @@ import {
   writePotClientTokenFile,
 } from './attach-device-secret.js'
 import {
+  ATTACH_POT_REQUIRED_ERROR,
+  assertCreateNamesPot,
+  assertPollKeepsPot,
+  potIdMatches,
+  publicPotId,
+  resolveAttachPotId,
+} from './attach-pot.js'
+import {
   errorLine,
   heading,
   infoLine,
@@ -30,17 +38,6 @@ const NL = '\n'
  */
 export const ATTACH_CODE_HANDOFF =
   'If the link does not open, paste the verification code on the Zappi pairing page. Do not paste that code into chat. Do not print or check the code.'
-
-/** Public pot id on the pairing link. Full UUID, or a hex prefix of at least 8 characters. */
-const POT_UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const POT_ID_PREFIX = /^[0-9a-f]{8,32}$/i
-
-function publicPotId(value: string | undefined): string | null {
-  const id = value?.trim() ?? ''
-  if (POT_UUID.test(id) || POT_ID_PREFIX.test(id)) return id
-  return null
-}
 
 function jsonOut(result: unknown): string {
   return JSON.stringify(result, null, 2)
@@ -62,10 +59,8 @@ export function botAttachApproveUrl(
     return approveUrl
   }
   url.searchParams.delete('code')
-  const id = potId?.trim() ?? ''
-  if (POT_UUID.test(id) || POT_ID_PREFIX.test(id)) {
-    url.searchParams.set('pot', id)
-  }
+  const id = publicPotId(potId)
+  if (id) url.searchParams.set('pot', id)
   if (appOrigin?.trim()) return relocateAppLink(url.toString(), appOrigin)
   return url.toString()
 }
@@ -91,6 +86,7 @@ export async function reclaimIfPossible(
   client: Awaited<ReturnType<typeof resolveZappiClient>>,
   requestId: string,
   env: PotEnv,
+  expectedPotId?: string | null,
 ): Promise<{
   potId?: string | null
   grantId?: string | null
@@ -103,6 +99,11 @@ export async function reclaimIfPossible(
     return { potClientTokenReceived: false, potClientTokenPath: null }
   }
   const creds = await client.reclaimPotAttachCredentials(requestId, deviceCode)
+  if (expectedPotId && creds.potId && !potIdMatches(expectedPotId, creds.potId)) {
+    throw new Error(
+      `Pairing credentials are for a different pot than ${expectedPotId}. The client token was not stored.`,
+    )
+  }
   let potClientTokenPath: string | null = null
   let potClientTokenReceived = false
   if (creds.potClientToken?.trim()) {
@@ -119,7 +120,11 @@ export async function reclaimIfPossible(
 }
 
 /**
- * `zappi-cli pots attach [--spend-mode free|auth_required] [--spark-address <addr>] [--label L] [--no-poll]`
+ * `zappi-cli pots attach [--pot <potId>] [--spend-mode free|auth_required] [--spark-address <addr>] [--label L] [--no-poll]`
+ *
+ * Auth-required attach must name the pot (`--pot` or `ZAPPI_POT_ID`; both must
+ * agree). The pot id is always sent to Nest, and Nest must echo it back before
+ * a link is printed (1-554).
  *
  * Creates a pending attach (device-code P1), stores deviceCode as a host secret,
  * opens the approve URL for humans, polls public status, then reclaims
@@ -145,13 +150,14 @@ export async function runPotAttach(
       infoLine(POT_ALREADY_ATTACHED_ERROR, mode),
     ].join(NL)
   }
+  const requestedPotId = resolveAttachPotId({
+    flag: strings.pot ?? booleans.pot,
+    env: env.ZAPPI_POT_ID,
+  })
   const client = await resolveZappiClient(env)
   const spendMode = strings['spend-mode'] as 'auth_required' | 'free' | undefined
-  const requestedPotId = publicPotId(env.ZAPPI_POT_ID)
   if (spendMode === 'auth_required' && !requestedPotId) {
-    throw new Error(
-      'Set ZAPPI_POT_ID before pots attach. The approve link must name that pot. Do not print a link without it.',
-    )
+    throw new Error(ATTACH_POT_REQUIRED_ERROR)
   }
   const body: {
     sparkAddress?: string
@@ -165,6 +171,9 @@ export async function runPotAttach(
   if (requestedPotId) body.potId = requestedPotId
 
   const pending = await client.createPotAttach(body)
+  if (requestedPotId) {
+    assertCreateNamesPot(pending, requestedPotId)
+  }
   const approveUrl = botAttachApproveUrl(
     pending.approveUrl,
     requestedPotId,
@@ -219,9 +228,11 @@ export async function runPotAttach(
   // Poll public status until terminal (never expect potClientToken on poll).
   const deadline = Date.now() + 15 * 60 * 1000
   let poll = await client.pollPotAttach(pending.requestId)
+  if (requestedPotId) assertPollKeepsPot(poll, requestedPotId)
   while (poll.status === 'pending' && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 2000))
     poll = await client.pollPotAttach(pending.requestId)
+    if (requestedPotId) assertPollKeepsPot(poll, requestedPotId)
   }
 
   let potId = poll.potId ?? null
@@ -230,7 +241,12 @@ export async function runPotAttach(
   let potClientTokenPath: string | null = null
 
   if (poll.status === 'approved') {
-    const reclaimed = await reclaimIfPossible(client, pending.requestId, env)
+    const reclaimed = await reclaimIfPossible(
+      client,
+      pending.requestId,
+      env,
+      requestedPotId,
+    )
     if (reclaimed.potId) potId = reclaimed.potId
     if (reclaimed.grantId) grantId = reclaimed.grantId
     potClientTokenReceived = reclaimed.potClientTokenReceived

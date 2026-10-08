@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import { botAttachApproveUrl, runPotAttach, runPotAttachStatus } from './attach-commands.js'
+import { runCli } from './cli.js'
 import { attachDeviceCodePath, potClientTokenPath } from './attach-device-secret.js'
 
 interface Captured {
@@ -117,7 +118,7 @@ describe('attach commands', () => {
           userCode: 'PP3X-NB6Y',
           deviceCode: 'device_secret_once',
           approveUrl:
-            'https://dev.zappi.money/?panel=pots&attach=r1&code=PP3X-NB6Y',
+            'https://dev.zappi.money/?panel=pots&attach=r1&code=PP3X-NB6Y&pot=f7b81134-3b01-49de-b114-ad433cb3bbac',
           expiresAt: '2099-01-01',
         })
       }
@@ -293,5 +294,178 @@ describe('attach commands', () => {
 
   it('runPotAttachStatus throws without a requestId', async () => {
     await assert.rejects(() => runPotAttachStatus([], 'json', ENV), /Usage/)
+  })
+})
+
+describe('pots attach names the pot (1-554)', () => {
+  const POT = 'f7b81134-3b01-49de-b114-ad433cb3bbac'
+  const OTHER = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d'
+  let originalFetch: typeof fetch | undefined
+  let home: string
+  let ENV: Record<string, string>
+
+  /** Nest-shaped create: stores potId and echoes it on the approve link. */
+  function nest(options: {
+    echoPot?: string | null
+    poll?: Record<string, unknown>
+    credentials?: Record<string, unknown>
+    calls?: Captured[]
+  }) {
+    return mockFetch((req) => {
+      options.calls?.push(req)
+      if (req.url.endsWith('/api/wallet/pots/attach') && req.method === 'POST') {
+        const echo = options.echoPot === undefined ? (req.body as { potId?: string }).potId : options.echoPot
+        return jsonResponse({
+          requestId: 'r1',
+          deviceCode: 'device_secret_once',
+          approveUrl: `https://dev.zappi.money/?panel=pots&attach=r1${echo ? `&pot=${echo}` : ''}`,
+          expiresAt: '2099-01-01',
+          spendMode: 'auth_required',
+        })
+      }
+      if (req.url.endsWith('/api/wallet/pots/attach/r1') && req.method === 'GET') {
+        return jsonResponse({ requestId: 'r1', ...(options.poll ?? { status: 'pending', requestedPotId: POT }) })
+      }
+      if (req.url.endsWith('/api/wallet/pots/attach/r1/credentials')) {
+        return jsonResponse({ requestId: 'r1', ...(options.credentials ?? {}) })
+      }
+      return jsonResponse({ ok: false }, 404)
+    })
+  }
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch
+    home = mkdtempSync(join(tmpdir(), 'zappi-attach-pot-'))
+    ENV = { ZAPPI_ACCESS_TOKEN: 'jwt', ZAPPI_API_URL: 'https://api.test', ZAPPI_HOME: home }
+  })
+  afterEach(() => {
+    globalThis.fetch = originalFetch!
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  it('--pot alone names the pot: sent to Nest and on the pairing link', async () => {
+    const calls: Captured[] = []
+    globalThis.fetch = nest({ calls })
+    const out = await runPotAttach(['--pot', POT, '--spend-mode', 'auth_required', '--no-poll'], 'json', ENV)
+    const create = calls.find((c) => c.method === 'POST')
+    assert.deepEqual(create?.body, { spendMode: 'auth_required', potId: POT })
+    assert.match(JSON.parse(out).pending.approveUrl, new RegExp(`pot=${POT}$`))
+  })
+
+  it('runs the web copy command through the dispatcher', async () => {
+    const calls: Captured[] = []
+    globalThis.fetch = nest({ calls })
+    const saved = { ...process.env }
+    Object.assign(process.env, ENV)
+    delete process.env.ZAPPI_POT_ID
+    try {
+      const out = await runCli(['pots', 'attach', '--pot', POT, '--spend-mode', 'auth_required', '--no-poll'], 'json')
+      assert.equal((calls[0].body as { potId?: string }).potId, POT)
+      assert.match(out, new RegExp(`pot=${POT}`))
+    } finally {
+      for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]
+      Object.assign(process.env, saved)
+    }
+  })
+
+  it('accepts --pot and ZAPPI_POT_ID when they name the same pot', async () => {
+    globalThis.fetch = nest({})
+    const out = await runPotAttach(['--pot', POT.toUpperCase(), '--spend-mode', 'auth_required', '--no-poll'], 'json', {
+      ...ENV,
+      ZAPPI_POT_ID: POT,
+    })
+    assert.equal(JSON.parse(out).ok, true)
+  })
+
+  it('fails closed when --pot and ZAPPI_POT_ID disagree, before calling Nest', async () => {
+    const calls: Captured[] = []
+    globalThis.fetch = nest({ calls })
+    await assert.rejects(
+      () => runPotAttach(['--pot', POT, '--spend-mode', 'auth_required', '--no-poll'], 'json', { ...ENV, ZAPPI_POT_ID: OTHER }),
+      /Conflicting pot selectors: --pot f7b81134.* but ZAPPI_POT_ID=0a1b2c3d/,
+    )
+    assert.equal(calls.length, 0)
+  })
+
+  it('rejects --pot without a value and a malformed --pot without echoing it', async () => {
+    const calls: Captured[] = []
+    globalThis.fetch = nest({ calls })
+    await assert.rejects(
+      () => runPotAttach(['--spend-mode', 'auth_required', '--pot'], 'json', ENV),
+      /--pot needs a pot id/,
+    )
+    await assert.rejects(
+      () => runPotAttach(['--pot', 'zpc_oops_secret', '--spend-mode', 'auth_required'], 'json', ENV),
+      (error: Error) => /--pot is not a pot id/.test(error.message) && !error.message.includes('zpc_oops_secret'),
+    )
+    assert.equal(calls.length, 0)
+  })
+
+  it('rejects an auth-required attach with no pot and tells the operator the --pot shape', async () => {
+    const calls: Captured[] = []
+    globalThis.fetch = nest({ calls })
+    await assert.rejects(
+      () => runPotAttach(['--spend-mode', 'auth_required'], 'json', ENV),
+      /pots attach --pot <potId> --spend-mode auth_required/,
+    )
+    assert.equal(calls.length, 0)
+  })
+
+  it('prints no link and stores no device code when Nest does not echo the pot', async () => {
+    globalThis.fetch = nest({ echoPot: null })
+    await assert.rejects(
+      () => runPotAttach(['--pot', POT, '--spend-mode', 'auth_required', '--no-poll'], 'json', ENV),
+      /did not confirm pot f7b81134/,
+    )
+    assert.equal(existsSync(attachDeviceCodePath('r1', ENV)), false)
+  })
+
+  it('prints no link when Nest names a different pot', async () => {
+    globalThis.fetch = nest({ echoPot: OTHER })
+    await assert.rejects(
+      () => runPotAttach(['--pot', POT, '--spend-mode', 'auth_required', '--no-poll'], 'json', ENV),
+      /named a different pot/,
+    )
+    assert.equal(existsSync(attachDeviceCodePath('r1', ENV)), false)
+  })
+
+  it('does not store the client token when approval bound a different pot', async () => {
+    const calls: Captured[] = []
+    globalThis.fetch = nest({
+      calls,
+      poll: { status: 'approved', potId: OTHER },
+      credentials: { status: 'approved', potId: OTHER, potClientToken: 'zpc_wrong_pot' },
+    })
+    await assert.rejects(
+      () => runPotAttach(['--pot', POT, '--spend-mode', 'auth_required'], 'json', ENV),
+      /approved for a different pot/,
+    )
+    assert.equal(calls.some((c) => c.url.endsWith('/credentials')), false)
+    assert.equal(existsSync(potClientTokenPath('r1', ENV)), false)
+  })
+
+  it('does not store the client token when reclaim names a different pot', async () => {
+    globalThis.fetch = nest({
+      poll: { status: 'approved', potId: POT },
+      credentials: { status: 'approved', potId: OTHER, potClientToken: 'zpc_wrong_pot' },
+    })
+    await assert.rejects(
+      () => runPotAttach(['--pot', POT, '--spend-mode', 'auth_required'], 'json', ENV),
+      /credentials are for a different pot/,
+    )
+    assert.equal(existsSync(potClientTokenPath('r1', ENV)), false)
+  })
+
+  it('stores the client token when the named prefix pot is approved', async () => {
+    globalThis.fetch = nest({
+      poll: { status: 'approved', potId: POT },
+      credentials: { status: 'approved', potId: POT, grantId: 'g1', potClientToken: 'zpc_right_pot' },
+    })
+    const out = await runPotAttach(['--pot', POT.slice(0, 8), '--spend-mode', 'auth_required'], 'json', ENV)
+    const parsed = JSON.parse(out)
+    assert.equal(parsed.status, 'approved')
+    assert.equal(parsed.potId, POT)
+    assert.equal(parsed.potClientTokenReceived, true)
+    assert.equal(out.includes('zpc_right_pot'), false)
   })
 })

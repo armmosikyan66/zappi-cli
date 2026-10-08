@@ -168,7 +168,12 @@ npm run build
 
 ## Pot attach (device code / 1-203)
 
-`zappi-cli pots attach` creates a pending pairing. Nest returns `deviceCode` **once** to the agent host and an `approveUrl` that carries only the request id. The verification code is not in that response and not in the URL.
+`zappi-cli pots attach --pot <potId> --spend-mode auth_required` creates a pending pairing for that pot (1-554).
+
+- **Pot is required for auth-required:** pass `--pot <potId>` or set `ZAPPI_POT_ID`. If both are set and differ, the command fails closed. The pot id is always sent to Nest as `potId`.
+- **Nest must confirm the pot:** the create response (`approveUrl` `pot=` or a `requestedPotId` field) must name the same pot, or no link is printed and no device code is stored. Polling and reclaim fail closed if the request or the approval names a different pot; the client token is then not stored.
+
+Nest returns `deviceCode` **once** to the agent host and an `approveUrl` that carries only the request id. The verification code is not in that response and not in the URL.
 
 - **Host secret:** the CLI writes `deviceCode` to `~/.zappi/attach-device-<requestId>.txt` (mode `0600`). You can also set `ZAPPI_ATTACH_DEVICE_CODE` for reclaim. **Never echo / never commit.**
 - **Human:** open/print `approveUrl` only.

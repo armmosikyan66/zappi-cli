@@ -1,0 +1,41 @@
+# Linear 1-554 E2E proof: copied command -> CLI attach -> mock Nest -> /pair names the pot
+date: 2026-10-08T07:50:55.663Z
+cli: /Users/armanmosikyan/Documents/zappi/.worktrees/zappi-cli-1-554 (zappi-cli 0.3.10, branch build)
+web helpers: /tmp/zappi-1554-web/lib/pots/{pairing-identity,copy}.ts
+
+## 1. Happy path (exact web copy)
+copied: zappi-cli pots attach --pot b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d --spend-mode auth_required
+attach-start body recorded by mock Nest: {"spendMode":"auth_required","potId":"b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d"}
+pairing link the CLI opened: http://localhost:3000/?panel=pots&attach=<requestId>&pot=b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+/pair lookup (GET /attach/:id/client): {"status":"pending","spendMode":"auth_required","requestedPotId":"b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d"}
+/pair render (web helpers): {"deadEnd":false,"pairLabel":"Research bot","potId":"b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d","modeConflict":false,"actions":["Approve","Deny"]}
+/pair render without link pot= (poll.requestedPotId only): pairLabel=Research bot
+mock approve (existingPotId=b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d): HTTP 200
+CLI exit=0; stdout: Approve this pot in Zappi: | ✔ Status: approved | pot            b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d | clientToken    zpc_… (withheld) | › Stored pot client token as host secret (<ZAPPI_HOME>/pot-client-6bc317a5-275d-455b-88f6-4ba04f239a5f.txt). Set ZAPPI_POT_CLIENT_TOKEN from that file. Do not echo it.
+pot client token stored as host secret file: yes (value withheld); deviceCode/zpc_ in CLI output: no
+
+## 2. Old copy without a pot is refused (no Nest call)
+copied (old row, npx stripped so it runs this branch): zappi-cli pots attach --spend-mode auth_required
+CLI exit=1; stderr: ✖ Auth-required attach must name the pot. Run `zappi-cli pots attach --pot <potId> --spend-mode auth_required` (or set ZAPPI_POT_ID). Do not print a link without it.
+attach-start calls: 0
+
+## 3. --pot vs ZAPPI_POT_ID mismatch fails closed (no Nest call)
+env ZAPPI_POT_ID=c4b2d3e5-6f70-4b8c-9dae-1f2a3b4c5d6e; CLI exit=1; stderr: ✖ Conflicting pot selectors: --pot b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d but ZAPPI_POT_ID=c4b2d3e5-6f70-4b8c-9dae-1f2a3b4c5d6e. Pick one.
+attach-start calls: 0
+
+## 4. Nest response does not echo the pot -> no link, no device code stored
+CLI exit=1; stderr: ✖ Zappi did not confirm pot b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d for this pairing. No link was printed. Update Zappi or retry.; link opened: false
+
+## 5. Approval bound a different pot -> CLI refuses, no token stored
+CLI exit=1; stderr: ✖ Pairing was approved for a different pot than b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d. The client token was not stored. Deny it in Zappi and pair again.
+credentials reclaim called: no; token files: 0
+
+## 6. Nest rules (mock mirrors pots-attach.service.ts)
+create auth_required without potId: HTTP 400 AGENT_POT_ATTACH_POT_REQUIRED
+approve a different pot than requested: HTTP 400 AGENT_POT_ATTACH_POT_REQUIRED
+approve with spendMode changed to free: HTTP 400 AGENT_POT_ATTACH_MODE_MISMATCH
+
+## 7. Contrast: the original bug (attach with no pot) on /pair
+/pair render: {"deadEnd":true,"title":"This link does not name a pot","actions":["Deny"]}
+
+RESULT: PASS (7/7)
