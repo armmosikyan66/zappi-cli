@@ -1,10 +1,14 @@
 ---
 type: log
 tags: [meta]
-updated: 2026-10-06
+updated: 2026-10-08
 ---
 
 # Wiki Log
+
+## [2026-10-08] manual | pots attach names the pot (1-554)
+- touched: wiki/commands/pots.md, wiki/usages.md, README.md, SKILL.md, src/attach-pot.ts, src/attach-commands.ts
+- notes: `pots attach` takes `--pot <potId>` (or `ZAPPI_POT_ID`; both must agree). Auth-required without a pot fails before Nest. The CLI always sends `potId` and refuses to print a link unless Nest echoes the same pot; poll/reclaim fail closed on a different pot. Web copy: `zappi-cli pots attach --pot <potId> --spend-mode auth_required` on the installed pinned CLI, no `npx` (1-555). Proof: `proof/1-554-attach-names-pot.txt`.
 
 ## [2026-10-06] manual | Pointer to zappi-cli-mcp wiki
 - touched: wiki/index.md

@@ -78,7 +78,8 @@ zappi-cli pots spend-approvals <id>
 zappi-cli pots spend-approvals <id> --create --action withdraw|internal_send|sweep [--amount <cents>] [--destination <addr>]
 zappi-cli pots spend-approvals <id> --approve <approvalId> [--auth <token>]
 zappi-cli pots spend-approvals <id> --reject <approvalId>
-zappi-cli pots attach [--spend-mode free|auth_required] [--spark-address <addr>] [--label <name>] [--no-poll]
+zappi-cli pots attach [--pot <potId>] [--spend-mode free|auth_required] [--spark-address <addr>] [--label <name>] [--no-poll]
+zappi-cli pots attach --pot <potId> --spend-mode auth_required   # auth-required: pot required (1-554)
 zappi-cli pots attach-status <requestId>
 ```
 

@@ -12,7 +12,7 @@ This is the **setup** skill. Load `SKILL.md` (`zappi-agent-pot`) to propose or p
 **Connecting** a pot (human pasted `npx @zappimoney/zappi-cli`, a pot id, “use this pot”, “connect”, or you loaded this skill):
 
 - Set `ZAPPI_POT_ID` from the prompt. Do not invent a pot id.
-- **Auth-required:** this pot is **not attached** until pairing is approved. The bot cannot request, pay, consume, invite, or claim it is ready to send. Run `zappi-cli pots attach --spend-mode auth_required` with `ZAPPI_POT_ID` set. Paste the **pairing URL only**. Say they can open that link, or if it does not open, paste the verification code on the Zappi pairing page. Do not ask them to paste the code in chat. Do not print, store, or check a verification code. You do not receive one. They approve on that page. This host reclaims `zpc_` itself — **never** ask them to paste `zpc_`, seed, or session. Do not open Grok “Save securely”. After they approve, say attached and **stop**.
+- **Auth-required:** this pot is **not attached** until pairing is approved. The bot cannot request, pay, consume, invite, or claim it is ready to send. Run `zappi-cli pots attach --pot <potId> --spend-mode auth_required` with the pot id from the prompt (if `ZAPPI_POT_ID` is also set it must be the same pot). Paste the **pairing URL only**. Say they can open that link, or if it does not open, paste the verification code on the Zappi pairing page. Do not ask them to paste the code in chat. Do not print, store, or check a verification code. You do not receive one. They approve on that page. This host reclaims `zpc_` itself — **never** ask them to paste `zpc_`, seed, or session. Do not open Grok “Save securely”. After they approve, say attached and **stop**.
 - **Free:** you already hold the key. Attach is not required. Reply that you are ready and **stop**. Do not run attach.
 
 On connect you must **not**:
@@ -87,11 +87,10 @@ You do **not** get the pot seed. Never ask for it. Do not run `pay`. Do not ask 
 ### Pair this host (when they paste the CLI + pot prompt)
 
 ```bash
-export ZAPPI_POT_ID="<from Zappi UI>"
-zappi-cli pots attach --spend-mode auth_required
+zappi-cli pots attach --pot "<potId from Zappi UI>" --spend-mode auth_required
 ```
 
-Stdout is one pairing URL. It includes this pot id and does **not** include a verification code. Paste that URL and tell them: open the link, or if it does not open, paste the verification code on the Zappi pairing page. Do not ask them to paste the code in chat. Do not print, store, or check a verification code. Do not print `deviceCode` or `zpc_`. Pretty mode withholds `zpc_`. They approve on that page — the page finds the pot. After they approve, this host stores the client token. Then wait. Do not run `request` until they ask to send **and** this host is attached.
+The pairing must name the pot. Without `--pot` (or `ZAPPI_POT_ID`) the command refuses; if both are set and differ, it refuses. It also refuses to print a link unless Zappi confirms that same pot. Stdout is one pairing URL. It includes this pot id and does **not** include a verification code. Paste that URL and tell them: open the link, or if it does not open, paste the verification code on the Zappi pairing page. Do not ask them to paste the code in chat. Do not print, store, or check a verification code. Do not print `deviceCode` or `zpc_`. Pretty mode withholds `zpc_`. They approve on that page — the page finds the pot. After they approve, this host stores the client token. Then wait. Do not run `request` until they ask to send **and** this host is attached.
 
 If this host is already attached (`ZAPPI_POT_CLIENT_TOKEN` or `~/.zappi/pot-client-*.txt`), do **not** run `pots attach` again. If they ask for a new attach link, say this host is already attached and stop. Do not print a URL. The command itself refuses and does not create a link.
 
@@ -114,7 +113,7 @@ zappi-cli request --amount-cents <cents> --to <spark-address>
 
 That command needs no TTY. Stdout is **one approve URL** and nothing else (`https://zappi.money/?panel=pots&spend=<id>`, no `code=`). Paste that URL. The human opens it, sees the amount and destination, and approves with a passkey. The same ticket stays on the pot under **Spend to approve** if they never open the link. `--json` includes the URL and never the `zpc_` token. Approving records the decision. It does not send the money. One ask, one ticket. Do not poll or sign.
 
-If `request` fails because the pot is not attached, run `zappi-cli pots attach --spend-mode auth_required`. Do not open a paste field. Do not ask for `zpc_`.
+If `request` fails because the pot is not attached, run `zappi-cli pots attach --pot <potId> --spend-mode auth_required`. Do not open a paste field. Do not ask for `zpc_`.
 
 
 ## Fail closed — never bypass the CLI
@@ -151,6 +150,6 @@ Do not ask them to paste `zpc_` on connect, on send, or after a failed `request`
 - loading this skill, “checking how the CLI is meant to be run”, or “we’re set for spends”
 - propose, attach, pay, consume, invite, or a not-attached `request` failure
 
-If they never paired this host: run `zappi-cli pots attach`. They approve in the browser; this host reclaims the token. Chat is not where they copy `zpc_`. Do not invent one.
+If they never paired this host: run `zappi-cli pots attach --pot <potId> --spend-mode auth_required`. They approve in the browser; this host reclaims the token. Chat is not where they copy `zpc_`. Do not invent one.
 
 Never print or log `ZAPPI_POT_SEED`, `ZAPPI_POT_CLIENT_TOKEN`, or `ZAPPI_UNLOCK_TOKEN`. Leave `ZAPPI_API_URL` and `ZAPPI_APP_ORIGIN` unset so the CLI uses `https://api-dev.zappi.money` and every link is `https://dev.zappi.money`. Do not print `http://localhost:3000` unless the human asked for a local app and set `ZAPPI_APP_ORIGIN`. Approval-required pots do not get a key on this host. Do not run `propose --generate` for `auth_required`, and do not set `ZAPPI_POT_SEED`. Full docs: repository `README.md`.

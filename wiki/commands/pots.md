@@ -1,7 +1,7 @@
 ---
 type: command
 tags: [cli, pots]
-updated: 2026-09-22
+updated: 2026-10-08
 ---
 
 # pots
@@ -69,11 +69,24 @@ zappi-cli pots spend-approvals <id> --reject <approvalId>
 ## attach / attach-status
 
 ```bash
-zappi-cli pots attach [--spend-mode free|auth_required] [--spark-address <addr>] [--label <name>] [--no-poll]
+zappi-cli pots attach [--pot <potId>] [--spend-mode free|auth_required] [--spark-address <addr>] [--label <name>] [--no-poll]
 zappi-cli pots attach-status <requestId>
 ```
 
-Device-code pairing (P1). `createPotAttach` returns `requestId` and `approveUrl`. When `ZAPPI_POT_ID` is set, the printed URL includes `pot=` and omits `code=`. Until pairing is approved, an auth-required pot cannot `request`, `pay`, `consume`, or `invite` from the bot. Paste the pairing URL only — never the user code, never a `zpc_` paste.
+Device-code pairing (P1). `createPotAttach` returns `requestId` and `approveUrl`. The printed URL includes `pot=` and omits `code=`.
+
+**The pairing names the pot (1-554).** Auth-required pairing:
+
+```bash
+zappi-cli pots attach --pot <potId> --spend-mode auth_required
+```
+
+- The pot comes from `--pot <potId>` or `ZAPPI_POT_ID`. Auth-required with neither fails before any Nest call. Both set and different → `Conflicting pot selectors: --pot … but ZAPPI_POT_ID=…`. A bare `--pot` or a value that is not a pot id (UUID or ≥ 8-hex prefix) fails without echoing the value.
+- The pot id is always sent to Nest as `potId` on `POST /api/wallet/pots/attach`. Nest stores it as `requestedPotId` and returns 400 `AGENT_POT_ATTACH_POT_REQUIRED` for auth-required without it.
+- Nest must echo the same pot (approve link `pot=`, or a `requestedPotId` / `potId` body field). Otherwise no link is printed and no device code is stored.
+- Polling fails closed if the pending request names another pot or the approval bound another pot (prefix rule as Nest: full id, or the id starting with an ≥ 8-char prefix). Reclaim fails closed if the credentials name another pot. In both cases the `zpc_` is not stored.
+- `/pair` names the pot by matching `requestedPotId` (or link `pot=`) against the signed-in user's active pots; Nest approve rejects any other pot (`AGENT_POT_ATTACH_POT_REQUIRED`) and a spend-mode change (`AGENT_POT_ATTACH_MODE_MISMATCH`).
+- The web "Pair this host" row should copy this command for the installed, pinned `zappi-cli` — never `npx` (1-555). Until pairing is approved, an auth-required pot cannot `request`, `pay`, `consume`, or `invite` from the bot. Paste the pairing URL only — never the user code, never a `zpc_` paste.
 
 - Pretty mode without `--no-poll`: opens the approve URL (headline “Approve this pot in Zappi”), then polls every 2 seconds until status is not `pending` or 15 minutes elapse.
 - `--no-poll`: prints request id and approve URL (no user code), and `Poll with: zappi-cli pots attach-status <requestId>`. Does not open the browser.

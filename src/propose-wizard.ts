@@ -459,7 +459,7 @@ export async function runProposeWizard(
 
   if (spendMode === 'auth_required') {
     throw new Error(
-      'Approval-required pots do not get a key on this host. Create the pot in Zappi, then run `zappi-cli pots attach --spend-mode auth_required`. Do not generate or store a pot key.',
+      'Approval-required pots do not get a key on this host. Create the pot in Zappi, then run `zappi-cli pots attach --pot <potId> --spend-mode auth_required`. Do not generate or store a pot key.',
     )
   }
 
