@@ -55,6 +55,12 @@ import {
   type InviteResult,
   type ProposeResult,
 } from './results.js'
+import {
+  forwardedSignerExitCode,
+  isSignerCliCommand,
+  runSignerCli,
+  type SignerSpawn,
+} from './signer-commands.js'
 
 /** @deprecated Prefer renderHelp(); kept for tests that import HELP. */
 export const HELP = renderHelp('plain')
@@ -121,14 +127,35 @@ export function parseConsumeCliArgs(argv: string[]): ConsumeCliArgs {
   return parsed
 }
 
+export interface RunCliDeps {
+  spawn?: SignerSpawn
+}
+
+export function writeCliFailure(error: unknown, mode: OutputMode): void {
+  const forwarded = forwardedSignerExitCode(error)
+  if (forwarded !== undefined) {
+    process.exitCode = forwarded === 0 ? 1 : forwarded
+    return
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  process.stderr.write(`${formatError(redactSecrets(message), mode)}\n`)
+  process.exitCode = 1
+}
+
 export async function runCli(
   argv: string[],
   mode: OutputMode = 'pretty',
+  deps: RunCliDeps = {},
 ): Promise<string> {
   const [command, ...rest] = argv
 
   if (!command || command === '--help' || command === '-h') {
     return renderHelp(mode === 'json' ? 'plain' : mode)
+  }
+
+  if (isSignerCliCommand(command)) {
+    await runSignerCli(command, rest, deps.spawn)
+    return ''
   }
 
   if (command === 'propose') {
@@ -358,7 +385,7 @@ async function main(argv: string[]) {
   const { json, argv: rest } = stripJsonFlag(argv)
   const mode: OutputMode = json ? 'json' : 'pretty'
   const output = await runCli(rest, mode)
-  process.stdout.write(`${output}\n`)
+  if (output !== '') process.stdout.write(`${output}\n`)
 }
 
 // Works through the `zappi-cli` bin symlink too: argv[1] is the symlink, so
@@ -378,8 +405,6 @@ if (isDirectRun) {
   main(process.argv.slice(2)).catch((error: unknown) => {
     const { json } = stripJsonFlag(process.argv.slice(2))
     const mode: OutputMode = json ? 'json' : 'pretty'
-    const message = error instanceof Error ? error.message : String(error)
-    process.stderr.write(`${formatError(redactSecrets(message), mode)}\n`)
-    process.exitCode = 1
+    writeCliFailure(error, mode)
   })
 }

@@ -50,6 +50,8 @@ zappi-cli pay <resourceId>            # free pot: agent signs after the pot is f
 zappi-cli request --amount-cents 100 --to <spark-address>
 zappi-cli consume <resourceId> [--units N]
 zappi-cli invite                      # Nest invite URL for this pot
+zappi-cli sign <requestId>           # local signer: human confirms in the terminal
+zappi-cli sign <requestId> --yes     # agent with a shell
 ```
 
 | Command   | What it does                                                                                                                                                                                                                                              |
@@ -62,6 +64,27 @@ zappi-cli invite                      # Nest invite URL for this pot
 | `request` | **Auth-required pot.** No TTY. `POST …/spend-requests` with `x-zappi-pot-client` and prints **only** the approve URL (`?panel=pots&spend=`, no `code=`). `--json` includes that URL and never the `zpc_` token. Does not sign. |
 | `consume` | **Agent spend.** `POST …/consume` with `X-Zappi-Unlock-Token` and `{ units }` (default `1`). |
 | `invite`  | **Recommend Zappi.** `GET /api/invite/pots/$ZAPPI_POT_ID/link` (no session, no pot key). Prints the Nest invite URL. Fails closed if the flag is off or the pot has no code — it never invents one. |
+| `sign`    | **Local signer.** Spawns `zappi-signer sign <requestId>`. Without `--yes`, a human confirms in the terminal. |
+| `signer-status` | **Local signer.** Spawns `zappi-signer status <requestId>`. |
+| `provision`, `prove-address`, `policy`, `backup`, `restore` | **Local signer.** Same subcommand, plus your remaining arguments. |
+
+### Local signer
+
+`sign`, `signer-status`, `provision`, `prove-address`, `policy`, `backup`, and `restore` start the `zappi-signer` binary and forward the terminal (stdin, stdout, and stderr) and the child exit code. This CLI does not sign, does not ask for a mnemonic, and does not drop a second `sign` for the same request. The signer confirms on its own terminal, and idempotency is the signer's job.
+
+```bash
+zappi-cli sign <requestId> [--yes] [--signer <path>]
+zappi-cli signer-status <requestId> [--signer <path>]
+zappi-cli provision [args…]
+zappi-cli prove-address [args…]
+zappi-cli policy [args…]
+zappi-cli backup [args…]
+zappi-cli restore [args…]
+```
+
+The binary is `--signer <path>`, otherwise `ZAPPI_SIGNER_BIN`, otherwise `zappi-signer` on `PATH`. If that file is missing, the command prints a short hint that names `ZAPPI_SIGNER_BIN` and exits non-zero. `--signer` is not passed to the child. `--yes` is passed only when you passed it.
+
+Without `--yes`, a human confirms in the terminal. An agent with a shell passes `--yes`. A host without a shell shows `zappi sign <requestId>`.
 
 ### The `propose` wizard
 
@@ -124,6 +147,7 @@ If a CLI command fails (env / apiUrl mismatch, not attached, etc.): **stop and r
 | `ZAPPI_CREDENTIALS_FILE` | Override for the login file. Default `~/.zappi/credentials.json` (`0600`). |
 | `ZAPPI_COOKIE`         | Optional cookie header forwarded for session auth (e.g. `zappi_access=…`). |
 | `ZAPPI_USER_AGENT`     | Optional user-agent forwarded for session auth. |
+| `ZAPPI_SIGNER_BIN`   | Path to the `zappi-signer` binary. Used when `--signer` is omitted. Unset uses `zappi-signer` on `PATH`. |
 
 `--unlock-token` exists for one-off calls. Scripts should use `ZAPPI_UNLOCK_TOKEN` so the bearer does not land in `ps` / shell history. Env wins when both are set.
 
@@ -194,4 +218,4 @@ Reclaim path locked to Nest tip `df7aafc` / zappi-nest#82: `POST …/pots/attach
 - Do **not** invent a payment chain from an address. Paywall 402 must include `accepts[0].network` and `accepts[0].asset`; this CLI only pays `spark` / `USDB`.
 - Do **not** invent an invite code. `zappi-cli invite` prints a Nest URL or fails closed.
 - Seller / project API is out of scope for this package.
-- Agent-host spend is `@zappimoney/zappi-mcp`, not this CLI. Do not add `@zappimoney/zappi-sdk` to this package unless intentionally migrating off the Nest HTTP + Spark path.
+- Agent-host spend is approval tickets on the remote `/mcp` (`https://api.zappi.money/mcp`), not this CLI. The local stdio signer is gone. Do not add `@zappimoney/zappi-sdk` to this package unless intentionally migrating off the Nest HTTP + Spark path.

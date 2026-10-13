@@ -16,14 +16,17 @@ request/approve flow are unchanged.
 
 Run the signer on a trusted, dedicated host that only the bot that owns the
 pot uses. Do not store the seed or the unlock secret on a shared computer
-(e.g. a shared Grok box), and never send them into chat. See
+(e.g. a shared Grok box), and never send them into chat. An OS keychain
+entry for the unlock secret does not relax this: another same-user process
+can still read it. See
 [docs/signer-boundary.md](./signer-boundary.md).
 
 ## 2. Secret provisioning
 
 The unlock secret is `ZAPPI_POT_PASSPHRASE` — a high-entropy host-managed
-secret. It is **not** the human device-wallet passphrase; unattended free-pot
-operation needs no human passphrase.
+secret — or, optionally, that same secret in the OS keychain. It is **not**
+the human device-wallet passphrase. Unattended free-pot operation needs no
+human passphrase at spend time.
 
 - Set `ZAPPI_POT_PASSPHRASE` in the bot's environment (secret file / secret
   manager), never in `~/.zshrc` or argv. It must be at least 16 characters.
@@ -45,6 +48,43 @@ operation needs no human passphrase.
 - The mnemonic is never written to `process.env`, stdout, stderr, logs, or
   HTTP debug output. Browser and clipboard children are spawned with host
   secrets removed from their environment.
+
+### OS keychain (unlock secret only)
+
+The keychain stores the **unlock secret only**, never the seed. The encrypted
+envelope in `~/.zappi/pots.json` is unchanged. The service name is `zappi-cli`
+and the account is `pot-registry-unlock`.
+
+Resolution order when a command needs the unlock secret:
+
+1. `ZAPPI_POT_PASSPHRASE`, when set, is used. The keychain is not read.
+2. When that variable is unset and the operator passed `--keychain` or set
+   `ZAPPI_POT_USE_KEYCHAIN=1`, the CLI reads the keychain into a local
+   variable. It does not assign `process.env`.
+3. If keychain support is missing, or the secret service cannot be opened,
+   the CLI fails with a clear error. It does not treat that as a successful
+   unlock. Set `ZAPPI_POT_PASSPHRASE` on that host.
+
+```bash
+zappi-cli pots registry unlock-secret --set --keychain
+zappi-cli pots registry unlock-secret --keychain
+zappi-cli pots registry unlock-secret --delete --keychain
+```
+
+`--set` reads a masked prompt and never prints the stored value. `--delete`
+never prints the previous value. `--json` reports boolean flags only
+(`present`, `set`, `deleted`). The secret is not a CLI argument.
+
+macOS writes the secret on the stdin of `security -i` (hex), never in argv.
+Linux `secret-tool store` reads it from stdin. A missing `security` or
+`secret-tool` binary is the clear error above, not a silent fallback.
+
+Unattended bots should not depend on a user keyring. systemd
+`LoadCredential=` (or `LoadCredentialEncrypted=`) is the headless path:
+publish `ZAPPI_POT_PASSPHRASE` from that credential. The CLI does not read
+systemd credentials itself. Linux secret-service often needs a session bus
+and an unlocked collection, so the env path stays supported when the
+keychain cannot be opened.
 
 ## 3. Creating / importing a pot
 
@@ -80,13 +120,15 @@ never automatic recovery from registry failure. If both a registry pot and
 an env/file seed are set, the CLI fails closed — the registry is
 authoritative.
 
-A legacy seed is not treated as free just because it is set. Signing also
-requires `ZAPPI_POT_SPARK_ADDRESS` (the pot's Spark address). The derived
-address must match it. `ZAPPI_POT_SPEND_MODE=auth_required` and any unknown
-spend mode are rejected before the seed is read. `ZAPPI_POT_ACCOUNT_INDEX`
-overrides the default account 0 when set. Anyone who reads a plaintext file
-gets the seed and can drain the pot. The CLI does not detect or refuse a
-main-wallet mnemonic; do not import one.
+A legacy seed is not treated as free just because it is set. Signing requires
+`ZAPPI_POT_SPARK_ADDRESS` and `ZAPPI_POT_SPEND_MODE=free` exactly (surrounding
+space and case are ignored). Unset, `auth_required`, and unknown modes fail
+closed before the seed is read. For an auth-required pot, run
+`zappi-cli request`. Set `ZAPPI_POT_SPEND_MODE=free` only for an actual free
+pot. The derived address must match `ZAPPI_POT_SPARK_ADDRESS`.
+`ZAPPI_POT_ACCOUNT_INDEX` overrides the default account 0 when set. Anyone
+who reads a plaintext file gets the seed and can drain the pot. The CLI does
+not detect or refuse a main-wallet mnemonic; do not import one.
 
 ## 5. Backup, restore, rotation
 

@@ -103,6 +103,48 @@ describe('resolvePotContext — registry path', () => {
     }
   })
 
+  it('does not require ZAPPI_POT_SPEND_MODE on the registry path', async () => {
+    const { env, dir } = tmpRegistry()
+    try {
+      assert.equal(env.ZAPPI_POT_SPEND_MODE, undefined)
+      await savePotSeed(baseInput('pot_a'), PASSPHRASE, { env })
+      const ctx = await resolvePotContext(
+        { potFlag: 'pot_a' },
+        { env, deriveAddress: deriveMatching },
+      )
+      assert.equal(ctx.source, 'registry')
+      assert.equal(ctx.spendMode, 'free')
+      assert.equal(ctx.getSeed(), PHRASE)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('registry path still rejects auth_required before derivation', async () => {
+    const { env, dir } = tmpRegistry()
+    let derived = false
+    try {
+      await savePotSeed(baseInput('pot_a'), PASSPHRASE, { env })
+      await assert.rejects(
+        () =>
+          resolvePotContext(
+            { potFlag: 'pot_a' },
+            {
+              env: { ...env, ZAPPI_POT_SPEND_MODE: 'auth_required' },
+              deriveAddress: async () => {
+                derived = true
+                return SPARK_ADDRESS
+              },
+            },
+          ),
+        /Do not free-sign with pay/,
+      )
+      assert.equal(derived, false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('rejects an env seed set at the same time as a registry pot (conflict)', async () => {
     const { env, dir } = tmpRegistry()
     try {
@@ -181,6 +223,7 @@ describe('resolvePotContext — legacy path', () => {
         ZAPPI_POT_ID: 'pot_legacy',
         ZAPPI_POT_SEED: PHRASE,
         ZAPPI_POT_SPARK_ADDRESS: SPARK_ADDRESS,
+        ZAPPI_POT_SPEND_MODE: 'free',
         SPARK_NETWORK: 'MAINNET',
       }
       const ctx = await resolvePotContext({}, { env, deriveAddress: deriveMatching })
@@ -208,6 +251,7 @@ describe('resolvePotContext — legacy path', () => {
         ZAPPI_POT_ID: 'pot_legacy',
         ZAPPI_POT_KEY_FILE: keyFile,
         ZAPPI_POT_SPARK_ADDRESS: SPARK_ADDRESS,
+        ZAPPI_POT_SPEND_MODE: 'free',
         SPARK_NETWORK: 'MAINNET',
       }
       const ctx = await resolvePotContext({}, { env, deriveAddress: deriveMatching })
@@ -236,6 +280,184 @@ describe('resolvePotContext — legacy path', () => {
         () => resolvePotContext({}, { env, deriveAddress: deriveMatching }),
         /Conflicting seed sources/,
       )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('explicit free still signs a legacy seed when the derived address matches', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zappi-ctx-free-'))
+    let derived = 0
+    try {
+      const env: CaseEnv = {
+        ZAPPI_POT_REGISTRY_FILE: join(dir, 'pots.json'),
+        ZAPPI_API_URL: 'https://api.test.zappi.money',
+        ZAPPI_APP_ORIGIN: 'https://app.test.zappi.money',
+        ZAPPI_POT_ID: 'pot_legacy',
+        ZAPPI_POT_SEED: PHRASE,
+        ZAPPI_POT_SPARK_ADDRESS: SPARK_ADDRESS,
+        ZAPPI_POT_SPEND_MODE: ' FREE ',
+      }
+      const ctx = await resolvePotContext(
+        {},
+        {
+          env,
+          deriveAddress: async () => {
+            derived += 1
+            return SPARK_ADDRESS
+          },
+        },
+      )
+      assert.equal(derived, 1)
+      assert.equal(ctx.spendMode, 'free')
+      assert.equal(ctx.source, 'env')
+      assert.equal(ctx.sparkAddress, SPARK_ADDRESS)
+      assert.equal(ctx.getSeed(), PHRASE)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('explicit free still rejects a legacy seed whose address does not match', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zappi-ctx-mismatch-'))
+    try {
+      const env: CaseEnv = {
+        ZAPPI_POT_REGISTRY_FILE: join(dir, 'pots.json'),
+        ZAPPI_API_URL: 'https://api.test.zappi.money',
+        ZAPPI_APP_ORIGIN: 'https://app.test.zappi.money',
+        ZAPPI_POT_ID: 'pot_legacy',
+        ZAPPI_POT_SEED: PHRASE,
+        ZAPPI_POT_SPARK_ADDRESS: SPARK_ADDRESS,
+        ZAPPI_POT_SPEND_MODE: 'free',
+      }
+      await assert.rejects(
+        () =>
+          resolvePotContext(
+            {},
+            {
+              env,
+              deriveAddress: async () => 'spark1someoneelse000000000000000000',
+            },
+          ),
+        /does not match ZAPPI_POT_SPARK_ADDRESS/,
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('fails closed for a legacy seed when spend mode is unset, before derive', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zappi-ctx-unset-'))
+    let derived = false
+    try {
+      const env: CaseEnv = {
+        ZAPPI_POT_REGISTRY_FILE: join(dir, 'pots.json'),
+        ZAPPI_API_URL: 'https://api.test.zappi.money',
+        ZAPPI_APP_ORIGIN: 'https://app.test.zappi.money',
+        ZAPPI_POT_ID: 'pot_legacy',
+        ZAPPI_POT_SEED: '<legacy-seed-must-not-be-read>',
+        ZAPPI_POT_SPARK_ADDRESS: SPARK_ADDRESS,
+      }
+      await assert.rejects(
+        () =>
+          resolvePotContext(
+            {},
+            {
+              env,
+              deriveAddress: async () => {
+                derived = true
+                return SPARK_ADDRESS
+              },
+            },
+          ),
+        (error: Error) => {
+          assert.match(error.message, /must be exactly free/)
+          assert.match(error.message, /unset/)
+          assert.match(error.message, /zappi-cli request/)
+          assert.match(error.message, /only for an actual free pot/)
+          assert.doesNotMatch(error.message, /placeholder/)
+          assert.doesNotMatch(error.message, /legacy-seed-must-not-be-read/)
+          return true
+        },
+      )
+      assert.equal(derived, false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('fails closed for a legacy key file when spend mode is unset, before reading it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zappi-ctx-file-unset-'))
+    let derived = false
+    try {
+      const keyFile = join(dir, 'missing-pot.txt')
+      const env: CaseEnv = {
+        ZAPPI_POT_REGISTRY_FILE: join(dir, 'pots.json'),
+        ZAPPI_API_URL: 'https://api.test.zappi.money',
+        ZAPPI_APP_ORIGIN: 'https://app.test.zappi.money',
+        ZAPPI_POT_ID: 'pot_legacy',
+        ZAPPI_POT_KEY_FILE: keyFile,
+        ZAPPI_POT_SPARK_ADDRESS: SPARK_ADDRESS,
+      }
+      await assert.rejects(
+        () =>
+          resolvePotContext(
+            {},
+            {
+              env,
+              deriveAddress: async () => {
+                derived = true
+                return SPARK_ADDRESS
+              },
+            },
+          ),
+        (error: Error) => {
+          assert.match(error.message, /must be exactly free/)
+          assert.match(error.message, /zappi-cli request/)
+          assert.doesNotMatch(error.message, /ENOENT|no such file/i)
+          return true
+        },
+      )
+      assert.equal(derived, false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('fails closed for legacy auth_required and unknown modes before derive', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zappi-ctx-mode-'))
+    try {
+      const base: CaseEnv = {
+        ZAPPI_POT_REGISTRY_FILE: join(dir, 'pots.json'),
+        ZAPPI_API_URL: 'https://api.test.zappi.money',
+        ZAPPI_APP_ORIGIN: 'https://app.test.zappi.money',
+        ZAPPI_POT_ID: 'pot_legacy',
+        ZAPPI_POT_SEED: '<legacy-seed-must-not-be-read>',
+        ZAPPI_POT_SPARK_ADDRESS: SPARK_ADDRESS,
+      }
+      for (const mode of ['auth_required', 'nope'] as const) {
+        let derived = false
+        await assert.rejects(
+          () =>
+            resolvePotContext(
+              {},
+              {
+                env: { ...base, ZAPPI_POT_SPEND_MODE: mode },
+                deriveAddress: async () => {
+                  derived = true
+                  return SPARK_ADDRESS
+                },
+              },
+            ),
+          (error: Error) => {
+            assert.match(error.message, /zappi-cli request/)
+            assert.doesNotMatch(error.message, /legacy-seed-must-not-be-read/)
+            if (mode === 'nope') assert.match(error.message, /Unknown ZAPPI_POT_SPEND_MODE/)
+            return true
+          },
+        )
+        assert.equal(derived, false)
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

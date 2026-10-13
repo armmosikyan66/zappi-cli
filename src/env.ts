@@ -1,6 +1,10 @@
+import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readStoredPotClientToken } from './attach-device-secret.js'
+import type { UnlockKeychain } from './pot-keychain.js'
+
+const nodeRequire = createRequire(import.meta.url)
 
 export interface PotEnv {
   ZAPPI_POT_ID?: string
@@ -18,6 +22,12 @@ export interface PotEnv {
    * by the CLI. Free pots only — not the main-wallet passphrase. (1-454/1-456)
    */
   ZAPPI_POT_PASSPHRASE?: string
+  /**
+   * When `1` and `ZAPPI_POT_PASSPHRASE` is unset, read the unlock secret from
+   * the OS keychain into a local variable. Never the seed. Does not change
+   * {@link resolvePotSpendMode}.
+   */
+  ZAPPI_POT_USE_KEYCHAIN?: string
   /** Override path for the encrypted free-pot seed registry. (1-454/1-456) */
   ZAPPI_POT_REGISTRY_FILE?: string
   /** Override path for the durable pending-operation journal. (1-456 stage 5) */
@@ -270,34 +280,132 @@ export function parsePositiveUnits(
  * never a CLI flag (would leak to `ps`/shell history). Placeholder guard
  * mirrors `resolveUnlockToken` so docs examples are not treated as secrets.
  * This is a free-pot registry secret, NOT the human device wallet passphrase.
+ *
+ * Resolution order: `ZAPPI_POT_PASSPHRASE` wins. If it is unset and the caller
+ * opts in (`opts.keychain` or `ZAPPI_POT_USE_KEYCHAIN=1`), the OS keychain
+ * unlock secret is read into a local variable and never assigned to
+ * `process.env`. A missing keychain backend is an error, not a silent success.
+ * The seed never enters the keychain.
  */
 export const MIN_POT_PASSPHRASE_LENGTH = 16
 
-export function resolvePotPassphrase(env: PotEnv = process.env): string {
-  const fromEnv = env.ZAPPI_POT_PASSPHRASE?.trim()
-  if (!fromEnv) {
-    throw new Error(
-      'Set ZAPPI_POT_PASSPHRASE as a host secret to unlock the free-pot seed registry. Do not paste it into chat. This is not the device wallet passphrase.',
-    )
+export const POT_PASSPHRASE_MISSING_ERROR =
+  'Set ZAPPI_POT_PASSPHRASE as a host secret to unlock the free-pot seed registry. Do not paste it into chat. This is not the device wallet passphrase.'
+
+export const POT_PASSPHRASE_PLACEHOLDER_ERROR =
+  'ZAPPI_POT_PASSPHRASE is still a placeholder. Set it as a host secret — do not paste it into chat.'
+
+/** Kept in sync with the same string in pot-keychain.ts. */
+export const KEYCHAIN_SUPPORT_MISSING_ERROR =
+  'OS keychain support is missing on this host. Set ZAPPI_POT_PASSPHRASE as a host secret to unlock the free-pot seed registry. Do not paste it into chat.'
+
+/** Kept in sync with the same string in pot-keychain.ts. */
+export const KEYCHAIN_OPERATION_FAILED_ERROR =
+  'Could not use the OS keychain for the unlock secret (service zappi-cli, account pot-registry-unlock). Set ZAPPI_POT_PASSPHRASE as a host secret. Do not paste it into chat.'
+
+export const KEYCHAIN_SECRET_MISSING_ERROR =
+  'No unlock secret is stored in the OS keychain (service zappi-cli, account pot-registry-unlock). Run `zappi-cli pots registry unlock-secret --set --keychain`, or set ZAPPI_POT_PASSPHRASE. Do not paste it into chat.'
+
+const SAFE_KEYCHAIN_MESSAGES = new Set<string>([
+  KEYCHAIN_SUPPORT_MISSING_ERROR,
+  KEYCHAIN_OPERATION_FAILED_ERROR,
+])
+
+export function potPassphraseTooShortError(): string {
+  return `ZAPPI_POT_PASSPHRASE must be at least ${MIN_POT_PASSPHRASE_LENGTH} characters. Set a high-entropy host secret.`
+}
+
+/** Trim and reject placeholder or short values. The value is never echoed. */
+export function validatePotPassphrase(raw: string): string {
+  const value = raw.trim()
+  if (!value) throw new Error(POT_PASSPHRASE_MISSING_ERROR)
+  if (value.startsWith('<') && value.endsWith('>')) {
+    throw new Error(POT_PASSPHRASE_PLACEHOLDER_ERROR)
   }
-  if (fromEnv.startsWith('<') && fromEnv.endsWith('>')) {
-    throw new Error(
-      'ZAPPI_POT_PASSPHRASE is still a placeholder. Set it as a host secret — do not paste it into chat.',
-    )
+  if (value.length < MIN_POT_PASSPHRASE_LENGTH) {
+    throw new Error(potPassphraseTooShortError())
   }
-  if (fromEnv.length < MIN_POT_PASSPHRASE_LENGTH) {
-    throw new Error(
-      `ZAPPI_POT_PASSPHRASE must be at least ${MIN_POT_PASSPHRASE_LENGTH} characters. Set a high-entropy host secret.`,
-    )
+  return value
+}
+
+export interface ResolvePotPassphraseOptions {
+  /** Opt in to the OS keychain when `ZAPPI_POT_PASSPHRASE` is unset. */
+  keychain?: boolean
+  /** Test double or injected backend. Not written to `process.env`. */
+  unlockKeychain?: UnlockKeychain
+  /** Test double for the lazy OS adapter loader. */
+  loadUnlockKeychain?: () => UnlockKeychain
+}
+
+/** True when the operator opted into the OS keychain for the unlock secret. */
+export function wantsPotKeychain(
+  env: PotEnv = process.env,
+  opts: { keychain?: boolean } = {},
+): boolean {
+  return opts.keychain === true || env.ZAPPI_POT_USE_KEYCHAIN?.trim() === '1'
+}
+
+export function resolvePotPassphrase(
+  env: PotEnv = process.env,
+  opts: ResolvePotPassphraseOptions = {},
+): string {
+  const fromEnv = env.ZAPPI_POT_PASSPHRASE
+  if (fromEnv != null && fromEnv.trim() !== '') {
+    return validatePotPassphrase(fromEnv)
   }
-  return fromEnv
+  if (!wantsPotKeychain(env, opts)) {
+    throw new Error(POT_PASSPHRASE_MISSING_ERROR)
+  }
+  const load = opts.loadUnlockKeychain ?? loadDefaultUnlockKeychain
+  let stored: string | null
+  try {
+    const keychain = opts.unlockKeychain ?? load()
+    stored = keychain.getUnlockSecret()
+  } catch (error) {
+    if (isSafeKeychainError(error)) throw error
+    throw new Error(KEYCHAIN_SUPPORT_MISSING_ERROR)
+  }
+  if (stored == null || stored.trim() === '') {
+    throw new Error(KEYCHAIN_SECRET_MISSING_ERROR)
+  }
+  return validatePotPassphrase(stored)
+}
+
+function isSafeKeychainError(error: unknown): error is Error {
+  return error instanceof Error && SAFE_KEYCHAIN_MESSAGES.has(error.message)
+}
+
+function loadDefaultUnlockKeychain(): UnlockKeychain {
+  let loaded: {
+    createDefaultUnlockKeychain?: () => UnlockKeychain
+    default?: { createDefaultUnlockKeychain?: () => UnlockKeychain }
+  }
+  try {
+    loaded = nodeRequire('./pot-keychain.js') as typeof loaded
+  } catch (error) {
+    if (isSafeKeychainError(error)) throw error
+    throw new Error(KEYCHAIN_SUPPORT_MISSING_ERROR)
+  }
+  const create =
+    loaded.createDefaultUnlockKeychain ??
+    loaded.default?.createDefaultUnlockKeychain
+  if (typeof create !== 'function') {
+    throw new Error(KEYCHAIN_SUPPORT_MISSING_ERROR)
+  }
+  try {
+    return create()
+  } catch (error) {
+    if (isSafeKeychainError(error)) throw error
+    throw new Error(KEYCHAIN_SUPPORT_MISSING_ERROR)
+  }
 }
 
 /**
- * Spend mode for the free signer. Unset means free. `auth_required` and any
- * other value are rejected by the signer before it reads a seed. This does
- * not change the auth-required request/approve path, which uses
- * {@link resolvePotSpendMode}.
+ * Spend mode for the free signer. Unset means free for the registry path.
+ * `auth_required` and any other value are rejected before a seed is read.
+ * Legacy env/file seeds additionally require explicit `free` in
+ * `resolveLegacyContext`. This does not change {@link resolvePotSpendMode},
+ * which the auth-required request path uses (unset stays free there).
  */
 export function assertFreeSignerSpendMode(env: PotEnv = process.env): void {
   const raw = env.ZAPPI_POT_SPEND_MODE?.trim().toLowerCase()
@@ -306,8 +414,14 @@ export function assertFreeSignerSpendMode(env: PotEnv = process.env): void {
     throw new Error(AUTH_REQUIRED_PAY_ERROR)
   }
   throw new Error(
-    `Unknown ZAPPI_POT_SPEND_MODE "${raw}". Refusing to sign. Expected free or auth_required.`,
+    `Unknown ZAPPI_POT_SPEND_MODE "${displaySpendModeToken(raw)}". Refusing to sign. Expected free or auth_required. For an auth-required pot, run \`zappi-cli request\`. Set ZAPPI_POT_SPEND_MODE=free only for an actual free pot.`,
   )
+}
+
+function displaySpendModeToken(raw: string): string {
+  const flat = raw.replace(/[\r\n]+/g, '').slice(0, 64)
+  if (!/^[\w.-]+$/.test(flat)) return 'unrecognized'
+  return flat
 }
 
 /** Registry file path. Default `~/.zappi/pots.json`; override `ZAPPI_POT_REGISTRY_FILE`. */

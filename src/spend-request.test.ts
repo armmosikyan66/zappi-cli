@@ -25,6 +25,66 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
+/**
+ * 201 body from Nest `PotsAttachService.toSpendDto` / `AgentPotSpendRequestDto`.
+ * An attached pot does not get `potClientToken`. `approveUrl` is
+ * `/?panel=pots&spend=<id>` with no `code=`.
+ *
+ * Web edge, not handled in this CLI: approve/deny only records the decision.
+ * The browser broadcasts, then posts `sparkTxHash`. Nest's first receipt also
+ * requires that broadcast's `claimToken`. `recordPotSpendReceipt` posts
+ * `sparkTxHash` alone, so a real send can leave the ticket without a hash
+ * (Nest 409). Nest does not hold a seed.
+ */
+function nestSpendCreated(
+  overrides: Partial<{
+    id: string
+    potId: string
+    approveUrl: string
+    amountCents: number
+    destinationAddress: string
+    destinationChain: string | null
+    memo: string | null
+    status: string
+    sparkTxHash: string | null
+    expiresAt: string
+    decidedAt: string | null
+    createdAt: string
+    potClientToken: string
+  }> = {},
+) {
+  const id = overrides.id ?? 'spr_1'
+  return {
+    id,
+    potId: 'pot_1',
+    approveUrl: `https://zappi.money/?panel=pots&spend=${id}`,
+    amountCents: 100,
+    destinationAddress: 'spark1dest',
+    destinationChain: null,
+    memo: null,
+    status: 'pending',
+    sparkTxHash: null,
+    expiresAt: '2026-10-08T09:00:00.000Z',
+    decidedAt: null,
+    createdAt: '2026-10-08T08:45:00.000Z',
+    ...overrides,
+  }
+}
+
+/**
+ * Remote `/mcp` pay, send, and consume rebuild this URL
+ * (`McpConnectorService.createSpendTicket` → `bareApproveUrl`).
+ * They do not echo Nest's `/?panel=pots&spend=` string.
+ */
+function remoteMcpSpendApproveUrl(
+  appBase: string,
+  spendRequestId: string,
+): string {
+  const url = new URL(`${appBase.replace(/\/$/, '')}/pair`)
+  url.searchParams.set('spend', spendRequestId)
+  return url.toString()
+}
+
 describe('parseRequestCliArgs', () => {
   it('reads amount, destination, chain, and memo', () => {
     const parsed = parseRequestCliArgs([
@@ -90,12 +150,14 @@ describe('createSpendRequestResult', () => {
       },
       fetch: async (input, init) => {
         seen = { url: String(input), init }
-        return jsonResponse(201, {
-          id: 'spr_1',
-          potClientToken: TOKEN,
-          approveUrl:
-            'https://zappi.money/?panel=pots&spend=spr_1&code=AB3K-9Q2M',
-        })
+        return jsonResponse(
+          201,
+          nestSpendCreated({
+            potClientToken: TOKEN,
+            approveUrl:
+              'https://zappi.money/?panel=pots&spend=spr_1&code=AB3K-9Q2M',
+          }),
+        )
       },
     })
 
@@ -123,6 +185,82 @@ describe('createSpendRequestResult', () => {
     assert.doesNotMatch(json, new RegExp(TOKEN))
     assert.doesNotMatch(json, /potClientToken/)
     assert.doesNotMatch(json, /code=/)
+    assert.doesNotMatch(json, /AB3K-9Q2M/)
+    assert.doesNotMatch(json, /sparkTxHash|expiresAt|potClientToken/)
+  })
+
+  it('prints the bare URL from the real Nest 201 ticket', async () => {
+    const result = await createSpendRequestResult({
+      env: ENV,
+      input: { amountCents: 100, destinationAddress: 'spark1dest' },
+      fetch: async () => jsonResponse(201, nestSpendCreated()),
+    })
+    assert.equal(result.requestId, 'spr_1')
+    assert.equal(
+      result.approveUrl,
+      'https://zappi.money/?panel=pots&spend=spr_1',
+    )
+    assert.equal(new URL(result.approveUrl).searchParams.get('panel'), 'pots')
+    assert.equal(new URL(result.approveUrl).searchParams.get('spend'), 'spr_1')
+    assert.equal(new URL(result.approveUrl).searchParams.has('code'), false)
+    const printed = formatSpendRequestOutput(result, 'plain')
+    assert.equal(printed, result.approveUrl)
+    assert.doesNotMatch(printed, /code=/)
+    assert.doesNotMatch(printed, /zpc_/)
+    const json = formatSpendRequestOutput(result, 'json')
+    assert.deepEqual(Object.keys(JSON.parse(json)).sort(), [
+      'amountCents',
+      'approveUrl',
+      'command',
+      'destinationAddress',
+      'ok',
+      'potId',
+      'requestId',
+    ])
+    assert.doesNotMatch(json, /code=|zpc_|sparkTxHash|expiresAt/)
+  })
+
+  it('strips a code param that embeds zpc_ and still prints no token', async () => {
+    const result = await createSpendRequestResult({
+      env: ENV,
+      input: { amountCents: 100, destinationAddress: 'spark1dest' },
+      fetch: async () =>
+        jsonResponse(
+          201,
+          nestSpendCreated({
+            approveUrl: `https://zappi.money/?panel=pots&spend=spr_1&code=${TOKEN}`,
+          }),
+        ),
+    })
+    assert.equal(
+      result.approveUrl,
+      'https://zappi.money/?panel=pots&spend=spr_1',
+    )
+    assert.doesNotMatch(formatSpendRequestOutput(result, 'json'), /code=|zpc_/)
+  })
+
+  it('refuses to print an approve URL that still carries zpc_', async () => {
+    await assert.rejects(
+      () =>
+        createSpendRequestResult({
+          env: ENV,
+          input: { amountCents: 100, destinationAddress: 'spark1dest' },
+          fetch: async () =>
+            jsonResponse(
+              201,
+              nestSpendCreated({
+                approveUrl: `https://zappi.money/?panel=pots&spend=spr_1&token=${TOKEN}`,
+              }),
+            ),
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error)
+        assert.match(error.message, /pot client token/)
+        assert.doesNotMatch(error.message, new RegExp(TOKEN))
+        assert.doesNotMatch(error.message, /zpc_/)
+        return true
+      },
+    )
   })
 
   it('builds the spend URL when nest returns an id only', async () => {
@@ -188,6 +326,52 @@ describe('createSpendRequestResult', () => {
         return true
       },
     )
+  })
+})
+
+describe('remote MCP ticket-only approve URL', () => {
+  // Local stdio signer removal is owned by @zappimoney/zappi-mcp / zappi-cli-mcp, not this repo.
+  it('matches pay/send/consume output: bare URL, no code=, no zpc_', async () => {
+    const requestId = 'spr_mcp'
+    const result = await createSpendRequestResult({
+      env: ENV,
+      input: { amountCents: 100, destinationAddress: 'spark1dest' },
+      fetch: async () =>
+        jsonResponse(
+          201,
+          nestSpendCreated({
+            id: requestId,
+            approveUrl: `https://zappi.money/?panel=pots&spend=${requestId}&code=AB3K-9Q2M`,
+            potClientToken: TOKEN,
+          }),
+        ),
+    })
+    const printed = formatSpendRequestOutput(result, 'plain')
+    assert.doesNotMatch(printed, /code=/)
+    assert.doesNotMatch(printed, /zpc_/)
+    assert.equal(new URL(printed).searchParams.get('spend'), requestId)
+    assert.equal(new URL(printed).searchParams.has('code'), false)
+
+    for (const tool of ['pay', 'send', 'consume'] as const) {
+      const mcp = {
+        approveUrl: remoteMcpSpendApproveUrl('https://zappi.money', requestId),
+        tool,
+      }
+      assert.deepEqual(Object.keys(mcp).sort(), ['approveUrl', 'tool'])
+      assert.equal(
+        mcp.approveUrl,
+        `https://zappi.money/pair?spend=${requestId}`,
+      )
+      assert.equal(new URL(mcp.approveUrl).searchParams.get('spend'), requestId)
+      assert.equal(new URL(mcp.approveUrl).searchParams.has('code'), false)
+      assert.doesNotMatch(mcp.approveUrl, /code=/)
+      assert.doesNotMatch(mcp.approveUrl, /zpc_/)
+      assert.doesNotMatch(JSON.stringify(mcp), new RegExp(TOKEN))
+      assert.equal(
+        new URL(printed).searchParams.get('spend'),
+        new URL(mcp.approveUrl).searchParams.get('spend'),
+      )
+    }
   })
 })
 

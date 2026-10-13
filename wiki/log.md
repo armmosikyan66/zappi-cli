@@ -46,3 +46,6 @@ updated: 2026-10-08
 - summary: wiki/sources/readme.md, wiki/sources/skill.md, wiki/sources/command-source.md
 - touched: wiki/overview.md, wiki/usages.md, wiki/commands/propose.md, wiki/commands/pay.md, wiki/commands/consume.md, wiki/commands/invite.md, wiki/commands/wallet.md, wiki/commands/pots.md, wiki/reference/install.md, wiki/reference/environment.md, wiki/reference/auth.md, wiki/reference/output.md, wiki/reference/hard-rules.md, wiki/reference/develop.md, wiki/flows/buyer.md, wiki/index.md
 - notes: README hard rule still says not to add `@zappimoney/zappi-sdk`; `package.json` 0.3.0 depends on it (`file:../zappi-sdk`) and wallet/pots commands call `ZappiClient`. Flagged on [[overview]] and [[sources/readme]]. `--json` for `pots attach` includes `potClientToken` when nest returns one; pretty output withholds it. Buyer fund step still does not call deposit APIs; developer `deposit-address` / `pots deposit-address` do.
+## 2026-10-07 — agent-ops
+
+- Added [[reference/agent-ops]]: specialist ownership, wiki-first, outer loop + proof, skills (Grok Bot engineering + 101).

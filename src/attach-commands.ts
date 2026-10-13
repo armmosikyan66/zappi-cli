@@ -4,7 +4,6 @@ import { promptOpenLink } from './wizard-io.js'
 import {
   hostHasPotClientToken,
   POT_ALREADY_ATTACHED_ERROR,
-  relocateAppLink,
   resolveLinkOrigin,
   type PotEnv,
 } from './env.js'
@@ -29,6 +28,11 @@ import {
   successLine,
   type OutputMode,
 } from './ui.js'
+import {
+  assertCredentialFreeUrl,
+  finishCredentialFreeUrl,
+  parsePrintableHttpUrl,
+} from './invite-link.js'
 
 const NL = '\n'
 
@@ -45,27 +49,34 @@ function jsonOut(result: unknown): string {
 
 /**
  * Link the bot pastes. Names the pot. Omits the user code — the page
- * loads that from the attach request. Never deviceCode or zpc_.
+ * loads that from the attach request. Relocates onto the app origin.
+ * Never prints deviceCode, `code=`, or `zpc_`. An unparseable URL is refused,
+ * not returned raw.
  */
 export function botAttachApproveUrl(
   approveUrl: string,
   potId?: string | null,
   appOrigin?: string | null,
+  secrets?: readonly string[],
 ): string {
-  let url: URL
-  try {
-    url = new URL(approveUrl)
-  } catch {
-    return approveUrl
-  }
-  url.searchParams.delete('code')
+  const url = parsePrintableHttpUrl(approveUrl, appOrigin)
   const id = publicPotId(potId)
   if (id) url.searchParams.set('pot', id)
-  if (appOrigin?.trim()) return relocateAppLink(url.toString(), appOrigin)
-  return url.toString()
+  return finishCredentialFreeUrl(url, appOrigin, secrets)
 }
 
-/** Public create fields only — never deviceCode, never userCode. */
+/** Values that must not survive in a printed URL. Never included in JSON. */
+function attachSecretNeedles(pending: {
+  deviceCode?: string
+  potClientToken?: string
+  userCode?: string
+}): string[] {
+  return [pending.deviceCode, pending.potClientToken, pending.userCode].filter(
+    (value): value is string => Boolean(value?.trim()),
+  )
+}
+
+/** Public create fields only — never deviceCode, never userCode, never zpc_. */
 function publicPending(pending: {
   requestId: string
   approveUrl: string
@@ -73,12 +84,14 @@ function publicPending(pending: {
   spendMode?: 'auth_required' | 'free' | null
   deviceCode?: string
 }) {
+  assertCredentialFreeUrl(pending.approveUrl, attachSecretNeedles(pending))
   return {
     requestId: pending.requestId,
     approveUrl: pending.approveUrl,
     expiresAt: pending.expiresAt,
     ...(pending.spendMode !== undefined ? { spendMode: pending.spendMode } : {}),
     deviceCodeReceived: Boolean(pending.deviceCode?.trim()),
+    potClientTokenReceived: false,
   }
 }
 
@@ -174,10 +187,16 @@ export async function runPotAttach(
   if (requestedPotId) {
     assertCreateNamesPot(pending, requestedPotId)
   }
+  const pendingExtras = pending as { potClientToken?: string; userCode?: string }
   const approveUrl = botAttachApproveUrl(
     pending.approveUrl,
     requestedPotId,
     resolveLinkOrigin(env),
+    attachSecretNeedles({
+      deviceCode: pending.deviceCode,
+      potClientToken: pendingExtras.potClientToken,
+      userCode: pendingExtras.userCode,
+    }),
   )
   const printable = { ...pending, approveUrl }
 
@@ -328,7 +347,7 @@ export async function runPotAttachStatus(
     potId,
     grantId,
     potClientTokenReceived,
-    deviceCodeAvailable: Boolean(resolveAttachDeviceCode(requestId, env)),
+    deviceCodeReceived: Boolean(resolveAttachDeviceCode(requestId, env)),
   }
   if (mode === 'json') return jsonOut(result)
   if (mode === 'plain') {

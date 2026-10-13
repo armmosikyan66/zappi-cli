@@ -1,10 +1,10 @@
 ---
 type: index
 tags: [meta, cli]
-updated: 2026-10-06
+updated: 2026-10-07
 source_count: 3
-page_count: 22
-last_change: 2026-10-06 Pointer to the zappi-cli-mcp wiki.
+page_count: 23
+last_change: 2026-10-07 Added [[reference/agent-ops]] (Grok Bot guide alignment).
 ---
 
 # zappi-cli Wiki
@@ -37,7 +37,7 @@ LLM-maintained knowledge base for `@zappimoney/zappi-cli` (`zappi-cli`). The age
 ## Overview
 
 - [[overview]] — what the CLI is, two surfaces (buyer vs wallet), and what it will not do.
-- The stdio MCP wrapper is a separate package. Its wiki starts at `packages/zappi-cli-mcp/wiki/index.md`. It calls this CLI in-process. It does not replace this wiki.
+- The local stdio MCP wrapper is gone. Agents spend through the remote `/mcp` (see [[reference/auth]]). This wiki stays the CLI command reference.
 
 ## Usages
 
@@ -62,6 +62,7 @@ LLM-maintained knowledge base for `@zappimoney/zappi-cli` (`zappi-cli`). The age
 - [[reference/hard-rules]] — secrets, rails, invite codes, empty-pot cap.
 - [[reference/develop]] — test, build, publish files.
 - [[reference/clean-code]] — project skill `.agents/skills/clean-code` for CLI readability. Not the published buyer skill.
+- [[reference/agent-ops]] — CLI Dev specialist ops: wiki-first, outer loop + proof, skills.
 
 ## Flows
 

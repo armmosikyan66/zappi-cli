@@ -16,7 +16,7 @@ npm run build
 
 `npm test` does not hit live Spark or the paywall network. It covers 402 → settle `{ sparkTxHash, potId }` → consume, empty-pot fail-closed, 402 `network`/`asset` required (refuse non-`spark`/`USDB` before sign), secret redaction including BIP-39, `ZAPPI_POT_SPEND_MODE=auth_required` refusing CLI free-sign, and `request` printing a bare approve URL (no `code=`, no `zpc_`).
 
-The TypeSafe judge is not part of this package. Agent-host spend controls live in `@zappimoney/zappi-mcp`.
+The TypeSafe judge is not part of this package. Agent-host spend is approval tickets on the remote `/mcp`. The local stdio signer is gone.
 
 ## Package notes
 

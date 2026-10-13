@@ -35,7 +35,7 @@ From this CLI repo:
 npm test
 ```
 
-That is `tsc` then `node --test dist/*.test.js`. Mocked HTTP + mocked Spark. No live Spark. The TypeSafe judge was removed from this package. Agent-host spend controls are `@zappimoney/zappi-mcp`.
+That is `tsc` then `node --test dist/*.test.js`. Mocked HTTP + mocked Spark. No live Spark. The TypeSafe judge was removed from this package. Agent-host spend is approval tickets on the remote `/mcp`. The local stdio signer is gone.
 
 Nest dogfood (sibling): `cd ../zappi-nest && npm run test:dogfood`. It exercises attach deny, spend deny, and a two-owner factory. Public poll does not return `potClientToken`.
 

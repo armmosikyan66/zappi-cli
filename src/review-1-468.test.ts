@@ -170,6 +170,7 @@ describe('1-471 legacy identity', () => {
                 ZAPPI_POT_ID: 'pot_x',
                 ZAPPI_POT_SEED: PHRASE,
                 ZAPPI_POT_SPARK_ADDRESS: ADDRESS,
+                ZAPPI_POT_SPEND_MODE: 'free',
                 SPARK_NETWORK: 'MAINNET',
               },
               deriveAddress: async () => 'spark1someoneelse000000000000000000',

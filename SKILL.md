@@ -1,11 +1,11 @@
 ---
-name: zappi-agent-pot
-description: Spend a prepaid Zappi pot to unlock a PaidResource, or create an auth-required spend ticket and paste the approve URL. Install zappi-cli. Never echo the pot key. Until an auth-required pot is attached, the bot can only run pots attach (pairing URL only — do not print the user code). Never ask for a zpc_ paste. For an app-created addressless free pot, run pots bind <potId> — the bot generates and stores the key as a host secret and prints only the pair URL.
+name: zappi-cli-setup
+description: Set up and attach a Zappi pot so a human can spend from it. Install zappi-cli. Never echo the pot key. Until an auth-required pot is attached, the bot can only run pots attach (pairing URL only — do not print the user code). Never ask for a zpc_ paste. For an app-created addressless free pot, run pots bind <potId> — the bot generates and stores the key as a host secret and prints only the pair URL. Spending on an agent host is approval tickets via the remote /mcp, not the CLI.
 ---
 
-# Zappi agent pot (buyer)
+# Zappi CLI setup (attach a pot)
 
-This is the **setup** skill. Load `SKILL.md` (`zappi-agent-pot`) to propose or pair a pot. **Spend** on the agent host is `@zappimoney/zappi-mcp` (`pay`, `send`, `request`). Do not run `zappi-cli pay` or `zappi-cli send` as the agent spend path. The MCP server holds the key in the OS keychain and refuses destinations that are not allowlisted.
+This is the **setup / attach** skill. Load `SKILL.md` (`zappi-cli-setup`) to propose or pair a pot. This skill does **not** spend. Spending on an agent host is approval tickets through the remote Streamable HTTP MCP at `https://api-dev.zappi.money/mcp` (`create_approval_ticket`, `pay`, `send`, `consume`): the agent creates a ticket, gives the human the approve URL, and stops. The human approves in the Zappi web app, where their session signs. The agent never holds or sends a pot seed, never signs, and never pastes `zpc_`. The local stdio MCP server (`@zappimoney/zappi-mcp`) and its OS keychain seed store are gone — do not call them.
 
 ## Connect vs send (read this first)
 
@@ -24,7 +24,7 @@ On connect you must **not**:
 
 `zpc_` is **not** an account login. The human does not copy it from the pot page. Chat is not where they paste it.
 
-**Sending** money is a later turn, and **only after this host is attached**. If they ask to send while not attached, refuse, run `pots attach`, paste the pairing URL only, and stop. If the link does not open, tell them to paste the verification code on the Zappi pairing page. Do not ask for that code in chat. Do not run `request`.
+**Sending** money is a later turn, and **only after this host is attached**. If they ask to send while not attached, refuse, run `pots attach`, paste the pairing URL only, and stop. If the link does not open, tell them to paste the verification code on the Zappi pairing page. Do not ask for that code in chat. On an agent host, spend is **not** a CLI command — it is an approval ticket through the remote `/mcp` (see *Spending on an agent host* below). Do not run `zappi-cli pay`, `send`, `consume`, or `request` as the agent spend path; those are for the human terminal (door 1).
 
 Loading this skill is **not** a task. A pot id in the prompt is **not** a send.
 
@@ -53,15 +53,9 @@ After the human registers and funds the pot, branch on spend mode.
 
 ## Free pot (you hold the key)
 
-```bash
-export ZAPPI_POT_ID="<from Zappi UI>"
-# ZAPPI_POT_SEED and ZAPPI_UNLOCK_TOKEN are host secrets — never chat / never log
-zappi-cli pay <paidResourceId>
-# metered: pay auto-consumes one unit; more units:
-zappi-cli consume <paidResourceId>
-```
+Setup is done — attach is not required, and you already hold the key on this terminal. Reply that you are ready and **stop**. Do not run attach.
 
-Do **not** invent a chain from an address — `zappi-cli pay` reads 402 `accepts[0].network` + `asset` and only pays `spark` / `USDB`.
+**Spending** on an agent host is approval tickets via the remote `/mcp`, not `zappi-cli pay` / `consume`. The CLI spend commands (`pay`, `consume`) are for the human terminal (door 1) where the seed file lives — see *Spending on an agent host* below for the agent path. Do **not** invent a chain from an address: a pay reads the 402 `accepts[0].network` + `asset` and only pays `spark` / `USDB`.
 
 ## Pot-first free pot (app creates the pot, bot generates the key)
 
@@ -75,7 +69,7 @@ This host generates the BIP-39 key, stores it as a **host secret** (`~/.zappi/po
 
 - The command first calls the public `preview` to confirm the pot exists, is `free`, and is `pending` (addressless). It **fails closed** before generating a key if not.
 - It prints **one pairing URL only** — never the mnemonic, never the user code, never `zpc_`. Pretty mode opens the browser and polls; `--no-poll` prints the request id + approve URL.
-- After approval it reclaims `zpc_` itself. Then set `ZAPPI_POT_ID` and `ZAPPI_POT_SEED` (or `ZAPPI_POT_KEY_FILE`) as host secrets and proceed as a normal free pot (`pay` / `consume`).
+- After approval it reclaims `zpc_` itself. Then set `ZAPPI_POT_ID` and `ZAPPI_POT_SEED` (or `ZAPPI_POT_KEY_FILE`) as host secrets. Setup is complete — for spending on an agent host, use the remote `/mcp` (see *Spending on an agent host* below), not `zappi-cli pay` / `consume`.
 - If this host already holds a pot client token, `pots bind` refuses — set `ZAPPI_POT_ID` and use the existing pot instead.
 
 `pots bind` is the **only** command for the pot-first flow. Do not run `propose` (the pot already exists), do not run `pots attach` with a generated address, and do not ask the human for a seed or `zpc_`.
@@ -105,15 +99,22 @@ When they ask to send, you need both:
 
 If either is missing, ask for that one thing and **stop**. Do not invent them. Do not ask for `zpc_`.
 
-```bash
-export ZAPPI_POT_ID="<from Zappi UI>"
-# ZAPPI_POT_CLIENT_TOKEN is a host secret — never chat / never log / never a flag
-zappi-cli request --amount-cents <cents> --to <spark-address>
-```
+On an agent host, spend is an approval ticket through the remote `/mcp` — see *Spending on an agent host* below. Do **not** run `zappi-cli request` (or `pay` / `send` / `consume`) as the agent spend path; those are for the human terminal (door 1). The remote `/mcp` `create_approval_ticket` (and `pay` / `send` / `consume`) returns one approve URL — paste that URL and stop. The human opens it in the Zappi web app, sees the amount and destination, and approves with a passkey; their session signs. The same ticket stays on the pot under **Spend to approve** if they never open the link. One ask, one ticket. Do not poll or sign.
 
-That command needs no TTY. Stdout is **one approve URL** and nothing else (`https://zappi.money/?panel=pots&spend=<id>`, no `code=`). Paste that URL. The human opens it, sees the amount and destination, and approves with a passkey. The same ticket stays on the pot under **Spend to approve** if they never open the link. `--json` includes the URL and never the `zpc_` token. Approving records the decision. It does not send the money. One ask, one ticket. Do not poll or sign.
+If the pot is not attached, run `zappi-cli pots attach --spend-mode auth_required`. Do not open a paste field. Do not ask for `zpc_`.
 
 If `request` fails because the pot is not attached, run `zappi-cli pots attach --pot <potId> --spend-mode auth_required`. Do not open a paste field. Do not ask for `zpc_`.
+
+## Spending on an agent host (approval tickets)
+
+This skill sets up and attaches a pot. It does **not** sign spends. On an agent host, spending is approval tickets through the remote Streamable HTTP MCP at `https://api-dev.zappi.money/mcp`:
+
+1. The agent calls a spend tool on the remote `/mcp` — `create_approval_ticket`, or `pay` / `send` / `consume` (which now create a ticket instead of refusing).
+2. The remote `/mcp` returns **one approve URL** and nothing else.
+3. The agent pastes that URL to the human and **stops**. The human opens it in the Zappi web app, reviews amount and destination, and approves with a passkey. The human's web session signs the spend.
+4. The agent never receives a seed, never signs, and never pastes `zpc_`. One ask, one ticket. Do not poll, do not sign, do not run a CLI spend command to "finish" it.
+
+The CLI spend commands (`pay`, `consume`, `request`) still exist for the **human terminal** (door 1), where the seed file / `zpc_` live on the same machine. They are not the agent skill's spend path. The local stdio MCP server (`@zappimoney/zappi-mcp`) and its OS keychain seed store are removed — do not call them and do not look for a keychain seed.
 
 
 ## Fail closed — never bypass the CLI
@@ -139,9 +140,9 @@ Wallet-scope `balance` (no `--pot` / no pot id) still needs `zappi-cli login` or
 
 ### Never ask for `zpc_`
 
-Do not ask them to paste `zpc_` on connect, on send, or after a failed `request`. Pair with `pots attach` instead. This host reclaims the token after they approve. Do not mention a secret is missing after attach / “pot is set”.
+Do not ask them to paste `zpc_` on connect, on send, or after a failed spend ticket. Pair with `pots attach` instead. This host reclaims the token after they approve. Do not mention a secret is missing after attach / “pot is set”.
 
-`ZAPPI_POT_CLIENT_TOKEN` (`zpc_`) is a **host secret** used only by `zappi-cli request`. Prefer env or `~/.zappi/pot-client-*.txt` already on this machine. **Never echo it.**
+`ZAPPI_POT_CLIENT_TOKEN` (`zpc_`) is a **host secret** used by the CLI attach/request path on the human terminal (door 1). Prefer env or `~/.zappi/pot-client-*.txt` already on this machine. **Never echo it.** On an agent host, spend goes through the remote `/mcp`, which does not use `zpc_` on the agent side.
 
 **Do not** open a paste field, Grok “Save securely” box, or any save-secret prompt on:
 

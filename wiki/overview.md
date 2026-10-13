@@ -19,7 +19,7 @@ Help text groups the same way: Host setup, Agent spend, Wallet, Pots. Global fla
 
 - Seller / project API is out of scope (from [[sources/readme]]).
 - This package is not the web app. Product install copy lives in the web wiki (`web/wiki/product/agent-pot-install.md`).
-- Agent-host spend is `@zappimoney/zappi-mcp`. This CLI remains setup (`propose`, `pots attach`) and the developer wallet surface.
+- Agent-host spend is approval tickets on the remote `/mcp`. This CLI remains setup (`propose`, `pots attach`) and the developer wallet surface. The local stdio signer is gone.
 
 > ⚠️ Contradicts [[sources/readme]] hard rule “do not add `@zappimoney/zappi-sdk` unless intentionally migrating off the Nest HTTP + Spark path”: `package.json` already depends on `@zappimoney/zappi-sdk` (`file:../zappi-sdk`). Wallet and pots commands use `ZappiClient`. Buyer `pay` / `consume` still use the local Nest HTTP + Spark path in `src/paywall*.ts`, not the SDK client.
 

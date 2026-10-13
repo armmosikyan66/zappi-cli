@@ -56,6 +56,63 @@ describe('botAttachApproveUrl', () => {
       'http://localhost:3000/?panel=pots&attach=req_1&pot=f7b81134-3b01-49de-b114-ad433cb3bbac',
     )
   })
+
+  it('drops deviceCode, zpc_, userinfo, fragment, and a known secret value', () => {
+    const deviceCode = 'device_secret_once'
+    const token = 'zpc_secret_token'
+    const href = botAttachApproveUrl(
+      `https://user:${token}@evil.example/?panel=pots&attach=req_1&deviceCode=${deviceCode}&token=${token}&proof=${deviceCode}#code=PP3X-NB6Y`,
+      'f7b81134-3b01-49de-b114-ad433cb3bbac',
+      'https://zappi.money',
+      [deviceCode, token],
+    )
+    assert.equal(
+      href,
+      'https://zappi.money/?panel=pots&attach=req_1&pot=f7b81134-3b01-49de-b114-ad433cb3bbac',
+    )
+    assert.doesNotMatch(href, /deviceCode|zpc_|code=/i)
+  })
+
+  it('resolves a relative approve URL and still drops code=', () => {
+    const href = botAttachApproveUrl(
+      '/?panel=pots&attach=req_1&code=PP3X-NB6Y&deviceCode=device_secret_once',
+      'f7b81134-3b01-49de-b114-ad433cb3bbac',
+      'https://zappi.money',
+      ['device_secret_once'],
+    )
+    assert.equal(
+      href,
+      'https://zappi.money/?panel=pots&attach=req_1&pot=f7b81134-3b01-49de-b114-ad433cb3bbac',
+    )
+  })
+
+  it('refuses an unparseable or path-embedded credential without echoing it', () => {
+    const token = 'zpc_secret_token_value'
+    assert.throws(
+      () => botAttachApproveUrl(`not a url ${token} code=PP3X deviceCode=device_secret_once`),
+      (error: unknown) => {
+        assert.ok(error instanceof Error)
+        assert.equal(error.message.includes(token), false)
+        assert.equal(error.message.includes('device_secret_once'), false)
+        assert.equal(error.message.includes('PP3X'), false)
+        return true
+      },
+    )
+    assert.throws(
+      () =>
+        botAttachApproveUrl(
+          `https://zappi.money/${token}?panel=pots&attach=req_1`,
+          null,
+          'https://zappi.money',
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof Error)
+        assert.match(error.message, /pot client token/)
+        assert.equal(error.message.includes(token), false)
+        return true
+      },
+    )
+  })
 })
 
 describe('attach commands', () => {
@@ -274,6 +331,9 @@ describe('attach commands', () => {
     const parsed = JSON.parse(out)
     assert.equal(parsed.status, 'approved')
     assert.equal(parsed.potClientTokenReceived, true)
+    assert.equal(parsed.deviceCodeReceived, true)
+    assert.equal('deviceCode' in parsed, false)
+    assert.equal('potClientToken' in parsed, false)
     assert.equal(out.includes('zpc_from_reclaim'), false)
     assert.equal(out.includes('from_env_device'), false)
     assert.ok(calls.some((c) => c.url.endsWith('/credentials')))
@@ -289,11 +349,106 @@ describe('attach commands', () => {
     assert.equal(parsed.status, 'approved')
     assert.equal(parsed.potId, 'p1')
     assert.equal(parsed.potClientTokenReceived, false)
-    assert.equal(parsed.deviceCodeAvailable, false)
+    assert.equal(parsed.deviceCodeReceived, false)
+    assert.equal('deviceCode' in parsed, false)
   })
 
   it('runPotAttachStatus throws without a requestId', async () => {
     await assert.rejects(() => runPotAttachStatus([], 'json', ENV), /Usage/)
+  })
+
+  it('pretty, plain, and json approve URLs drop deviceCode, zpc_, and code=', async () => {
+    const potId = 'f7b81134-3b01-49de-b114-ad433cb3bbac'
+    const deviceCode = 'device_secret_once'
+    const token = 'zpc_secret_token'
+    const userCode = 'PP3X-NB6Y'
+    const poisoned =
+      'https://evil.example/?panel=pots&attach=r1' +
+      `&pot=${potId}&code=${userCode}&deviceCode=${deviceCode}&token=${token}` +
+      `&proof=${deviceCode}#code=${userCode}`
+    globalThis.fetch = mockFetch((req) => {
+      if (req.url.endsWith('/api/wallet/pots/attach') && req.method === 'POST') {
+        return jsonResponse({
+          requestId: 'r1',
+          userCode,
+          deviceCode,
+          potClientToken: token,
+          approveUrl: poisoned,
+          expiresAt: '2099-01-01',
+        })
+      }
+      return jsonResponse({ ok: false }, 404)
+    })
+    const env = {
+      ...ENV,
+      ZAPPI_POT_ID: potId,
+      ZAPPI_APP_ORIGIN: 'https://zappi.money',
+    }
+    const expected =
+      `https://zappi.money/?panel=pots&attach=r1&pot=${potId}`
+    for (const mode of ['pretty', 'plain', 'json'] as const) {
+      const out = await runPotAttach(
+        ['--no-poll', '--spend-mode', 'auth_required'],
+        mode,
+        env,
+      )
+      const urls = out.match(/https?:\/\/[^\s"]+/g) ?? []
+      assert.ok(urls.length > 0, out)
+      for (const href of urls) {
+        assert.equal(href, expected)
+        assert.doesNotMatch(href, /deviceCode/i)
+        assert.doesNotMatch(href, /zpc_/i)
+        assert.doesNotMatch(href, /code=/i)
+        assert.equal(href.includes(deviceCode), false)
+        assert.equal(href.includes(token), false)
+        assert.equal(href.includes(userCode), false)
+        assert.equal(href.includes('evil.example'), false)
+      }
+      assert.equal(out.includes(deviceCode), false)
+      assert.equal(out.includes(token), false)
+      assert.equal(out.includes(userCode), false)
+      assert.equal(out.includes('code='), false)
+      if (mode === 'json') {
+        const parsed = JSON.parse(out)
+        assert.equal(parsed.pending.deviceCodeReceived, true)
+        assert.equal(typeof parsed.pending.deviceCodeReceived, 'boolean')
+        assert.equal(parsed.pending.potClientTokenReceived, false)
+        assert.equal(typeof parsed.pending.potClientTokenReceived, 'boolean')
+        assert.equal('deviceCode' in parsed.pending, false)
+        assert.equal('potClientToken' in parsed.pending, false)
+        assert.equal('userCode' in parsed.pending, false)
+        assert.equal(parsed.pending.approveUrl, expected)
+      }
+    }
+  })
+
+  it('refuses an attach URL that still carries zpc_ and does not echo it', async () => {
+    const token = 'zpc_secret_token_value'
+    globalThis.fetch = mockFetch((req) => {
+      if (req.url.endsWith('/api/wallet/pots/attach') && req.method === 'POST') {
+        return jsonResponse({
+          requestId: 'r1',
+          deviceCode: 'device_secret_once',
+          approveUrl: `https://evil.example/${token}?panel=pots&attach=r1`,
+          expiresAt: '2099-01-01',
+        })
+      }
+      return jsonResponse({ ok: false }, 404)
+    })
+    await assert.rejects(
+      () =>
+        runPotAttach(['--no-poll', '--spend-mode', 'free'], 'plain', {
+          ...ENV,
+          ZAPPI_APP_ORIGIN: 'https://zappi.money',
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error)
+        assert.match(error.message, /pot client token/)
+        assert.equal(error.message.includes(token), false)
+        assert.equal(error.message.includes('device_secret_once'), false)
+        return true
+      },
+    )
   })
 })
 

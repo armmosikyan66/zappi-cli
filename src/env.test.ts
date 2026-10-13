@@ -18,9 +18,20 @@ import {
   resolvePaywallBase,
   resolvePotClientToken,
   resolvePotSpendMode,
+  resolvePotPassphrase,
   resolveSparkNetwork,
   resolveUnlockToken,
+  wantsPotKeychain,
+  KEYCHAIN_OPERATION_FAILED_ERROR,
+  KEYCHAIN_SECRET_MISSING_ERROR,
+  KEYCHAIN_SUPPORT_MISSING_ERROR,
+  POT_PASSPHRASE_MISSING_ERROR,
 } from './env.js'
+import {
+  KEYCHAIN_OPERATION_FAILED_ERROR as KEYCHAIN_OPERATION_FAILED_FROM_MODULE,
+  KEYCHAIN_SUPPORT_MISSING_ERROR as KEYCHAIN_SUPPORT_MISSING_FROM_MODULE,
+} from './pot-keychain.js'
+import { redactSecrets } from './paywall-http.js'
 
 describe('resolvePaywallBase', () => {
   it('defaults to the dev API', () => {
@@ -204,5 +215,169 @@ describe('resolveAppOrigin + spark network + units', () => {
   it('requires a runtime pot id (install args are not a pot id)', () => {
     assert.throws(() => requirePotId({}), /ZAPPI_POT_ID/)
     assert.equal(requirePotId({ ZAPPI_POT_ID: 'pot_live' }), 'pot_live')
+  })
+})
+
+describe('resolvePotPassphrase keychain order', () => {
+  const secret = 'dummy-keychain-passphrase-01'
+  const envSecret = 'env-passphrase-value-0001'
+
+  function memory(value: string | null, calls: { gets: number }) {
+    return {
+      getUnlockSecret() {
+        calls.gets += 1
+        return value
+      },
+      setUnlockSecret() {
+        throw new Error('set must not run during resolve')
+      },
+      deleteUnlockSecret() {
+        throw new Error('delete must not run during resolve')
+      },
+    }
+  }
+
+  it('keeps unset spend mode as free for the auth-required request path', () => {
+    assert.equal(resolvePotSpendMode({}), 'free')
+    assert.equal(resolvePotSpendMode({ ZAPPI_POT_USE_KEYCHAIN: '1' }), 'free')
+    assert.equal(resolvePotSpendMode({ ZAPPI_POT_SPEND_MODE: 'auth_required' }), 'auth_required')
+  })
+
+  it('uses ZAPPI_POT_PASSPHRASE and does not read the keychain', () => {
+    const calls = { gets: 0 }
+    const value = resolvePotPassphrase(
+      { ZAPPI_POT_PASSPHRASE: envSecret, ZAPPI_POT_USE_KEYCHAIN: '1' },
+      { keychain: true, unlockKeychain: memory('other-passphrase-value-9999', calls) },
+    )
+    assert.equal(value, envSecret)
+    assert.equal(calls.gets, 0)
+  })
+
+  it('reads an injected keychain into a local variable and does not write process.env', () => {
+    const marker = 'ZAPPI_POT_PASSPHRASE'
+    const previous = process.env[marker]
+    delete process.env[marker]
+    const calls = { gets: 0 }
+    const env: { ZAPPI_POT_USE_KEYCHAIN: string; ZAPPI_POT_PASSPHRASE?: string } = {
+      ZAPPI_POT_USE_KEYCHAIN: '1',
+    }
+    try {
+      const value = resolvePotPassphrase(env, { unlockKeychain: memory(secret, calls) })
+      assert.equal(value, secret)
+      assert.equal(calls.gets, 1)
+      assert.equal(process.env[marker], undefined)
+      assert.equal(Object.prototype.hasOwnProperty.call(env, marker), false)
+      assert.equal(wantsPotKeychain({ ZAPPI_POT_USE_KEYCHAIN: 'true' }), false)
+      assert.equal(wantsPotKeychain({}, { keychain: true }), true)
+    } finally {
+      if (previous === undefined) delete process.env[marker]
+      else process.env[marker] = previous
+    }
+  })
+
+  it('opts in from opts.keychain when the env passphrase is unset', () => {
+    const calls = { gets: 0 }
+    assert.equal(
+      resolvePotPassphrase({}, { keychain: true, unlockKeychain: memory(`${secret}\n`, calls) }),
+      secret,
+    )
+    assert.equal(calls.gets, 1)
+  })
+
+  it('fails closed when the keychain is empty or unavailable, without echoing the secret', () => {
+    const calls = { gets: 0 }
+    assert.throws(
+      () => resolvePotPassphrase({}, { keychain: true, unlockKeychain: memory(null, calls) }),
+      (error: Error) => {
+        assert.equal(error.message, KEYCHAIN_SECRET_MISSING_ERROR)
+        assert.equal(error.message.includes(secret), false)
+        return true
+      },
+    )
+    assert.throws(
+      () =>
+        resolvePotPassphrase(
+          { ZAPPI_POT_USE_KEYCHAIN: '1' },
+          {
+            loadUnlockKeychain() {
+              throw new Error(`${secret} leaked`)
+            },
+          },
+        ),
+      (error: Error) => {
+        assert.equal(error.message, KEYCHAIN_SUPPORT_MISSING_ERROR)
+        assert.equal(error.message.includes(secret), false)
+        assert.equal(error.message.includes('leaked'), false)
+        return true
+      },
+    )
+    assert.throws(
+      () =>
+        resolvePotPassphrase(
+          {},
+          {
+            keychain: true,
+            unlockKeychain: {
+              getUnlockSecret() {
+                throw new Error(KEYCHAIN_SUPPORT_MISSING_FROM_MODULE)
+              },
+              setUnlockSecret() {},
+              deleteUnlockSecret() {
+                return false
+              },
+            },
+          },
+        ),
+      (error: Error) => {
+        assert.equal(error.message, KEYCHAIN_SUPPORT_MISSING_ERROR)
+        assert.equal(error.message, KEYCHAIN_SUPPORT_MISSING_FROM_MODULE)
+        return true
+      },
+    )
+    assert.equal(KEYCHAIN_OPERATION_FAILED_ERROR, KEYCHAIN_OPERATION_FAILED_FROM_MODULE)
+    assert.throws(() => resolvePotPassphrase({}), (error: Error) => {
+      assert.equal(error.message, POT_PASSPHRASE_MISSING_ERROR)
+      return true
+    })
+  })
+
+  it('rejects a short or placeholder keychain secret without echoing it', () => {
+    const short = 'short-secret'
+    assert.throws(
+      () =>
+        resolvePotPassphrase(
+          {},
+          {
+            keychain: true,
+            unlockKeychain: memory(short, { gets: 0 }),
+          },
+        ),
+      (error: Error) => {
+        assert.match(error.message, /at least 16/)
+        assert.equal(error.message.includes(short), false)
+        return true
+      },
+    )
+    assert.throws(
+      () =>
+        resolvePotPassphrase(
+          { ZAPPI_POT_PASSPHRASE: '<not-a-real-secret>' },
+          {
+            keychain: true,
+            unlockKeychain: memory(secret, { gets: 0 }),
+          },
+        ),
+      (error: Error) => {
+        assert.match(error.message, /placeholder/)
+        assert.equal(error.message.includes('not-a-real-secret'), false)
+        return true
+      },
+    )
+  })
+
+  it('redacts a passphrase assignment so the value cannot reach stdout', () => {
+    const redacted = redactSecrets(`unlock ZAPPI_POT_PASSPHRASE=${secret} end`)
+    assert.equal(redacted.includes(secret), false)
+    assert.match(redacted, /ZAPPI_POT_PASSPHRASE=\[redacted\]/)
   })
 })

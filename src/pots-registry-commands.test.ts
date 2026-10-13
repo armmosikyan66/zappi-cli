@@ -10,6 +10,7 @@ import {
   runPotsRegistryImport,
   runPotsRegistryBackup,
   runPotsRegistryRestore,
+  runPotsRegistryUnlockSecret,
   runPotsRegistry,
 } from './pots-registry-commands.js'
 import { savePotSeed } from './pot-registry.js'
@@ -192,6 +193,202 @@ describe('pots registry commands', () => {
       await runPotsRegistry('use', ['pot_a'], 'plain', { env })
       assert.match(await runPotsRegistry('remove', ['pot_a'], 'pretty', { env }), /local access only/i)
       await assert.rejects(() => runPotsRegistry('nope', [], 'plain', { env }), /Usage/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('unlock-secret --set stores a prompted secret and never prints it', async () => {
+    const { env, dir } = tmpEnv()
+    const secret = 'dummy-unlock-secret-0001'
+    const seen: string[] = []
+    let got = false
+    try {
+      const out = await runPotsRegistryUnlockSecret(['--set', '--keychain'], 'json', {
+        env: { ...env, ZAPPI_POT_SEED: PHRASE },
+        askSecret: async () => secret,
+        unlockKeychain: {
+          getUnlockSecret: () => {
+            got = true
+            return null
+          },
+          setUnlockSecret: (value) => {
+            seen.push(value)
+          },
+          deleteUnlockSecret: () => false,
+        },
+      })
+      assert.deepEqual(seen, [secret])
+      assert.equal(got, false)
+      const parsed = JSON.parse(out) as { set?: boolean; present?: unknown; command: string }
+      assert.equal(parsed.set, true)
+      assert.equal(parsed.command, 'pots registry unlock-secret')
+      assert.equal('present' in parsed, false)
+      assert.equal(out.includes(secret), false)
+      assert.equal(out.includes(PHRASE), false)
+      assert.equal(out.includes(PASSPHRASE), false)
+      const pretty = await runPotsRegistryUnlockSecret(['--keychain', '--set'], 'pretty', {
+        env,
+        askSecret: async () => `  ${secret}  `,
+        unlockKeychain: {
+          getUnlockSecret: () => null,
+          setUnlockSecret: (value) => {
+            seen.push(value)
+          },
+          deleteUnlockSecret: () => false,
+        },
+      })
+      assert.equal(seen[1], secret)
+      assert.equal(pretty.includes(secret), false)
+      assert.match(pretty, /not printed/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('unlock-secret --delete never reads or prints the previous value', async () => {
+    const { env, dir } = tmpEnv()
+    const secret = 'dummy-unlock-secret-0001'
+    try {
+      const out = await runPotsRegistryUnlockSecret(['--delete', '--keychain'], 'json', {
+        env,
+        unlockKeychain: {
+          getUnlockSecret: () => {
+            throw new Error('get must not run on --delete')
+          },
+          setUnlockSecret: () => {
+            throw new Error('set must not run on --delete')
+          },
+          deleteUnlockSecret: () => true,
+        },
+      })
+      const parsed = JSON.parse(out) as { deleted: boolean }
+      assert.equal(parsed.deleted, true)
+      assert.equal(out.includes(secret), false)
+      assert.equal(out.includes(PASSPHRASE), false)
+      const absent = await runPotsRegistry('unlock-secret', ['--keychain', '--delete'], 'plain', {
+        env,
+        unlockKeychain: {
+          getUnlockSecret: () => {
+            throw new Error('get must not run on --delete')
+          },
+          setUnlockSecret: () => {
+            throw new Error('set must not run')
+          },
+          deleteUnlockSecret: () => false,
+        },
+      })
+      assert.equal(absent, 'absent')
+      assert.equal(absent.includes(secret), false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('unlock-secret status is a boolean and refuses argv secrets', async () => {
+    const { env, dir } = tmpEnv()
+    const secret = 'dummy-unlock-secret-0001'
+    const leaked = 'dummy-should-not-appear-9999'
+    try {
+      const out = await runPotsRegistryUnlockSecret(['--keychain'], 'json', {
+        env: { ZAPPI_POT_USE_KEYCHAIN: '0', ...env },
+        unlockKeychain: {
+          getUnlockSecret: () => secret,
+          setUnlockSecret: () => {
+            throw new Error('set must not run')
+          },
+          deleteUnlockSecret: () => {
+            throw new Error('delete must not run')
+          },
+        },
+      })
+      const parsed = JSON.parse(out) as { present: boolean; keychain: boolean; set?: boolean }
+      assert.equal(parsed.present, true)
+      assert.equal(parsed.keychain, true)
+      assert.equal(parsed.set, undefined)
+      assert.equal(out.includes(secret), false)
+      await assert.rejects(
+        () =>
+          runPotsRegistryUnlockSecret(['--set', leaked, '--keychain'], 'json', {
+            env,
+            unlockKeychain: {
+              getUnlockSecret: () => null,
+              setUnlockSecret: () => {
+                throw new Error('must not store argv')
+              },
+              deleteUnlockSecret: () => false,
+            },
+          }),
+        (error: Error) => {
+          assert.match(error.message, /not a CLI argument/)
+          assert.equal(error.message.includes(leaked), false)
+          return true
+        },
+      )
+      await assert.rejects(
+        () => runPotsRegistryUnlockSecret(['--set', '--delete', '--keychain'], 'plain', { env }),
+        /only one of --set or --delete/,
+      )
+      let asked = false
+      await assert.rejects(
+        () =>
+          runPotsRegistryUnlockSecret(['--set'], 'plain', {
+            env: { ...env, ZAPPI_POT_PASSPHRASE: undefined, ZAPPI_POT_USE_KEYCHAIN: undefined },
+            askSecret: async () => {
+              asked = true
+              return secret
+            },
+          }),
+        /Pass --keychain/,
+      )
+      assert.equal(asked, false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('unlock-secret rejects a short or placeholder prompt and does not store it', async () => {
+    const { env, dir } = tmpEnv()
+    const short = 'tiny-secret-val'
+    try {
+      await assert.rejects(
+        () =>
+          runPotsRegistryUnlockSecret(['--set', '--keychain'], 'plain', {
+            env,
+            askSecret: async () => short,
+            unlockKeychain: {
+              getUnlockSecret: () => null,
+              setUnlockSecret: () => {
+                throw new Error('must not store')
+              },
+              deleteUnlockSecret: () => false,
+            },
+          }),
+        (error: Error) => {
+          assert.match(error.message, /at least 16/)
+          assert.equal(error.message.includes(short), false)
+          return true
+        },
+      )
+      await assert.rejects(
+        () =>
+          runPotsRegistryUnlockSecret(['--keychain', '--set'], 'plain', {
+            env: { ...env, ZAPPI_POT_USE_KEYCHAIN: '1' },
+            askSecret: async () => '<not-a-real-secret>',
+            unlockKeychain: {
+              getUnlockSecret: () => null,
+              setUnlockSecret: () => {
+                throw new Error('must not store')
+              },
+              deleteUnlockSecret: () => false,
+            },
+          }),
+        (error: Error) => {
+          assert.match(error.message, /placeholder/)
+          assert.equal(error.message.includes('not-a-real-secret'), false)
+          return true
+        },
+      )
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

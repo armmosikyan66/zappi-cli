@@ -12,7 +12,9 @@
  *
  * Explicit contradictory selectors fail closed. A registry pot never falls back to
  * an env/file seed after a decrypt failure, and the env/file legacy paths are
- * explicit opt-outs — never automatic recovery from registry failure. The
+ * explicit opt-outs — never automatic recovery from registry failure. Legacy
+ * signing also requires `ZAPPI_POT_SPEND_MODE=free` exactly; unset,
+ * auth_required, and unknown fail closed before the seed is read. The
  * seed-derived Spark address must match the stored identity; mismatch fails closed.
  *
  * The seed is held inside the context and reached only via `getSeed()` for in-memory
@@ -192,7 +194,11 @@ async function resolveLegacyContext(
   }
   const accountIndex = resolveLegacyAccountIndex(env)
   const derivationMode: PotDerivationMode = DEFAULT_POT_DERIVATION_MODE
-  // Identity is known. Only now read the signing material.
+  // 1-559: an unset mode must not silently free-sign a legacy seed. Registry
+  // pots are unchanged (they already reject non-free records). This runs
+  // before loadPotSeed so a refused mode never reads or derives the seed.
+  assertLegacyExplicitFreeMode(env)
+  // Identity is known and the mode is explicitly free. Only now read the seed.
   const seed = loadPotSeed(env)
   const derived = await (deps.deriveAddress
     ? deps.deriveAddress(seed, network, accountIndex)
@@ -236,6 +242,27 @@ function assertRecordMatchesSelectors(record: PotRecord, env: PotEnv): void {
       )
     }
   }
+}
+
+/**
+ * Legacy `ZAPPI_POT_SEED` / `ZAPPI_POT_KEY_FILE` signs only when the operator
+ * set `ZAPPI_POT_SPEND_MODE` to free. Unset is not free on this path.
+ * Auth-required pots use `zappi-cli request`.
+ */
+function assertLegacyExplicitFreeMode(env: PotEnv): void {
+  const raw = env.ZAPPI_POT_SPEND_MODE?.trim() ?? ''
+  if (raw.toLowerCase() === 'free') return
+  const state = raw === '' ? 'unset' : describeLegacySpendMode(raw)
+  throw new Error(
+    `Refusing to free-sign a legacy seed: ZAPPI_POT_SPEND_MODE is ${state}. It must be exactly free. For an auth-required pot, run \`zappi-cli request\` and do not free-sign. Set ZAPPI_POT_SPEND_MODE=free only for an actual free pot.`,
+  )
+}
+
+function describeLegacySpendMode(raw: string): string {
+  const flat = raw.replace(/[\r\n]+/g, '').slice(0, 64)
+  if (flat.toLowerCase() === 'auth_required') return 'auth_required'
+  if (!/^[\w.-]+$/.test(flat)) return 'unrecognized'
+  return `"${flat.toLowerCase()}"`
 }
 
 function resolveLegacyAccountIndex(env: PotEnv): number {

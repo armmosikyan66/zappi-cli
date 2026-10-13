@@ -20,6 +20,6 @@ From [[sources/readme]], [[sources/skill]], and the fail-closed checks in source
 - `auth_required` pots must not be free-signed from `pay`. Run [[commands/request]] only after attach is approved. One ask, one ticket.
 - Seller / project API is out of scope.
 - Stderr and paywall errors run through `redactSecrets` (including BIP-39-shaped strings) before they are shown.
-- Agent-host spend goes through `@zappimoney/zappi-mcp`. Do not treat this CLI `pay` / `send` as the agent spend path.
+- Agent-host spend goes through the remote `/mcp` as approval tickets. Do not treat this CLI `pay` / `send` as the agent spend path. The local stdio signer is gone.
 
 Store the attach client token (`zpc_…`) as a host secret. Pretty attach output withholds it; `--json` does not ([[reference/output]]). `request --json` never includes that token.

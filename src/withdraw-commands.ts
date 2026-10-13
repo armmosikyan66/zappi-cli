@@ -11,7 +11,11 @@ import {
 } from './pot-send.js'
 import { parseArgs, parseIntFlag } from './args.js'
 import { assertFreeSignerSpendMode, type PotEnv } from './env.js'
-import { readUsdbTokenIdentifier } from './spark-send.js'
+import {
+  readUsdbTokenIdentifier,
+  type SendUsdbFromPotInput,
+  type SendUsdbFromPotResult,
+} from './spark-send.js'
 import { gateAndSignFreePot } from './free-pot-sign.js'
 import { resolvePotContext, type PotContext } from './pot-context.js'
 import {
@@ -58,6 +62,7 @@ function buildPotSigner(
   externalIdempotencyKey?: string,
   potFlag?: string,
   context?: PotContext,
+  hooks?: MoneyOutHooks,
 ): TwoPhaseSigner {
   return {
     async transferUsdb(params: {
@@ -79,7 +84,7 @@ function buildPotSigner(
         tokenIdentifier: params.tokenIdentifier,
         ...(externalIdempotencyKey ? { externalIdempotencyKey } : {}),
         journal: { env },
-        readTokenIdentifier: readUsdbTokenIdentifier,
+        ...freePotSignOverrides(hooks),
       })
       return { sparkTxHash }
     },
@@ -192,6 +197,25 @@ export interface MoneyOutHooks {
   onContext?: (context: PotContext) => void
   /** Test double for Spark address derivation. Production uses the SDK. */
   deriveAddress?: (seed: string, network: 'MAINNET', accountIndex: number) => Promise<string>
+  /** Test double for the USDB broadcast. Production signs inside gateAndSignFreePot. */
+  sendUsdb?: (input: SendUsdbFromPotInput) => Promise<SendUsdbFromPotResult>
+  /** Test double for the pot's USDB token id. Production reads the Spark balance. */
+  readTokenIdentifier?: (
+    mnemonic: string,
+    accountNumber: number,
+    network: 'MAINNET',
+  ) => Promise<string>
+}
+
+/** Production broadcast and token lookup, unless a test double is injected. */
+function freePotSignOverrides(hooks?: MoneyOutHooks): {
+  readTokenIdentifier: NonNullable<MoneyOutHooks['readTokenIdentifier']>
+  sendUsdb?: MoneyOutHooks['sendUsdb']
+} {
+  return {
+    readTokenIdentifier: hooks?.readTokenIdentifier ?? readUsdbTokenIdentifier,
+    ...(hooks?.sendUsdb ? { sendUsdb: hooks.sendUsdb } : {}),
+  }
 }
 
 /** `zappi-cli withdraw confirm <quoteId> [--auth <token>] [--pot <id>]` */
@@ -218,7 +242,7 @@ export async function runWithdrawConfirm(
   })
   hooks?.onContext?.(context)
   const client = await resolveZappiClient(env)
-  const signer = buildPotSigner(env, quoteId, potFlag, context)
+  const signer = buildPotSigner(env, quoteId, potFlag, context, hooks)
   const authorizationToken = strings.auth ?? null
   const confirmation = await runTwoPhaseWithdraw(client, signer, {
     quoteId,
@@ -332,7 +356,7 @@ export async function runSendInternal(
     externalIdempotencyKey: idempotencyKey,
     journal: { env },
     resolveContext: async () => context,
-    readTokenIdentifier: readUsdbTokenIdentifier,
+    ...freePotSignOverrides(hooks),
   })
   const sparkTxHash = signed.sparkTxHash
 
@@ -471,7 +495,7 @@ export async function runSendExternal(
       externalIdempotencyKey: idempotencyKey,
       journal: { env },
       resolveContext: async () => context,
-      readTokenIdentifier: readUsdbTokenIdentifier,
+      ...freePotSignOverrides(hooks),
     })
     final = await potSendExternal(
       client,

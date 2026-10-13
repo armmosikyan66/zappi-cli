@@ -7,6 +7,8 @@ import {
 import {
   readUsdbTokenIdentifier,
   sendUsdbFromPot,
+  type SendUsdbFromPotInput,
+  type SendUsdbFromPotResult,
 } from './spark-send.js'
 import type { OutputMode } from './ui.js'
 import {
@@ -75,6 +77,15 @@ async function runSendSparkUsdb(
   resolveContext: (env: PotEnv) => Promise<PotContext> = (e) => resolvePotContext({}, { env: e }),
   jdeps?: JournalDeps,
   externalIdempotencyKey?: string,
+  /** Test double. Production omits this and signs with the Spark SDK. */
+  signer?: {
+    readTokenIdentifier?: (
+      mnemonic: string,
+      accountNumber: number,
+      network: 'MAINNET',
+    ) => Promise<string>
+    sendUsdb?: (input: SendUsdbFromPotInput) => Promise<SendUsdbFromPotResult>
+  },
 ): Promise<string> {
   const inspected = inspectSparkAddress(to)
   if (!inspected.valid || !inspected.network || inspected.network === 'FOREIGN') {
@@ -115,6 +126,8 @@ async function runSendSparkUsdb(
   })
 
   const mnemonic = context.getSeed()
+  const readToken = signer?.readTokenIdentifier ?? readUsdbTokenIdentifier
+  const sendUsdb = signer?.sendUsdb ?? sendUsdbFromPot
   let sparkTxHash: string
   let reconciled = false
   if (jdeps) {
@@ -122,9 +135,9 @@ async function runSendSparkUsdb(
     if (begin.action === 'sign') {
       let broadcastAttempted = false
       try {
-        const tokenIdentifier = await readUsdbTokenIdentifier(mnemonic, context.accountIndex, potNetwork)
+        const tokenIdentifier = await readToken(mnemonic, context.accountIndex, potNetwork)
         broadcastAttempted = true
-        const signed = await sendUsdbFromPot({
+        const signed = await sendUsdb({
           mnemonic, accountNumber: context.accountIndex, network: potNetwork,
           tokenIdentifier, receiverSparkAddress: to.trim(), amountCents,
         })
@@ -157,8 +170,8 @@ async function runSendSparkUsdb(
       )
     }
   } else {
-    const tokenIdentifier = await readUsdbTokenIdentifier(mnemonic, context.accountIndex, potNetwork)
-    const signed = await sendUsdbFromPot({
+    const tokenIdentifier = await readToken(mnemonic, context.accountIndex, potNetwork)
+    const signed = await sendUsdb({
       mnemonic, accountNumber: context.accountIndex, network: potNetwork,
       tokenIdentifier, receiverSparkAddress: to.trim(), amountCents,
     })

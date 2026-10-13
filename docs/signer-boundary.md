@@ -10,7 +10,15 @@ auth-required pot.
 ## 1. What this host stores
 
 - Free-pot seeds live as ciphertext in `~/.zappi/pots.json` (mode 0600,
-  directory 0700). The unlock secret is `ZAPPI_POT_PASSPHRASE`.
+  directory 0700). The unlock secret is `ZAPPI_POT_PASSPHRASE`, or optionally
+  the same secret in the OS keychain (service `zappi-cli`, account
+  `pot-registry-unlock`). The keychain never holds the seed. The envelope
+  format does not change. `ZAPPI_POT_PASSPHRASE` wins when it is set. The
+  keychain is read only when that variable is unset and the operator opted
+  in with `--keychain` or `ZAPPI_POT_USE_KEYCHAIN=1`. A missing keychain
+  backend fails closed. Unattended hosts should use systemd
+  `LoadCredential` (or another host secret) for `ZAPPI_POT_PASSPHRASE`.
+  Linux secret-service may need a session, so that env path stays supported.
 - A newly generated seed is sealed into a provisioning record before the
   command reports success. The Nest pot id is applied later with
   `pots registry bind`. Until then the record cannot be selected for signing.
@@ -27,9 +35,11 @@ Signing uses one immutable context: pot id, Spark address, spend mode
 
 - Registry records are the identity for pots that have been sealed. The
   seed-derived address must match the stored address.
-- A legacy `ZAPPI_POT_SEED` or `ZAPPI_POT_KEY_FILE` also requires
-  `ZAPPI_POT_SPARK_ADDRESS`. A mismatch, `auth_required`, or an unknown
-  spend mode fails before the seed is used.
+- A legacy `ZAPPI_POT_SEED` or `ZAPPI_POT_KEY_FILE` signs only when
+  `ZAPPI_POT_SPEND_MODE` is exactly `free` and `ZAPPI_POT_SPARK_ADDRESS`
+  matches the derived address. Unset, `auth_required`, and unknown modes
+  fail before the seed is read. Auth-required pots use `zappi-cli request`.
+  Set `ZAPPI_POT_SPEND_MODE=free` only for an actual free pot.
 - Import and restore keep the original network and account index. They do
   not substitute `SPARK_NETWORK` or account 0. Restore also derives the
   decrypted seed and requires that address. Import's identity check is
@@ -44,7 +54,8 @@ Signing uses one immutable context: pot id, Spark address, spend mode
   wallet.
 - It does **not** isolate the signer from the rest of the host account.
   Another process running as the same user can read the registry if it can
-  read mode 0600 files owned by that user. Run the signer on a trusted host.
+  read mode 0600 files owned by that user, and can read the keychain item
+  if it can use that user's keychain. Run the signer on a trusted host.
 - `pots registry remove` deletes the local entry only. It does not revoke
   on-chain access and it does not guarantee memory or disk zeroization.
 - Re-encryption and passphrase rotation do **not** invalidate old

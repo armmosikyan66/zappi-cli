@@ -1,7 +1,7 @@
 /**
  * Free-pot seed registry operator commands — Linear 1-456 stage 4 / 1-460.
  *
- * `zappi-cli pots registry <list|use|remove|import|rotate-passphrase|backup|restore>`.
+ * `zappi-cli pots registry <list|use|remove|import|rotate-passphrase|backup|restore|unlock-secret>`.
  *
  * Secret hygiene: the mnemonic/passphrase is never accepted from argv (would
  * leak to `ps`/shell history). Import reads it from a masked TTY prompt or a
@@ -25,11 +25,15 @@ import {
   verifyRegistrySeedIdentities,
   MAX_REGISTRY_FILE_BYTES,
 } from './pot-registry.js'
+import { parseArgs } from './args.js'
 import {
   resolvePotPassphrase,
   potRegistryPath,
+  validatePotPassphrase,
+  wantsPotKeychain,
   type PotEnv,
 } from './env.js'
+import type { UnlockKeychain } from './pot-keychain.js'
 import { askSecret } from './wizard-io.js'
 import { extractPhraseFromKeyFile } from './load-pot-seed.js'
 import { looksLikeMnemonicPhrase } from './spark-address.js'
@@ -51,6 +55,8 @@ export interface PotsRegistryCommandDeps {
   /** Override Spark address derivation (tests). Default uses the Spark SDK. */
   deriveAddress?: (seed: string, network: 'MAINNET', accountIndex: number) => Promise<string>
   now?: () => Date
+  /** OS keychain double. Production loads `pot-keychain` only for this command. */
+  unlockKeychain?: UnlockKeychain
 }
 
 function jsonOut(result: unknown): string {
@@ -349,6 +355,101 @@ export async function runPotsRegistryRestore(
   ].join(NL)
 }
 
+const UNLOCK_KEYCHAIN_SERVICE = 'zappi-cli'
+const UNLOCK_KEYCHAIN_ACCOUNT = 'pot-registry-unlock'
+const UNLOCK_FLAGS = new Set(['set', 'delete', 'keychain'])
+const UNLOCK_SECRET_USAGE =
+  'Usage: zappi-cli pots registry unlock-secret [--set|--delete] [--keychain]. The unlock secret is not a CLI argument.'
+const KEYCHAIN_OPT_IN_ERROR =
+  'Pass --keychain or set ZAPPI_POT_USE_KEYCHAIN=1. The OS keychain stores the unlock secret only, never the seed. Headless hosts should set ZAPPI_POT_PASSPHRASE (systemd LoadCredential). Do not pass the secret as an argument.'
+
+/**
+ * `pots registry unlock-secret [--set|--delete] [--keychain]`.
+ * Stores the unlock secret only. Never prints the stored or previous value.
+ * `--json` reports boolean flags only.
+ */
+export async function runPotsRegistryUnlockSecret(
+  argv: string[],
+  mode: OutputMode,
+  deps: PotsRegistryCommandDeps = {},
+): Promise<string> {
+  const env = depsEnv(deps)
+  const parsed = parseArgs(argv)
+  const unknown = Object.keys(parsed.booleans).filter((key) => !UNLOCK_FLAGS.has(key))
+  if (parsed.positionals.length > 0 || Object.keys(parsed.strings).length > 0 || unknown.length > 0) {
+    throw new Error(UNLOCK_SECRET_USAGE)
+  }
+  const set = parsed.booleans.set === true
+  const remove = parsed.booleans.delete === true
+  if (set && remove) throw new Error('Pass only one of --set or --delete.')
+  if (!wantsPotKeychain(env, { keychain: parsed.booleans.keychain === true })) {
+    throw new Error(KEYCHAIN_OPT_IN_ERROR)
+  }
+  const keychain = await unlockKeychainFrom(deps)
+  if (set) {
+    const ask = deps.askSecret ?? askSecret
+    const secret = validatePotPassphrase(
+      await ask('Unlock secret for the free-pot registry (input hidden):'),
+    )
+    keychain.setUnlockSecret(secret)
+    return renderUnlockSecret(mode, 'set', {})
+  }
+  if (remove) {
+    const deleted = keychain.deleteUnlockSecret()
+    return renderUnlockSecret(mode, 'delete', { deleted })
+  }
+  const stored = keychain.getUnlockSecret()
+  const present = Boolean(stored?.trim())
+  return renderUnlockSecret(mode, 'status', { present })
+}
+
+function renderUnlockSecret(
+  mode: OutputMode,
+  action: 'status' | 'set' | 'delete',
+  flags: { present?: boolean; deleted?: boolean },
+): string {
+  const result = {
+    ok: true as const,
+    command: 'pots registry unlock-secret' as const,
+    keychain: true as const,
+    ...(action === 'status' ? { present: flags.present === true } : {}),
+    ...(action === 'set' ? { set: true as const } : {}),
+    ...(action === 'delete' ? { deleted: flags.deleted === true } : {}),
+  }
+  if (mode === 'json') return jsonOut(result)
+  if (action === 'set') {
+    if (mode === 'plain') return 'set'
+    return [
+      successLine('Unlock secret stored in the OS keychain.', mode),
+      kv('service', UNLOCK_KEYCHAIN_SERVICE, mode),
+      kv('account', UNLOCK_KEYCHAIN_ACCOUNT, mode),
+      infoLine('The value was not printed. The keychain stores the unlock secret only, never the seed.', mode),
+    ].join(NL)
+  }
+  if (action === 'delete') {
+    if (mode === 'plain') return flags.deleted ? 'deleted' : 'absent'
+    if (!flags.deleted) return infoLine('No unlock secret was stored in the OS keychain.', mode)
+    return [
+      successLine('Unlock secret removed from the OS keychain.', mode),
+      infoLine('The previous value was not printed.', mode),
+    ].join(NL)
+  }
+  if (mode === 'plain') return flags.present ? 'present' : 'absent'
+  if (!flags.present) return infoLine('No unlock secret is stored in the OS keychain.', mode)
+  return [
+    successLine('Unlock secret is present in the OS keychain.', mode),
+    kv('service', UNLOCK_KEYCHAIN_SERVICE, mode),
+    kv('account', UNLOCK_KEYCHAIN_ACCOUNT, mode),
+    infoLine('The value was not printed.', mode),
+  ].join(NL)
+}
+
+async function unlockKeychainFrom(deps: PotsRegistryCommandDeps): Promise<UnlockKeychain> {
+  if (deps.unlockKeychain) return deps.unlockKeychain
+  const mod = await import('./pot-keychain.js')
+  return mod.createDefaultUnlockKeychain()
+}
+
 /* -------------------------------- helpers --------------------------------- */
 
 const MAX_SECRET_FILE_BYTES = 64 * 1024
@@ -416,7 +517,7 @@ async function defaultDeriveAddress(seed: string, network: 'MAINNET', accountInd
 }
 
 const REGISTRY_USAGE =
-  'Usage: zappi-cli pots registry <list|use|remove|import|bind|rotate-passphrase|backup|restore> ...'
+  'Usage: zappi-cli pots registry <list|use|remove|import|bind|rotate-passphrase|backup|restore|unlock-secret> ...'
 
 /** Dispatch `pots registry <sub>`. `sub` undefined → `list`. */
 export async function runPotsRegistry(
@@ -433,5 +534,6 @@ export async function runPotsRegistry(
   if (sub === 'rotate-passphrase') return runPotsRegistryRotatePassphrase(mode, deps)
   if (sub === 'backup') return runPotsRegistryBackup(argv, mode, deps)
   if (sub === 'restore') return runPotsRegistryRestore(argv, mode, deps)
+  if (sub === 'unlock-secret') return runPotsRegistryUnlockSecret(argv, mode, deps)
   throw new Error(REGISTRY_USAGE)
 }
