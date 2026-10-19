@@ -1,6 +1,6 @@
 ---
 name: zappi-remote-mcp
-description: Connect any MCP client to the Zappi staging HTTP MCP server at https://api-dev.zappi.money/mcp over OAuth. Read pots, pair a pot, and deposit via list_deposit_rails + deposit_address. Spend is approval tickets only — call create_approval_ticket, give the user the approve URL, and stop. Never hold, request, or echo a seed, deviceCode, zpc_, or pot-client token.
+description: Connect any MCP client to the Zappi staging HTTP MCP server at https://api-dev.zappi.money/mcp over OAuth. Create a free pot with create_pot, deposit, and spend. A free pot is signed by Nest. An auth-required pot returns an approve URL. Never hold, request, or echo a seed, deviceCode, zpc_, or pot-client token.
 ---
 
 # Zappi remote MCP (the only agent door)
@@ -11,7 +11,7 @@ Every MCP client — Grok, Cursor remote, Claude Desktop, Claude Code, VS Code, 
 https://api-dev.zappi.money/mcp
 ```
 
-The web app that pairs and approves spends is `https://dev.zappi.money`. Production is `https://api.zappi.money/mcp` with `https://zappi.money`. Do not run a local stdio signer. There is no local pot key on the agent host. The agent never signs a spend. Spending is an approval ticket that a human approves in the Zappi web app, where the human's session signs.
+The web app that pairs and approves auth-required spends is `https://dev.zappi.money`. Production is `https://api.zappi.money/mcp` with `https://zappi.money`. Do not install a signer. There is no local pot key on the agent host. A free pot is sealed by Nest, and Nest signs that spend. An auth-required pot returns an approve URL that a human opens in the Zappi web app.
 
 A published client uses the staging URL above. A Nest process on this machine is `http://127.0.0.1:3011/mcp` (not `localhost`: macOS resolves that to `::1`, and Nest listens on IPv4). Leave `ZAPPI_PUBLIC_GATEWAY_URL` empty only for that loopback case. Do not point Cursor at an offline ngrok host.
 
@@ -47,20 +47,25 @@ A deposit, fund, or receive is one tool for the case in front of you, then stop.
 - `deposit_address` with a missing asset, or with several matching networks, returns `need_choice` and does not mint. Show those choices and stop.
 - `status` `ready` means one address. Tell the user the address, the asset, and the network (`networkId`). Then stop.
 
-## Spend — approval tickets only
+## Create a pot
 
-`pay`, `send`, and `consume` do not sign on the agent host. They create an approval ticket and return one approve URL. The agent gives the user that URL and stops. The user opens it in the Zappi web app, approves, and the web app signs with the user's session. The agent never receives a seed, never signs, and never pastes `zpc_`.
+Call `create_pot` immediately. Do not ask the spend mode or the name before the tool returns them.
 
-Flow:
+1. `need_choice` is one host question. Use `message` and one option per choice label, in order.
+2. `spendMode` is `free` or `auth_required`.
+3. On a signed-out connection, a free choice offers Continue authenticated or Skip. Continue passes the `loginRequestId` already approved in this chat. Skip calls `create_pot` again with `spendMode` `"free"` and `authChoice` `"skip"`.
+4. The name question is next. Call again with `label`, or `skipName` `true`.
+5. A free result is active, attached, and includes `sparkAddress`. Keep `potId`. Do not send `signerReady`, `signerVersion`, or `walletProof`.
+6. An auth-required result is attached and has no wallet step. A connection that has never signed in returns `loginUrl` instead of creating the pot.
 
-1. The user names an amount and a destination (or resource). If either is missing, ask for that one thing and stop.
-2. Call `create_approval_ticket` with the amount and destination the user named.
-3. Read the `approveUrl` from the result. Give that URL to the user. Tell them to open it in the Zappi web app to approve.
-4. Stop. Do not retry in a loop. Do not call the spend tool again. Do not poll for approval status from here — the user will tell you when it is done, or you can call `balance` / `transactions` after they confirm.
+## Spend
 
-If `create_approval_ticket` says the ticket rate cap is reached, stop. Do not retry in a loop. Tell the user the cap was hit and wait.
+`pay`, `send`, and `consume` do not sign on the agent host.
 
-Do not call `pay`, `send`, or `consume` to fund the pot. A deposit, fund, or receive stays on the deposit tools above.
+- A free pot is signed by Nest. The result is `settled` with `txid`, or `failed`. Stop. Do not send the payment again.
+- An auth-required pot returns one `approveUrl`. Give that URL to the user and stop. They approve it in the Zappi web app.
+
+Do not call these tools to fund the pot. A deposit stays on the deposit tools above.
 
 ## Auth-required ticket contract
 

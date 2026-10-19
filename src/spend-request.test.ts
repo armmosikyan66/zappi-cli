@@ -72,7 +72,7 @@ function nestSpendCreated(
 }
 
 /**
- * Remote `/mcp` pay, send, and consume rebuild this URL
+ * Remote `/mcp` send rebuilds this URL
  * (`McpConnectorService.createSpendTicket` → `bareApproveUrl`).
  * They do not echo Nest's `/?panel=pots&spend=` string.
  */
@@ -352,7 +352,7 @@ describe('remote MCP ticket-only approve URL', () => {
     assert.equal(new URL(printed).searchParams.get('spend'), requestId)
     assert.equal(new URL(printed).searchParams.has('code'), false)
 
-    for (const tool of ['pay', 'send', 'consume'] as const) {
+    for (const tool of ['send'] as const) {
       const mcp = {
         approveUrl: remoteMcpSpendApproveUrl('https://zappi.money', requestId),
         tool,

@@ -14,7 +14,7 @@ Three credentials, never mixed: the account login (JWT), the pot-client token `z
 | --- | --- | --- | --- |
 | 1. CLI by hand | Human at a terminal | `~/.zappi/credentials.json` (login JWT), `ZAPPI_ACCESS_TOKEN`, `ZAPPI_PROJECT_API_KEY`; pot seed in `ZAPPI_POT_SEED` or `~/.zappi/pot-*.txt`; `zpc_` in `ZAPPI_POT_CLIENT_TOKEN` or `~/.zappi/pot-client-*.txt` | `zappi-cli pay` / `consume` / `request` signs locally with the seed |
 | 2. Shell skill | Agent shelling out to the same CLI | Reuses door 1's files verbatim — no separate credential store | Setup/attach only (`propose`, `pots attach`, `pots bind`); spend on the agent host is door 3 |
-| 3. Remote `/mcp` | Any MCP client (Cursor, Grok, remote hosts) | One opaque OAuth `mcp_` Bearer token, stored by the MCP client | `create_approval_ticket` / `pay` / `send` / `consume` → one approve URL; human signs in the web app. No seed on the agent. |
+| 3. Remote `/mcp` | Any MCP client (Cursor, Grok, remote hosts) | One opaque OAuth `mcp_` Bearer token, stored by the MCP client | `create_pot` seals a free pot in Nest and returns `sparkAddress`. `pay` / `send` / `consume` on that pot return `settled` and `txid`. An auth-required pot returns one approve URL; the human signs in the web app. No seed on the agent. |
 
 ## Door 1 — CLI by hand
 
@@ -57,7 +57,7 @@ Endpoint: `https://api.zappi.money/mcp` (Streamable HTTP). Already live on the N
 
 **Auth.** OAuth 2.1 with PKCE. Discovery at `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-authorization-server`; register, authorize, token, revoke, and consent live under `/api/oauth/`. The human approves at `/pair?oauth=…`. The access token is an **opaque `mcp_` string** stored by the MCP client and sent as `Authorization: Bearer mcp_…`. It is not a JWT and not a `zpc_`.
 
-**No seed on the agent.** The agent never holds or sends a pot seed, never signs, and never pastes `zpc_`. Spend tools (`create_approval_ticket`, `pay`, `send`, `consume`) return one approve URL; the human opens it in the Zappi web app and approves with a passkey, and the human's web session signs. Read and pairing tools (`list_pots`, `start_pairing`, `health`, `list_deposit_rails`, `deposit_address`) need only the `mcp_` Bearer token.
+**No seed on the agent.** The agent never holds or sends a pot seed and never pastes `zpc_`. A free pot is sealed by Nest: `create_pot` returns `sparkAddress`, and `pay`, `send`, and `consume` return `settled` with `txid`. An auth-required pot returns one approve URL; the human opens it in the Zappi web app and the human session signs. Read and pairing tools (`list_pots`, `start_pairing`, `list_deposit_rails`, `deposit_address`) need only the `mcp_` Bearer token.
 
 ## What is removed
 

@@ -6,6 +6,10 @@ updated: 2026-10-08
 
 # Wiki Log
 
+## [2026-10-18] note | MCP free pots are signed by Nest
+- touched: wiki/reference/auth.md, docs/remote-mcp-skill.md
+- notes: Remote MCP `create_pot` seals a free pot and returns `sparkAddress`. `pay`, `send`, and `consume` on that pot return `settled` and `txid`. An auth-required pot still returns an approve URL.
+
 ## [2026-10-08] manual | pots attach names the pot (1-554)
 - touched: wiki/commands/pots.md, wiki/usages.md, README.md, SKILL.md, src/attach-pot.ts, src/attach-commands.ts
 - notes: `pots attach` takes `--pot <potId>` (or `ZAPPI_POT_ID`; both must agree). Auth-required without a pot fails before Nest. The CLI always sends `potId` and refuses to print a link unless Nest echoes the same pot; poll/reclaim fail closed on a different pot. Web copy: `zappi-cli pots attach --pot <potId> --spend-mode auth_required` on the installed pinned CLI, no `npx` (1-555). Proof: `proof/1-554-attach-names-pot.txt`.
