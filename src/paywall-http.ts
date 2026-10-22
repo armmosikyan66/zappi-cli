@@ -47,6 +47,8 @@ export function redactSecrets(text: string): string {
   const redacted = text
     .replace(/zpu_[A-Za-z0-9]+/g, 'zpu_[redacted]')
     .replace(/zpc_[A-Za-z0-9_-]+/g, 'zpc_[redacted]')
+    .replace(/zcg_[A-Za-z0-9_-]+/g, 'zcg_[redacted]')
+    .replace(/mcp_[A-Za-z0-9_-]+/g, 'mcp_[redacted]')
     .replace(/ZAPPI_POT_SEED=\S+/g, 'ZAPPI_POT_SEED=[redacted]')
     .replace(/ZAPPI_POT_PASSPHRASE=\S+/g, 'ZAPPI_POT_PASSPHRASE=[redacted]')
     .replace(/ZAPPI_POT_KEY_FILE=\S+/g, 'ZAPPI_POT_KEY_FILE=[redacted]')
@@ -62,6 +64,8 @@ export function redactSecrets(text: string): string {
       'X-Zappi-Unlock-Token: [redacted]',
     )
     .replace(/X-Zappi-Payment:\s*\S+/gi, 'X-Zappi-Payment: [redacted]')
+    .replace(/x-zappi-cli-guest:\s*\S+/gi, 'x-zappi-cli-guest: [redacted]')
+    .replace(/x-zappi-access-token:\s*\S+/gi, 'x-zappi-access-token: [redacted]')
   return redacted.replace(/\b(?:[A-Za-z]+(?:\s+|$)){12,24}/g, (match) => {
     const trimmed = match.trim()
     return looksLikeMnemonicPhrase(trimmed) ? '[redacted mnemonic]' : match

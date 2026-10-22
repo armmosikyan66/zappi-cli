@@ -12,7 +12,8 @@
     "!dist/**/*.test.js",
     "README.md",
     "LICENSE",
-    "SKILL.md"
+    "SKILL.md",
+    "skills/**/*.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

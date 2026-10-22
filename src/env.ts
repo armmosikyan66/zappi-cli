@@ -50,6 +50,8 @@ export interface PotEnv {
   ZAPPI_USER_AGENT?: string
   /** Override for `zappi-cli login` credential file. Default `~/.zappi/credentials.json`. */
   ZAPPI_CREDENTIALS_FILE?: string
+  /** Override for the guest-pot secret file. Default `~/.zappi/agent.json`. */
+  ZAPPI_CLI_GUEST_FILE?: string
   /**
    * Expected Spark address for a legacy `ZAPPI_POT_SEED` / `ZAPPI_POT_KEY_FILE`
    * opt-out. Required before that seed may sign. Not a secret.
