@@ -22,6 +22,19 @@ import {
 import { runPotAttach, runPotAttachStatus } from './attach-commands.js'
 import { runPotBind } from './bind-commands.js'
 import { runLogin, runLogout, runWhoami, runDoctor } from './login-commands.js'
+import {
+  runDoorDeposit,
+  runDoorPotBalance,
+  runDoorPotChallenge,
+  runDoorPotConnect,
+  runDoorPotCreate,
+  runDoorPotDisconnect,
+  runDoorPotPair,
+  runDoorPotSend,
+  runDoorPots,
+  runGuestCommand,
+  usesWalletPotList,
+} from './cli-door-commands.js'
 import { runDepositOptions, runDepositAddress } from './deposit-commands.js'
 import {
   runWithdrawOptions,
@@ -303,6 +316,10 @@ export async function runCli(
     return runWhoami(rest, mode)
   }
 
+  if (command === 'guest') {
+    return runGuestCommand(rest, mode)
+  }
+
   if (command === 'doctor') {
     return runDoctor(rest, mode)
   }
@@ -315,6 +332,10 @@ export async function runCli(
 
   if (command === 'transactions') {
     return runTransactions(rest, mode)
+  }
+
+  if (command === 'deposit') {
+    return runDoorDeposit(rest, mode)
   }
 
   if (command === 'deposit-options') {
@@ -358,7 +379,17 @@ export async function runCli(
     // First non-flag arg is the subcommand; flags-only (e.g. `pots --json`) means `list`.
     const sub = rest.find((a) => !a.startsWith('-'))
     const subRest = sub ? rest.filter((a) => a !== sub) : rest
-    if (!sub || sub === 'list') return runPotsList(subRest, mode)
+    if (!sub || sub === 'list') {
+      if (usesWalletPotList(subRest)) return runPotsList(subRest, mode)
+      return runDoorPots(subRest, mode)
+    }
+    if (sub === 'create') return runDoorPotCreate(subRest, mode)
+    if (sub === 'connect') return runDoorPotConnect(subRest, mode)
+    if (sub === 'disconnect') return runDoorPotDisconnect(subRest, mode)
+    if (sub === 'pair') return runDoorPotPair(subRest, mode)
+    if (sub === 'balance') return runDoorPotBalance(subRest, mode)
+    if (sub === 'challenge') return runDoorPotChallenge(subRest, mode)
+    if (sub === 'send') return runDoorPotSend(subRest, mode)
     if (sub === 'register') return runPotRegister(subRest, mode)
     if (sub === 'deposit-address') return runPotDepositAddress(subRest, mode)
     if (sub === 'grants') return runPotGrants(subRest, mode)
@@ -374,7 +405,7 @@ export async function runCli(
       return runPotsRegistry(regSub, regRest, mode)
     }
     throw new Error(
-      `Usage: zappi-cli pots <list|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status|bind|registry> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
+      `Usage: zappi-cli pots <list|create|connect|disconnect|pair|balance|challenge|send|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status|bind|registry> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
     )
   }
 

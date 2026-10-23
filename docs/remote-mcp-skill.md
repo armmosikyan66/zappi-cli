@@ -11,7 +11,7 @@ Every MCP client — Grok, Cursor remote, Claude Desktop, Claude Code, VS Code, 
 https://api-dev.zappi.money/mcp
 ```
 
-The web app that pairs and approves auth-required spends is `https://dev.zappi.money`. Production is `https://api.zappi.money/mcp` with `https://zappi.money`. Do not install a signer. There is no local pot key on the agent host. A free pot is sealed by Nest, and Nest signs that spend. An auth-required pot returns an approve URL that a human opens in the Zappi web app.
+The web app that pairs and approves auth-required spends is `https://dev.zappi.money`. Production is `https://api.zappi.money/mcp` with `https://zappi.money`. There is no local pot key on the agent host. A free pot is created in the browser. `create_pot` returns one link. Before the human saves an allowance, run `zappi-allowance-spender pubkey` and call `register_spender_key` with that key. If the command is missing, install it from `https://dev.zappi.money/spender/install` on staging or `https://zappi.money/spender/install` in production. Windows uses `/spender/windows` with `irm` and `iex`. Do not use npx. A send with no Spark allowance waits until that browser signs it. `allowance_pull` is `zappi-allowance-spender pull`. An auth-required pot returns an approve URL that a human opens in the Zappi web app.
 
 A published client uses the staging URL above. A Nest process on this machine is `http://127.0.0.1:3011/mcp` (not `localhost`: macOS resolves that to `::1`, and Nest listens on IPv4). Leave `ZAPPI_PUBLIC_GATEWAY_URL` empty only for that loopback case. Do not point Cursor at an offline ngrok host.
 
@@ -49,14 +49,15 @@ A deposit, fund, or receive is one tool for the case in front of you, then stop.
 
 ## Create a pot
 
-Call `create_pot` immediately. Do not ask the spend mode or the name before the tool returns them.
+Call `create_pot` immediately. Do not ask the spend mode, the name, or the limits before the tool returns them.
 
 1. `need_choice` is one host question. Use `message` and one option per choice label, in order.
 2. `spendMode` is `free` or `auth_required`.
 3. On a signed-out connection, a free choice offers Continue authenticated or Skip. Continue passes the `loginRequestId` already approved in this chat. Skip calls `create_pot` again with `spendMode` `"free"` and `authChoice` `"skip"`.
 4. The name question is next. Call again with `label`, or `skipName` `true`.
-5. A free result is active, attached, and includes `sparkAddress`. Keep `potId`. Do not send `signerReady`, `signerVersion`, or `walletProof`.
-6. An auth-required result is attached and has no wallet step. A connection that has never signed in returns `loginUrl` instead of creating the pot.
+5. The limits question is next. `limitsChoice` `"default"` keeps $50 per payment and $200 per day. `limitsChoice` `"custom"` opens the limits form. `need_form` means show that form, then call again with `perPaymentDollars` and `perDayDollars`.
+6. A free result is active, attached, and includes `sparkAddress`. Keep `potId`. Do not send `signerReady`, `signerVersion`, or `walletProof`.
+7. An auth-required result is attached and has no wallet step. A connection that has never signed in returns `loginUrl` instead of creating the pot.
 
 ## Spend
 

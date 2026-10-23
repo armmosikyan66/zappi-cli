@@ -23,6 +23,34 @@ zappi-cli propose --generate [--label <name>] [--mode free|auth_required] [--key
 
 Bare `propose` on a TTY runs the wizard. No TTY falls back to this usage text. `--mode` must be `free` or `auth_required`.
 
+## Pots, deposit, and send
+
+A person or an agent. Uses `zappi-cli login`, or `zappi-cli guest` for a free pot. `--json` prints the body. `need_choice` and a refusal exit 0.
+
+```bash
+zappi-cli whoami
+zappi-cli login
+zappi-cli logout
+zappi-cli guest
+zappi-cli guest claim --pot <id>
+zappi-cli pots
+zappi-cli pots create [--spend-mode free|auth_required] [--label <name>] [--skip-name] [--auth-choice skip]
+zappi-cli pots connect --pot <name-or-id> [--default]
+zappi-cli pots disconnect --pot <name-or-id>
+zappi-cli pots pair [--pot <id>]
+zappi-cli pots balance [--pot <id>]
+zappi-cli pots challenge --address <spark>
+zappi-cli deposit rails [--pot <id>]
+zappi-cli deposit assets [--pot <id>]
+zappi-cli deposit networks [--asset <asset>] [--pot <id>]
+zappi-cli deposit address [--asset <asset>] [--network <network>] [--pot <id>]
+zappi-cli pots send assets [--pot <id>]
+zappi-cli pots send networks [--asset <asset>] [--pot <id>]
+zappi-cli pots send --amount-cents <n> --to <address> [--asset <asset>] [--chain <chain>] [--memo <text>] [--pot <name-or-id>] [--idempotency-key <key>]
+```
+
+`zappi-cli pots` with no flags lists this login. `--origin` or `--spend-mode`, or `ZAPPI_PROJECT_API_KEY`, keeps the wallet list below. `pots connect` is not `pots attach`. `pots send` is not `send`. `deposit address` is not `deposit-address`.
+
 ## Agent spend
 
 ```bash
@@ -97,6 +125,10 @@ zappi-cli consume <resourceId> --units 1
 zappi-cli invite --json
 zappi-cli pay <resourceId> --json
 zappi-cli balance --json
+zappi-cli pots
+zappi-cli pots create --spend-mode free --label Research
+zappi-cli pots send --amount-cents 100 --to <spark-address>
+zappi-cli deposit address --asset USDB --network spark
 zappi-cli pots --spend-mode free
 zappi-cli withdraw estimate --asset USDC --network solana --address 0x... --amount 100
 zappi-cli send internal --to <userId> --amount 100

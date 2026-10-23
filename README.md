@@ -38,7 +38,27 @@ Requires **Node.js ≥ 20.9**. The package compiles TypeScript to `dist/` on ins
 
 ## Commands
 
-Global flag: `--json` prints machine-readable JSON (never includes pot seeds, pot client tokens, or unlock tokens).
+Global flag: `--json` prints machine-readable JSON (never includes pot seeds, pot client tokens, unlock tokens, or a guest secret). `need_choice` and a refusal exit 0.
+
+A person or an agent uses these commands to create a pot, deposit, and send. `zappi-cli login` saves the session. `zappi-cli guest` starts a free pot without an account and does not print the secret.
+
+| Command | What it does |
+| --- | --- |
+| `whoami` | Account email, or guest mode from `~/.zappi/agent.json` |
+| `login` / `logout` | Save or revoke this login |
+| `guest` | Start a free pot without an account |
+| `guest claim --pot <id>` | Move that pot onto the account |
+| `pots` | List pots on this login. `--origin` or `--spend-mode`, or a project API key, keeps the wallet list |
+| `pots create` | Create a pot. `--spend-mode free\|auth_required`, `--label`, `--skip-name`, `--auth-choice skip`, `--limits default\|custom`, `--per-payment`, `--per-day` |
+| `pots connect --pot <name-or-id>` | Connect a free pot. `--default` moves the default |
+| `pots disconnect --pot <name-or-id>` | Remove it from this login |
+| `pots pair` | Approve URL for an auth-required pot |
+| `pots balance` | Balance |
+| `pots challenge --address <spark>` | Address challenge |
+| `deposit rails` / `deposit assets` / `deposit networks` / `deposit address` | Deposit catalog and address |
+| `pots send` | Server-signed send. `--amount-cents`, `--to`, optional `--asset`, `--chain`, `--memo`, `--pot`, `--idempotency-key` |
+
+`pots connect` is not `pots attach`. `pots send` is not `send`. `deposit address` is not `deposit-address`.
 
 `propose` on a terminal asks before it generates or registers: existing vs new, spend mode, Spark network (unless `SPARK_NETWORK` is set), app origin (unless `ZAPPI_APP_ORIGIN` / `NEXT_PUBLIC_SITE_URL` / `--origin` is set), and a label. A blank label asks you to confirm auto `pot_<unique>` or type a custom name. Flags: `--mode free|auth_required`, `--origin`, `--label`.
 
@@ -57,8 +77,8 @@ zappi-cli sign <requestId> --yes     # agent with a shell
 | Command   | What it does                                                                                                                                                                                                                                              |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `login`   | **Optional, human.** Opens the Zappi sign-in screen (email or passkey). Saves a user session in `~/.zappi/credentials.json` (`0600`). Wallet commands use it when `ZAPPI_ACCESS_TOKEN` is unset. **Never prints the session.** Propose and pay do not need it. |
-| `whoami`  | **Human.** Prints the email of the saved login. |
-| `logout`  | **Human.** Revokes that session and deletes the credentials file. |
+| `whoami`  | Prints the email of the saved login. With a guest file and no login, reports guest mode and does not print the secret. |
+| `logout`  | Revokes that session and deletes the credentials file and the guest file. |
 | `propose` | **Host setup** on the agent host. Wizard: existing or generate → spend mode → network → app origin → label (blank confirms auto `pot_<unique>`) → **opens the register link**. Writes a mode `0600` key file when generating. **Never prints the pot key.** |
 | `pay`     | **Free pot.** `GET` resource → 402 → `accepts[0].network` + `asset` must be `spark` / `USDB` → sign pot USDB → settle `{ sparkTxHash, potId }`. Other rails fail closed. Metered auto-consumes one unit (`--no-consume` to skip). `ZAPPI_POT_SPEND_MODE=auth_required` refuses this and points at `request`. |
 | `request` | **Auth-required pot.** No TTY. `POST …/spend-requests` with `x-zappi-pot-client` and prints **only** the approve URL (`?panel=pots&spend=`, no `code=`). `--json` includes that URL and never the `zpc_` token. Does not sign. |
@@ -145,6 +165,7 @@ If a CLI command fails (env / apiUrl mismatch, not attached, etc.): **stop and r
 | `ZAPPI_PROJECT_API_KEY` | Project API key for server-to-server wallet routes (`balance`, `pots`, `withdraw`, …). |
 | `ZAPPI_ACCESS_TOKEN`    | User access JWT. Wins over `zappi-cli login`. |
 | `ZAPPI_CREDENTIALS_FILE` | Override for the login file. Default `~/.zappi/credentials.json` (`0600`). |
+| `ZAPPI_CLI_GUEST_FILE` | Override for the guest secret file. Default `~/.zappi/agent.json` (`0600`). Never printed. |
 | `ZAPPI_COOKIE`         | Optional cookie header forwarded for session auth (e.g. `zappi_access=…`). |
 | `ZAPPI_USER_AGENT`     | Optional user-agent forwarded for session auth. |
 | `ZAPPI_SIGNER_BIN`   | Path to the `zappi-signer` binary. Used when `--signer` is omitted. Unset uses `zappi-signer` on `PATH`. |
@@ -187,7 +208,7 @@ npm run build
 
 `package-lock.json` resolves `@zappimoney/zappi-sdk` from the npm registry (`0.3.8`). A clean checkout does not use a sibling `../zappi-sdk` link.
 
-**Labels:** active pot names are unique per Zappi project (case-insensitive). Nest returns `409 AGENT_POT_LABEL_EXISTS` if the name is taken when you register in the app.
+**Labels:** active pot names are unique per user (case-insensitive), not across the app. Nest returns `409 AGENT_POT_LABEL_EXISTS` if that user already has the name.
 
 
 ## Pot attach (device code / 1-203)
@@ -218,4 +239,4 @@ Reclaim path locked to Nest tip `df7aafc` / zappi-nest#82: `POST …/pots/attach
 - Do **not** invent a payment chain from an address. Paywall 402 must include `accepts[0].network` and `accepts[0].asset`; this CLI only pays `spark` / `USDB`.
 - Do **not** invent an invite code. `zappi-cli invite` prints a Nest URL or fails closed.
 - Seller / project API is out of scope for this package.
-- Agent-host spend is approval tickets on the remote `/mcp` (`https://api.zappi.money/mcp`), not this CLI. The local stdio signer is gone. Do not add `@zappimoney/zappi-sdk` to this package unless intentionally migrating off the Nest HTTP + Spark path.
+- Create, deposit, and send for this login are `pots create`, `deposit address`, and `pots send`. A chat can still use the remote MCP server. `propose`, `pay`, `request`, `pots attach`, and `send` stay for host setup and the wallet.

@@ -7,6 +7,8 @@ import {
   writeCliCredentials,
   type CliCredentials,
 } from './credentials.js'
+import { deleteCliGuest, guestMatchesApi, readCliGuest } from './cli-guest.js'
+import { cliRequest, type CliHttpDeps } from './cli-http.js'
 import { relocateAppLink, resolveLinkOrigin, resolvePaywallBase, hostHasPotClientToken, type PotEnv } from './env.js'
 import { openUrl } from './wizard-io.js'
 
@@ -145,6 +147,7 @@ export async function runLogout(
   } catch {
     // The file is already gone.
   }
+  deleteCliGuest(env)
   const result = { ok: true as const, command: 'logout' as const }
   if (mode === 'json') return JSON.stringify(result, null, 2)
   return successLine('Signed out of this terminal.', mode)
@@ -157,30 +160,36 @@ export async function runWhoami(
   env: PotEnv = process.env,
   deps: LoginDeps = {},
 ): Promise<string> {
-  const fetchImpl = deps.fetchImpl ?? fetch
   const stored = env.ZAPPI_ACCESS_TOKEN?.trim() ? null : readCliCredentials(env)
   const token = env.ZAPPI_ACCESS_TOKEN?.trim() || stored?.accessToken
-  if (!token) {
+  const guestFile = readCliGuest(env)
+  const guest = guestFile && guestMatchesApi(guestFile, env) ? guestFile : null
+  if (guestFile && !guest && !token) {
+    throw new Error(
+      `Saved guest is for ${guestFile.apiUrl}, but this command uses ${resolvePaywallBase(env)}. Run zappi-cli guest again.`,
+    )
+  }
+  if (!token && !guest) {
     throw new Error('This terminal is not signed in. Run `zappi-cli login`.')
   }
-  const apiUrl = stored?.apiUrl || resolvePaywallBase(env)
-  const response = await fetchImpl(`${apiUrl}/api/auth/me`, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'zappi-cli',
-      'x-zappi-access-token': token,
-    },
-  })
-  const body = (await response.json().catch(() => null)) as {
-    user?: { email?: string; username?: string }
-    message?: string
-  } | null
-  if (!response.ok) {
-    throw new Error(body?.message || 'Could not read the signed-in account. Run `zappi-cli login` again.')
+  let email = stored?.email ?? ''
+  let username = ''
+  let signedIn = Boolean(token)
+  if (token) {
+    const http: CliHttpDeps = { fetchImpl: deps.fetchImpl }
+    const body = await cliRequest(env, '/api/cli/whoami', {}, http)
+    const nested =
+      body.user && typeof body.user === 'object'
+        ? (body.user as { email?: unknown; username?: unknown })
+        : null
+    const bodyEmail = typeof body.email === 'string' ? body.email : ''
+    const nestedEmail = typeof nested?.email === 'string' ? nested.email : ''
+    const bodyUsername = typeof body.username === 'string' ? body.username : ''
+    const nestedUsername = typeof nested?.username === 'string' ? nested.username : ''
+    email = bodyEmail || nestedEmail || email
+    username = bodyUsername || nestedUsername
+    signedIn = body.signedIn === false ? false : true
   }
-  const email = body?.user?.email ?? stored?.email ?? ''
-  const username = body?.user?.username ?? ''
   const resolvedApiUrl = resolvePaywallBase(env)
   const savedApiUrl = stored?.apiUrl ?? null
   const apiUrlMatch =
@@ -192,6 +201,8 @@ export async function runWhoami(
     command: 'whoami' as const,
     email: email || null,
     username: username || null,
+    signedIn,
+    ...(guest ? { guest: true } : {}),
     resolvedApiUrl,
     savedApiUrl,
     apiUrlMatch,
@@ -201,6 +212,7 @@ export async function runWhoami(
     heading('Account', mode),
     ...(email ? [kv('email', email, mode)] : []),
     ...(username ? [kv('username', username, mode)] : []),
+    ...(guest ? [kv('guest', 'yes', mode)] : []),
     kv('resolvedApiUrl', resolvedApiUrl, mode),
     kv('savedApiUrl', savedApiUrl ?? '(none)', mode),
     kv(

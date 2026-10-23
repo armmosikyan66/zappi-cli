@@ -80,7 +80,7 @@ describe('cli dispatcher: new wallet commands', () => {
     assert.equal(parsed.transactions.length, 0)
   })
 
-  it('routes `pots --json` to runPotsList', async () => {
+  it('routes `pots --json` to the signed-in pot list', async () => {
     const mocked = mockFetch(() => jsonResponse({ pots: [] }))
     globalThis.fetch = mocked
     const out = await runCli(['pots', '--json'], 'json')
