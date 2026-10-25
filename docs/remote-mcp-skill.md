@@ -1,6 +1,6 @@
 ---
 name: zappi-remote-mcp
-description: Connect any MCP client to the Zappi staging HTTP MCP server at https://api-dev.zappi.money/mcp over OAuth. Create a free pot with create_pot, deposit, and spend. A free pot is signed by Nest. An auth-required pot returns an approve URL. Never hold, request, or echo a seed, deviceCode, zpc_, or pot-client token.
+description: Connect any MCP client to the Zappi staging HTTP MCP server at https://api-dev.zappi.money/mcp over OAuth. Create a pot with create_pot, deposit, and spend. A send returns an approve URL unless a signed allowance is active. Never hold, request, or echo a seed, deviceCode, zpc_, or pot-client token.
 ---
 
 # Zappi remote MCP (the only agent door)
@@ -11,7 +11,7 @@ Every MCP client — Grok, Cursor remote, Claude Desktop, Claude Code, VS Code, 
 https://api-dev.zappi.money/mcp
 ```
 
-The web app that pairs and approves auth-required spends is `https://dev.zappi.money`. Production is `https://api.zappi.money/mcp` with `https://zappi.money`. There is no local pot key on the agent host. A free pot is created in the browser. `create_pot` returns one link. Before the human saves an allowance, run `zappi-allowance-spender pubkey` and call `register_spender_key` with that key. If the command is missing, install it from `https://dev.zappi.money/spender/install` on staging or `https://zappi.money/spender/install` in production. Windows uses `/spender/windows` with `irm` and `iex`. Do not use npx. A send with no Spark allowance waits until that browser signs it. `allowance_pull` is `zappi-allowance-spender pull`. An auth-required pot returns an approve URL that a human opens in the Zappi web app.
+The web app that approves spends is `https://dev.zappi.money`. Production is `https://api.zappi.money/mcp` with `https://zappi.money`. There is no local pot key on the agent host. A pot is created in the browser. `create_pot` returns one link. A send returns `approveUrl` for the human, or `allowance_pull` when a signed allowance is active. For a host-held allowance, run `zappi-allowance-spender pubkey` and call `register_spender_key` before the human saves the allowance. `pubkey` creates the key. Do not ask them for it, and do not install the spender because pots were listed. On `allowance_required`, ask once to set the allowance, then send again. Do not pull. `allowance_pull` is `zappi-allowance-spender pull`. Give `approveUrl` to the human and stop.
 
 A published client uses the staging URL above. A Nest process on this machine is `http://127.0.0.1:3011/mcp` (not `localhost`: macOS resolves that to `::1`, and Nest listens on IPv4). Leave `ZAPPI_PUBLIC_GATEWAY_URL` empty only for that loopback case. Do not point Cursor at an offline ngrok host.
 
@@ -63,8 +63,9 @@ Call `create_pot` immediately. Do not ask the spend mode, the name, or the limit
 
 `pay`, `send`, and `consume` do not sign on the agent host.
 
-- A free pot is signed by Nest. The result is `settled` with `txid`, or `failed`. Stop. Do not send the payment again.
-- An auth-required pot returns one `approveUrl`. Give that URL to the user and stop. They approve it in the Zappi web app.
+- A send with no signed allowance returns one `approveUrl`. Give that URL to the user and stop. They approve it in the Zappi web app.
+- A signed Spark allowance returns `allowance_pull`. Pull locally, then call send again with the same idempotency key and the transaction id.
+- A nest-sealed pot can still settle from Nest. The result is `settled` with `txid`, or `failed`. Stop. Do not send the payment again.
 
 Do not call these tools to fund the pot. A deposit stays on the deposit tools above.
 

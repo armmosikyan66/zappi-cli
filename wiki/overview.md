@@ -1,25 +1,30 @@
 ---
 type: overview
-tags: [cli, pots, paywall]
-updated: 2026-09-24
+tags: [cli, pots]
+updated: 2026-10-25
 ---
 
 # Overview
 
-`@zappimoney/zappi-cli` is the buyer CLI (`zappi-cli`) for prepaid Zappi agent pots. Version **0.3.0**. Bin is `zappi-cli` → `bin/cli.js` (compiled JS, no experimental flags). Requires Node.js **≥ 20.9**.
+`@zappimoney/zappi-cli` is the terminal for a Zappi pot (`zappi-cli`). Package version **0.3.10**. Bin is `zappi-cli` → `bin/cli.js` (compiled JS, no experimental flags). Requires Node.js **≥ 20.9**. The agent card is [[sources/skill]].
 
-Two surfaces share one binary (from [[sources/readme]] and [[sources/command-source]]):
+Four families share one binary (from [[sources/skill]], [[sources/readme]], and [[sources/command-source]]):
 
-1. **Buyer / agent spend** — `propose`, `pay`, `request`, `consume`, `invite`. The pot key is created on the agent host. A human registers and funds in the Zappi app. The agent later pays a nest `PaidResource` (HTTP 402 → sign USDB from the pot → settle) and consumes metered grant units, **or** on an auth-required pot runs `request` and pastes one approve URL. One agent card: [[sources/skill]].
-2. **Wallet / pots (developer)** — `balance`, `transactions`, `deposit-options`, `deposit-address`, `withdraw-options`, `withdraw`, `send`, `pots`. These mirror `@zappimoney/zappi-sdk` nest routes. They need `ZAPPI_PROJECT_API_KEY` or `ZAPPI_ACCESS_TOKEN`. Signing routes also load `ZAPPI_POT_SEED` (or the key file). The pot key never leaves the host; only `sparkTxHash` is sent to nest.
+1. **This login** — `whoami`, `login`, `logout`, `guest`, `pots`, `deposit`, `pots send`. Session or guest file. Calls `/api/cli/*`. The server holds the pot. No spend mode and no per-pot limit. The signed Spark allowance is the only cap.
+2. **Host key** — `propose`, `request`, `invite`. The pot key is created on this machine. A human registers and funds in the Zappi app. The CLI does not print the key. An auth-required pot prints one approve URL.
+3. **Local signer** — `sign`, `signer-status`, `provision`, `prove-address`, `policy`, `backup`, `restore`. Spawns `zappi-signer` and forwards the terminal. Does not ask for a mnemonic. `pots send` does not use this family.
+4. **Wallet** — `balance`, `transactions`, `deposit-options`, `deposit-address`, `withdraw`, `send`, and project-key `pots` (`attach`, `register`, `grants`, and the rest). Needs `ZAPPI_PROJECT_API_KEY` or `ZAPPI_ACCESS_TOKEN`.
 
-Help text groups the same way: Host setup, Agent spend, Wallet, Pots. Global flags: `--json`, `--help` / `-h`.
+`pay` and `consume` remain in the binary. They are the PaidResource paywall, which is after the MVP, and they are not part of the agent skill.
+
+Help text groups host setup, the login door, agent spend, and the local signer. Global flags: `--json`, `--help` / `-h`.
 
 ## What this package is not
 
 - Seller / project API is out of scope (from [[sources/readme]]).
 - This package is not the web app. Product install copy lives in the web wiki (`web/wiki/product/agent-pot-install.md`).
-- Agent-host spend is approval tickets on the remote `/mcp`. This CLI remains setup (`propose`, `pots attach`) and the developer wallet surface. The local stdio signer is gone.
+- A chat can still use the remote MCP server. This CLI does not speak MCP.
+- `sign` spawns the `zappi-signer` binary. This process does not hold a mnemonic and does not sign `pots send`.
 
 > ⚠️ Contradicts [[sources/readme]] hard rule “do not add `@zappimoney/zappi-sdk` unless intentionally migrating off the Nest HTTP + Spark path”: `package.json` already depends on `@zappimoney/zappi-sdk` (`file:../zappi-sdk`). Wallet and pots commands use `ZappiClient`. Buyer `pay` / `consume` still use the local Nest HTTP + Spark path in `src/paywall*.ts`, not the SDK client.
 

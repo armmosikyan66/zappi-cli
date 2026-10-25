@@ -38,7 +38,7 @@ Requires **Node.js ≥ 20.9**. The package compiles TypeScript to `dist/` on ins
 
 ## Commands
 
-Global flag: `--json` prints machine-readable JSON (never includes pot seeds, pot client tokens, unlock tokens, or a guest secret). `need_choice` and a refusal exit 0.
+Global flag: `--json` prints machine-readable JSON (never includes pot seeds, pot client tokens, unlock tokens, or a guest secret). `need_choice` and a refusal exit 0. `allowance_required` and an uncertain allowance pull exit 1.
 
 A person or an agent uses these commands to create a pot, deposit, and send. `zappi-cli login` saves the session. `zappi-cli guest` starts a free pot without an account and does not print the secret.
 
@@ -49,14 +49,16 @@ A person or an agent uses these commands to create a pot, deposit, and send. `za
 | `guest` | Start a free pot without an account |
 | `guest claim --pot <id>` | Move that pot onto the account |
 | `pots` | List pots on this login. `--origin` or `--spend-mode`, or a project API key, keeps the wallet list |
-| `pots create` | Create a pot. `--spend-mode free\|auth_required`, `--label`, `--skip-name`, `--auth-choice skip`, `--limits default\|custom`, `--per-payment`, `--per-day` |
+| `pots create` | Create a pot. The only question is the name: `--label` or `--skip-name`. There is no spend mode and no per-pot limit |
 | `pots connect --pot <name-or-id>` | Connect a free pot. `--default` moves the default |
 | `pots disconnect --pot <name-or-id>` | Remove it from this login |
 | `pots pair` | Approve URL for an auth-required pot |
 | `pots balance` | Balance |
 | `pots challenge --address <spark>` | Address challenge |
 | `deposit rails` / `deposit assets` / `deposit networks` / `deposit address` | Deposit catalog and address |
-| `pots send` | Server-signed send. `--amount-cents`, `--to`, optional `--asset`, `--chain`, `--memo`, `--pot`, `--idempotency-key` |
+| `pots spender [pubkey]` | Register the allowance spender. Omit the key to run `zappi-allowance-spender pubkey` |
+| `pots send` | Send. `--amount-cents`, `--to`, optional `--asset`, `--chain`, `--memo`, `--pot`, `--idempotency-key`, `--no-wait`. A signed allowance pulls with `zappi-allowance-spender`; otherwise the result is an approve URL |
+| `pots send-status <requestId>` | Read one send |
 
 `pots connect` is not `pots attach`. `pots send` is not `send`. `deposit address` is not `deposit-address`.
 
