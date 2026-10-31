@@ -1,6 +1,6 @@
 ---
 name: zappi-remote-mcp
-description: Connect any MCP client to the Zappi staging HTTP MCP server at https://api-dev.zappi.money/mcp over OAuth. Create a free pot with create_pot, deposit, and spend. A free pot is signed by Nest. An auth-required pot returns an approve URL. Never hold, request, or echo a seed, deviceCode, zpc_, or pot-client token.
+description: Connect any MCP client to the Zappi staging HTTP MCP server at https://mcp-dev.zappi.money/mcp over OAuth. Create a free pot with create_pot, deposit, and spend. A free pot is signed by Nest. An auth-required pot returns an approve URL. Never hold, request, or echo a seed, deviceCode, zpc_, or pot-client token.
 ---
 
 # Zappi remote MCP (the only agent door)
@@ -8,16 +8,16 @@ description: Connect any MCP client to the Zappi staging HTTP MCP server at http
 Every MCP client — Grok, Cursor remote, Claude Desktop, Claude Code, VS Code, Codex, or any other — reaches Zappi staging through the same Streamable HTTP endpoint:
 
 ```
-https://api-dev.zappi.money/mcp
+https://mcp-dev.zappi.money/mcp
 ```
 
-The web app that pairs and approves auth-required spends is `https://dev.zappi.money`. Production is `https://api.zappi.money/mcp` with `https://zappi.money`. There is no local pot key on the agent host. A free pot is created in the browser. `create_pot` returns one link. Before the human saves an allowance, call `register_spender_key` with the 33-byte hex public key from the local spender program. A send with no Spark allowance waits until that browser signs it. `allowance_pull` is settled by that local pull. An auth-required pot returns an approve URL that a human opens in the Zappi web app.
+The web app that pairs and approves auth-required spends is `https://dev.zappi.money`. Production is `https://mcp.zappi.money/mcp` with `https://zappi.money`. `https://api-dev.zappi.money/mcp` and `https://api.zappi.money/mcp` are the same servers. There is no local pot key on the agent host. A free pot is created in the browser. `create_pot` returns one link. Before the human saves an allowance, call `register_spender_key` with the 33-byte hex public key from the local spender program. A send with no Spark allowance waits until that browser signs it. `allowance_pull` is settled by that local pull. An auth-required pot returns an approve URL that a human opens in the Zappi web app.
 
 A published client uses the staging URL above. A Nest process on this machine is `http://127.0.0.1:3011/mcp` (not `localhost`: macOS resolves that to `::1`, and Nest listens on IPv4). Leave `ZAPPI_PUBLIC_GATEWAY_URL` empty only for that loopback case. Do not point Cursor at an offline ngrok host.
 
 ## Connect
 
-Add that server as a custom MCP server in the host. Staging Cursor's entry is `https://api-dev.zappi.money/mcp`. OAuth 2.1 with PKCE is the login. Discovery lives at `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-authorization-server`. Register, authorize, token, revoke, and consent live under `/api/oauth/`. The human approves at `/pair?oauth=…`.
+Add that server as a custom MCP server in the host. Staging Cursor's entry is `https://mcp-dev.zappi.money/mcp`. OAuth 2.1 with PKCE is the login. Discovery lives at `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-authorization-server`. Register, authorize, token, revoke, and consent live under `/api/oauth/`. The human approves at `/pair?oauth=…`.
 
 The access token is an opaque `mcp_` string the MCP client stores and sends as `Authorization: Bearer`. It is not a JWT and not a `zpc_`. Leave extra headers empty. Do not paste a seed, a device code, or a pot-client token into the host config.
 
@@ -98,4 +98,4 @@ Remote `/mcp` rebuilds the link instead of copying Nest's `approveUrl`. `pay`, `
 
 - **Grok Bot** is not an MCP Apps host. Tool results are text content only. There is no `ui://` UI. `list_pots` text includes one `[Attach <name>](<full URL>)` line per unattached pot; copy that line in full and do not shorten the URL. Other tool text is JSON.
 - **Cursor remote** and other MCP Apps hosts may render `ui://` resources when the server offers them. The flow above does not change.
-- **Staging** uses `https://api-dev.zappi.money/mcp`. A Nest process on this machine uses `http://127.0.0.1:3011/mcp` in `~/.cursor/mcp.json` and authorizes at the local `/pair?oauth=…` page. Production is `https://api.zappi.money/mcp`.
+- **Staging** uses `https://mcp-dev.zappi.money/mcp`. A Nest process on this machine uses `http://127.0.0.1:3011/mcp` in `~/.cursor/mcp.json` and authorizes at the local `/pair?oauth=…` page. Production is `https://mcp.zappi.money/mcp`.
