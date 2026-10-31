@@ -53,7 +53,7 @@ Spending on an agent host is **not** a CLI command in the skill. It is door 3: a
 
 ## Door 3 — Remote `/mcp` (the only agent spend door)
 
-Endpoint: `https://api.zappi.money/mcp` (Streamable HTTP). Already live on the Nest API at `GET/POST /mcp` ([server/src/mcp/mcp.constants.ts](../../../../server/src/mcp/mcp.constants.ts)).
+Endpoint: `https://mcp.zappi.money/mcp` (Streamable HTTP). Already live on the Nest API at `GET/POST /mcp` ([server/src/mcp/mcp.constants.ts](../../../../server/src/mcp/mcp.constants.ts)). `https://api.zappi.money/mcp` is the same server. Staging is `https://mcp-dev.zappi.money/mcp`.
 
 **Auth.** OAuth 2.1 with PKCE. Discovery at `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-authorization-server`; register, authorize, token, revoke, and consent live under `/api/oauth/`. The human approves at `/pair?oauth=…`. The access token is an **opaque `mcp_` string** stored by the MCP client and sent as `Authorization: Bearer mcp_…`. It is not a JWT and not a `zpc_`.
 
