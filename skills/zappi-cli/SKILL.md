@@ -15,7 +15,7 @@ Read one playbook before creating a pot, depositing, or spending. Do not load ev
 | --- | --- |
 | zappi-cli-account | `login`, `whoami`, `logout`, `guest`, `guest claim` |
 | zappi-cli-pot | create, list, connect, disconnect, pair, balance |
-| zappi-cli-deposit | `deposit rails`, `deposit assets`, `deposit networks`, `deposit address` |
+| zappi-cli-deposit | `deposit assets`, `deposit networks`, `deposit address` |
 | zappi-cli-spend | `pots send`, catalog, approve URL, `txid` |
 
 ## Install
@@ -42,15 +42,15 @@ zappi-cli login
 | `zappi-cli pots pair [--pot <id>]` | Approve URL for an auth-required pot |
 | `zappi-cli pots balance [--pot <id>]` | Balance |
 | `zappi-cli pots challenge --address <spark>` | Address challenge |
-| `zappi-cli deposit rails [--pot <id>]` | Ways to add money |
-| `zappi-cli deposit assets [--pot <id>]` | Assets |
+| `zappi-cli deposit assets [--pot <id>]` | Currencies. This is the deposit question |
+| `zappi-cli deposit rails [--pot <id>]` | Same currency list as `deposit assets`. Not the deposit question |
 | `zappi-cli deposit networks [--asset] [--pot <id>]` | Networks |
-| `zappi-cli deposit address [--asset] [--network] [--pot <id>]` | Deposit address |
+| `zappi-cli deposit address [--asset] [--network] [--amount-cents] [--amount-sats] [--pot <id>]` | Deposit address |
 | `zappi-cli pots send assets [--pot <id>]` | Payout assets |
 | `zappi-cli pots send networks [--asset] [--pot <id>]` | Payout networks |
 | `zappi-cli pots send --amount-cents <n> --to <address> [--asset] [--chain] [--memo] [--pot] [--idempotency-key]` | Send |
 
-`pots connect` is not `pots attach`. `pots attach` is the device-code pairing command. `pots send` is not `zappi-cli send`. `zappi-cli send` is the wallet send. `deposit rails` is not `deposit-options` or `deposit-address`.
+`pots connect` is not `pots attach`. `pots attach` is the device-code pairing command. `pots send` is not `zappi-cli send`. `zappi-cli send` is the wallet send. `deposit rails` is not the deposit question. It is not `deposit-options` or `deposit-address`. A deposit with nothing named is `deposit assets`, then `deposit networks --asset`, then the amount and its minimum, then `deposit address --amount-cents`. A Lightning invoice uses `--amount-sats`.
 
 `zappi-cli pots` with no subcommand lists this login. A project API key, or `--origin` / `--spend-mode`, keeps the wallet list.
 

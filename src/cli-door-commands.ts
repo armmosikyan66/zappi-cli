@@ -298,14 +298,14 @@ export async function runDoorPotSend(
   return formatDoor('pots send', { ...result, idempotencyKey: echoed }, mode)
 }
 
-/** `zappi-cli deposit rails|assets|networks|address`. */
+/** `zappi-cli deposit rails|assets|networks|address`. `rails` returns the currency list from `/api/cli/deposit/assets`. */
 export async function runDoorDeposit(
   argv: string[],
   mode: OutputMode,
   env: PotEnv = process.env,
   deps: CliHttpDeps = {},
 ): Promise<string> {
-  assertKnownFlags(argv, ['pot', 'asset', 'network'])
+  assertKnownFlags(argv, ['pot', 'asset', 'network', 'amount-cents', 'amount-sats'])
   const { strings, positionals } = parseArgs(argv)
   const sub = positionals[0]
   if (positionals.length > 1 || (sub !== 'rails' && sub !== 'assets' && sub !== 'networks' && sub !== 'address')) {
@@ -313,13 +313,9 @@ export async function runDoorDeposit(
   }
   requireActor(env)
   const pot = potSelector(strings.pot)
-  if (sub === 'rails') {
-    const result = await cliRequest(env, '/api/cli/deposit/rails', { query: pot }, deps)
-    return formatDoor('deposit rails', result, mode)
-  }
-  if (sub === 'assets') {
+  if (sub === 'rails' || sub === 'assets') {
     const result = await cliRequest(env, '/api/cli/deposit/assets', { query: pot }, deps)
-    return formatDoor('deposit assets', result, mode)
+    return formatDoor(sub === 'rails' ? 'deposit rails' : 'deposit assets', result, mode)
   }
   if (sub === 'networks') {
     const query = {
@@ -333,6 +329,12 @@ export async function runDoorDeposit(
     ...pot,
     ...(strings.asset ? { asset: plain(strings.asset, '--asset') } : {}),
     ...(strings.network ? { network: plain(strings.network, '--network') } : {}),
+    ...(strings['amount-cents']
+      ? { amountCents: parseIntFlag(strings['amount-cents'], 'amount-cents') }
+      : {}),
+    ...(strings['amount-sats']
+      ? { amountSats: parseIntFlag(strings['amount-sats'], 'amount-sats') }
+      : {}),
   }
   const result = await cliRequest(env, '/api/cli/deposit/address', { method: 'POST', body }, deps)
   return formatDoor('deposit address', result, mode)

@@ -5,13 +5,15 @@ description: List deposit assets and networks and return a standing deposit addr
 
 # Deposit
 
-Commands: `zappi-cli deposit rails`, `zappi-cli deposit assets`, `zappi-cli deposit networks`, `zappi-cli deposit address`.
+Commands: `zappi-cli deposit assets`, `zappi-cli deposit networks`, `zappi-cli deposit address`.
+
+`zappi-cli deposit rails` is not the deposit question. It returns the same currency list as `deposit assets`. Do not start a deposit there.
 
 `zappi-cli deposit-options` and `zappi-cli deposit-address` are the wallet commands. This playbook is `zappi-cli deposit`.
 
-Run `zappi-cli deposit address` with the asset and network the person named, plus `--pot <id>` when you have it. It returns the address, or `need_choice` when the rail is missing or ambiguous. Show those choices and stop. The command exits 0. Run `zappi-cli deposit assets` and `zappi-cli deposit networks` only when the person asks what they can deposit, or to fill in the half they did not name. `zappi-cli deposit rails` lists the ways to add money. `unsupported` means say so and repeat the list. Do not guess another asset.
+A deposit with nothing named runs `zappi-cli deposit assets` and asks the currency. Then `zappi-cli deposit networks --asset` and ask the network. Then ask the amount and state that network's minimum. Then `zappi-cli deposit address --asset --network --amount-cents`, plus `--pot <id>` when you have it. A Lightning invoice uses `--amount-sats` instead of `--amount-cents`. Do not run `deposit address` with no asset. `need_choice` means ask that question and stop. The command exits 0. `unsupported` means say so and repeat the asset list. Do not guess another asset. Do not show asset and network pairs in one list.
 
-A guest free pot has standing deposit addresses, including USDC on Base. When the person asks how to deposit and names no rail, one `zappi-cli deposit address` with no `--asset` or `--network` returns the choice list in one step. Signing in is not required. Pass `--pot <id>` from `zappi-cli pots create` for a guest pot. A pot name does not reattach a guest pot. A refusal that asks for `potId` means pass `--pot`. It does not mean the command is missing and it does not mean sign in.
+Pass `--pot <id>` from `zappi-cli pots create` for a guest pot. A pot name does not reattach a guest pot. A refusal that asks for `potId` means pass `--pot`. It does not mean the command is missing and it does not mean sign in.
 
 ## Presenting the address
 

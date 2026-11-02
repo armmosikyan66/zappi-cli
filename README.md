@@ -55,7 +55,7 @@ A person or an agent uses these commands to create a pot, deposit, and send. `za
 | `pots pair` | Approve URL for an auth-required pot |
 | `pots balance` | Balance |
 | `pots challenge --address <spark>` | Address challenge |
-| `deposit rails` / `deposit assets` / `deposit networks` / `deposit address` | Deposit catalog and address |
+| `deposit assets` / `deposit networks` / `deposit address --amount-cents` | Deposit: currency, then network, then the amount and its minimum, then the address. A Lightning invoice uses `--amount-sats`. `deposit rails` is not the deposit question |
 | `pots send` | Server-signed send. `--amount-cents`, `--to`, optional `--asset`, `--chain`, `--memo`, `--pot`, `--idempotency-key` |
 
 `pots connect` is not `pots attach`. `pots send` is not `send`. `deposit address` is not `deposit-address`.
