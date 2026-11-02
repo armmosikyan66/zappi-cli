@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { writeCliCredentials } from './credentials.js'
-import { runDoorPotCreate, runDoorPotSend, runGuestCommand } from './cli-door-commands.js'
+import { runDoorDeposit, runDoorPotCreate, runDoorPotSend, runGuestCommand } from './cli-door-commands.js'
 import type { PotEnv } from './env.js'
 import { redactSecrets } from './paywall-http.js'
 
@@ -135,5 +135,52 @@ describe('cli door commands', () => {
     assert.equal(parsed.idempotencyKey, 'pay-once')
     assert.equal(parsed.txid, 'tx_1')
     assert.equal(parsed.status, 'settled')
+  })
+
+  it('deposit rails returns the currency list from the assets endpoint', async () => {
+    const target = env()
+    signIn(target)
+    const calls: string[] = []
+    const output = await runDoorDeposit(['rails', '--pot', 'pot-1'], 'json', target, {
+      fetchImpl: async (input) => {
+        calls.push(String(input))
+        return jsonResponse({
+          status: 'need_choice',
+          message: 'Choose a currency.',
+          assets: [{ asset: 'USDC', label: 'USDC' }],
+        })
+      },
+    })
+    assert.equal(calls.length, 1)
+    assert.match(calls[0], /\/api\/cli\/deposit\/assets\?pot=pot-1$/)
+    assert.equal(calls[0].includes('/api/cli/deposit/rails'), false)
+    const parsed = JSON.parse(output) as { ok: boolean; command: string; status: string; message: string }
+    assert.equal(parsed.ok, true)
+    assert.equal(parsed.command, 'deposit rails')
+    assert.equal(parsed.status, 'need_choice')
+    assert.equal(parsed.message, 'Choose a currency.')
+  })
+
+  it('sends amountCents on deposit address', async () => {
+    const target = env()
+    signIn(target)
+    let sent: Record<string, unknown> = {}
+    await runDoorDeposit(
+      ['address', '--asset', 'USDC', '--network', 'base', '--amount-cents', '100', '--pot', 'pot-1'],
+      'json',
+      target,
+      {
+        fetchImpl: async (_input, init) => {
+          sent = JSON.parse(String(init?.body)) as Record<string, unknown>
+          return jsonResponse({ status: 'ready', address: '0xabc' })
+        },
+      },
+    )
+    assert.deepEqual(sent, {
+      asset: 'USDC',
+      network: 'base',
+      amountCents: 100,
+      pot: 'pot-1',
+    })
   })
 })
