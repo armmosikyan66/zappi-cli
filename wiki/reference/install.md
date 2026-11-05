@@ -21,7 +21,7 @@ zappi-cli --help
 npx @zappimoney/zappi-cli --help
 ```
 
-**GitHub global** (the line in [[sources/skill]])
+**GitHub global** (from [[sources/readme]])
 
 ```bash
 npm i -g github:armmosikyan66/zappi-cli
@@ -38,6 +38,6 @@ npm link
 zappi-cli --help
 ```
 
-In this monorepo the package lives at `packages/zappi-cli` and depends on `@zappimoney/zappi-sdk` via `file:../zappi-sdk`. Published `files`: `bin`, `dist/**/*.js` except tests, `README.md`, `LICENSE`, `SKILL.md`.
+In this monorepo the package lives at `packages/zappi-cli` and depends on `@zappimoney/zappi-sdk` via `file:../zappi-sdk`. Published `files`: `bin`, `dist/**/*.js` except tests, `README.md`, `LICENSE`, `SKILL.md`, `skills/**/*.md`.
 
 Install has no `--pot` flag. See [[commands/propose]].

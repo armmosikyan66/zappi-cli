@@ -1,25 +1,22 @@
 ---
 type: source
-title: zappi-agent-pot skill
+title: zappi-cli skill
 author: zappi
 date_published: 2026-09-22
-date_ingested: 2026-09-22
+date_ingested: 2026-10-25
 source_path: packages/zappi-cli/SKILL.md
 tags: [cli, skill, agents]
-updated: 2026-09-24
+updated: 2026-10-25
 ---
 
 # Agent skill
 
-Ingest of `packages/zappi-cli/SKILL.md` (`name: zappi-agent-pot`). This is the **only** published buyer skill. Agents load this file first. Full command lines are [[usages]].
+Ingest of `packages/zappi-cli/SKILL.md` (`name: zappi-cli`). The same file is `skills/zappi-cli/SKILL.md`. npm `files` ships both, plus the four door playbooks under `skills/`. Agents load this file to learn what the CLI is, which family a job uses, and the usage line. Full command lines are also [[usages]]. The combined pot skill, remote MCP plus this CLI, is hosted at the app origin `/pots/SKILL.md`. This file stays the CLI reference.
 
 ## Takeaways
 
-- Propose line: `npx @zappimoney/zappi-cli propose` (no global install).
-- Wizard: existing pot or generate, spend mode, network (unless `SPARK_NETWORK` is set), app origin (unless origin env is set), label (blank confirms auto `pot_<unique>` vs a custom name), then open the register link.
-- Loading the skill, `npx @zappimoney/zappi-cli`, a pot id, or **connect** is **not** a send. Auth-required: the pot is not attached until `pots attach` is approved. Until then the bot cannot `request`, `pay`, `consume`, or `invite`. Pairing URL + user code only. Never ask for `zpc_`.
-- Free pot: set `ZAPPI_POT_ID`, keep `ZAPPI_POT_SEED` and `ZAPPI_UNLOCK_TOKEN` as host secrets, then `pay` and `consume`. `pay` reads 402 `accepts[0].network` + `asset` and only pays `spark` / `USDB`.
-- Auth-required: attach first. After pairing is approved, wait until the human asks to send (amount-cents + Spark address). Then [[commands/request]]. If `request` says not attached, run `pots attach` — never ask them to paste `zpc_`.
-- `invite` prints a Nest URL or fails closed (`INVITE_AFFILIATE_DISABLED`, `INVITE_LINK_MISSING`). On `auth_required` it also fails closed until this host is attached.
-
-The skill points agents at repository `README.md` ([[sources/readme]]) for the rest.
+- One binary, four families in this skill: this login (`/api/cli/*`), host key (`propose`, `request`, `invite`), local signer (`sign` and the `zappi-signer` commands), and wallet (`balance`, `send`, `withdraw`, project-key `pots`). `pay` and `consume` are the post-MVP paywall and are not in the skill.
+- This login has no spend mode and no per-pot limit. The signed Spark allowance is the only cap. `pots create` sends `--label` and `--skip-name`. `--spend-mode` on create is accepted and not sent.
+- Read one door playbook before that job: `zappi-cli-account`, `zappi-cli-pot`, `zappi-cli-deposit`, `zappi-cli-spend`. Leave the others closed. A Spark address is `sparkAddress` on `zappi-cli pots`. A balance is `zappi-cli pots balance`.
+- `pots connect` connects this login. `pots attach` is device-code pairing. `pots send` is this login. `send` is the wallet. `request` prints an approve URL.
+- Do not print a session, guest secret, pot seed, `zpc_`, device code, unlock token, or `ZAPPI_POT_PASSPHRASE`. On a failed command, stop. Do not read `~/.zappi/` secret files into chat.

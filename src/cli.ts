@@ -31,6 +31,8 @@ import {
   runDoorPotDisconnect,
   runDoorPotPair,
   runDoorPotSend,
+  runDoorPotSendStatus,
+  runDoorPotSpender,
   runDoorPots,
   runGuestCommand,
   usesWalletPotList,
@@ -68,6 +70,7 @@ import {
   type InviteResult,
   type ProposeResult,
 } from './results.js'
+import { forwardedSpenderExitCode } from './spender-commands.js'
 import {
   forwardedSignerExitCode,
   isSignerCliCommand,
@@ -145,9 +148,16 @@ export interface RunCliDeps {
 }
 
 export function writeCliFailure(error: unknown, mode: OutputMode): void {
-  const forwarded = forwardedSignerExitCode(error)
-  if (forwarded !== undefined) {
-    process.exitCode = forwarded === 0 ? 1 : forwarded
+  const signerCode = forwardedSignerExitCode(error)
+  if (signerCode !== undefined) {
+    process.exitCode = signerCode === 0 ? 1 : signerCode
+    return
+  }
+  const spenderCode = forwardedSpenderExitCode(error)
+  if (spenderCode !== undefined) {
+    const message = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`${formatError(redactSecrets(message), mode)}\n`)
+    process.exitCode = spenderCode === 0 ? 1 : spenderCode
     return
   }
   const message = error instanceof Error ? error.message : String(error)
@@ -390,6 +400,8 @@ export async function runCli(
     if (sub === 'balance') return runDoorPotBalance(subRest, mode)
     if (sub === 'challenge') return runDoorPotChallenge(subRest, mode)
     if (sub === 'send') return runDoorPotSend(subRest, mode)
+    if (sub === 'send-status') return runDoorPotSendStatus(subRest, mode)
+    if (sub === 'spender') return runDoorPotSpender(subRest, mode)
     if (sub === 'register') return runPotRegister(subRest, mode)
     if (sub === 'deposit-address') return runPotDepositAddress(subRest, mode)
     if (sub === 'grants') return runPotGrants(subRest, mode)
@@ -405,7 +417,7 @@ export async function runCli(
       return runPotsRegistry(regSub, regRest, mode)
     }
     throw new Error(
-      `Usage: zappi-cli pots <list|create|connect|disconnect|pair|balance|challenge|send|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status|bind|registry> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
+      `Usage: zappi-cli pots <list|create|connect|disconnect|pair|balance|challenge|send|send-status|spender|register|deposit-address|grants|spend-gate|spend-approvals|attach|attach-status|bind|registry> ...\n\n${renderHelp(mode === 'json' ? 'plain' : mode)}`,
     )
   }
 
