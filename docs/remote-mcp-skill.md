@@ -1,6 +1,6 @@
 ---
 name: zappi-remote-mcp
-description: Connect any MCP client to the Zappi staging HTTP MCP server at https://api-dev.zappi.money/mcp over OAuth. After pairing, offer to add money. A deposit asks currency, then network, then the amount and its minimum, then the address. There is no default pot and no spend mode. Never hold, request, or echo a seed, deviceCode, zpc_, or pot-client token.
+description: Connect any MCP client to the Zappi staging HTTP MCP server at https://api-dev.zappi.money/mcp over OAuth. After pairing, offer to add money. A deposit asks currency, then network, then shows the address and states the network minimum. Any amount at or above that minimum can be sent. An amount is asked only for a Lightning invoice. There is no default pot and no spend mode. Never hold, request, or echo a seed, deviceCode, zpc_, or pot-client token.
 ---
 
 # Zappi remote MCP
@@ -43,14 +43,14 @@ When `wait_pairing` returns `approved`, say the pot is attached and include `pot
 
 ## Deposit
 
-A deposit with nothing named asks the currency, then the network, then the amount and its minimum, then the address. Do not show asset and network pairs in one list. Do not hardcode USDC, USDT, or any other asset. Do not skip the amount.
+A deposit with nothing named asks the currency, then the network, then shows the address and states the network minimum. Any amount at or above that minimum can be sent. An amount is asked only for a Lightning invoice. Do not show asset and network pairs in one list. Do not hardcode USDC, USDT, or any other asset.
 
 - Nothing named. Call `list_deposit_assets`, or `deposit_address` with no asset. Both return `assets` and do not mint. Ask `message` with one option per `assets` label, copied exactly, in that order. Stop until they pick.
-- Currency named. Call `list_deposit_networks` with that asset. Ask which network, one option per `networkName`. One network still states `minDepositCents` and does not mint. Several networks return those networks and do not mint.
-- Network named. Ask the amount and state that network's `minDepositCents`. Then call `deposit_address` with `asset`, `network`, and `amountCents`. An amount below that minimum does not mint.
-- Lightning invoice. After Bitcoin Lightning is chosen, ask Address or Invoice. An invoice uses `amountSats` instead of `amountCents`.
+- Currency named. Call `list_deposit_networks` with that asset. Ask which network, one option per `networkName`. The list does not mint.
+- Network named. Call `deposit_address` with `asset` and `network` and no amount. Show the address or Lightning Address on its own line. State the minimum. Any amount at or above that minimum can be sent.
+- Lightning invoice. Ask for an amount only for a Lightning invoice, then pass `amountSats`.
 - `unsupported` means say so and repeat the asset list. Do not guess another asset.
-- `status` `ready` means one address. Tell the human the address, the asset, and the network. State that only that asset and network will land in the pot.
+- `status` `ready` means one address. Show the address or Lightning Address on its own line, with the asset and the network. State that only that asset and network will land in the pot.
 
 Pass `pot` or `potId` on every deposit call. There is no default pot.
 
