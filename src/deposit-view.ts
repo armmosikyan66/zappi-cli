@@ -12,7 +12,14 @@ const NL = '\n'
 export interface DepositCard {
   title: string
   address: string
-  qrPayload: string
+  /**
+   * Server scan string. When set, the QR encodes this and not a locally
+   * derived payload. Omit it for older results that only have an address.
+   */
+  qrPayload?: string
+  sourceAsset?: string | null
+  sourceChain?: string | null
+  sourceToken?: unknown
   fields: Array<[label: string, value: string]>
 }
 
@@ -21,6 +28,8 @@ interface PotDepositSource {
   sourceAsset?: string | null
   sourceChain?: string | null
   sourceToken?: unknown
+  /** Server scan string. Used as-is when non-empty. */
+  qrPayload?: string | null
 }
 
 /**
@@ -31,6 +40,8 @@ interface PotDepositSource {
 export function potDepositQrPayload(deposit: PotDepositSource): string {
   const address = deposit.depositAddress.trim()
   if (!address) throw new Error('Deposit response did not include an address.')
+  const provided = deposit.qrPayload?.trim() ?? ''
+  if (provided) return provided
   const combo = depositCombo(deposit.sourceAsset, deposit.sourceChain)
   if (!combo) return address
   return depositQrPayload(combo, address, undefined, nestSourceTokenMeta(deposit))
@@ -57,7 +68,13 @@ export async function formatDepositCard(
 ): Promise<string> {
   const address = card.address.trim()
   if (!address) throw new Error('Deposit response did not include an address.')
-  const qrPayload = card.qrPayload.trim() || address
+  const qrPayload = potDepositQrPayload({
+    depositAddress: address,
+    sourceAsset: card.sourceAsset,
+    sourceChain: card.sourceChain,
+    sourceToken: card.sourceToken,
+    qrPayload: card.qrPayload,
+  })
   const ink = paint(mode)
   const lines = [
     heading(card.title, mode),

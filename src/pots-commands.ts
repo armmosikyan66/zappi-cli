@@ -14,6 +14,21 @@ import {
 
 const NL = '\n'
 
+/** Archived pots stay on the account. The default list is the active ones. */
+export function omitArchivedPots<T>(pots: readonly T[]): T[] {
+  return pots.filter((pot) => !archivedAtOf(pot))
+}
+
+function archivedAtOf(pot: unknown): string | null {
+  if (pot === null || typeof pot !== 'object' || !('archivedAt' in pot)) {
+    return null
+  }
+  const archivedAt = pot.archivedAt
+  return typeof archivedAt === 'string' && archivedAt.length > 0
+    ? archivedAt
+    : null
+}
+
 function jsonOut(result: unknown): string {
   return JSON.stringify(result, null, 2)
 }
@@ -35,7 +50,7 @@ export async function runPotsList(
   const query: { origin?: 'user' | 'agent' | 'unknown'; spendMode?: 'auth_required' | 'free' | 'unknown' } = {}
   if (strings.origin) query.origin = strings.origin as 'user' | 'agent' | 'unknown'
   if (strings['spend-mode']) query.spendMode = strings['spend-mode'] as 'auth_required' | 'free' | 'unknown'
-  const pots = await client.listPots(query)
+  const pots = omitArchivedPots(await client.listPots(query))
   const result = { ok: true as const, command: 'pots' as const, pots }
   if (mode === 'json') return jsonOut(result)
   if (mode === 'plain') {

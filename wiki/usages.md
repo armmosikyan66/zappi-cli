@@ -1,12 +1,12 @@
 ---
 type: reference
 tags: [cli, usage]
-updated: 2026-09-24
+updated: 2026-10-25
 ---
 
 # Usages
 
-Every `zappi-cli` invocation. Behavior lives on the linked command pages. `--json` may appear on any command (stripped before dispatch). `--help` / `-h` with no command, or as the command, prints help.
+Every `zappi-cli` invocation. The agent skill is [[sources/skill]] (`SKILL.md`, name `zappi-cli`). Behavior lives on the linked command pages. `--json` may appear on any command (stripped before dispatch). `--help` / `-h` with no command, or as the command, prints help.
 
 ```bash
 zappi-cli --help
@@ -25,7 +25,9 @@ Bare `propose` on a TTY runs the wizard. No TTY falls back to this usage text. `
 
 ## Pots, deposit, and send
 
-A person or an agent. Uses `zappi-cli login`, or `zappi-cli guest` for a free pot. `--json` prints the body. `need_choice` and a refusal exit 0.
+A person or an agent. Uses `zappi-cli login`, or `zappi-cli guest` for a free pot. `--json` prints the body. `need_choice` and a refusal returned as a body exit 0. `allowance_required` exits 1.
+
+`pots create` sends `--label` and `--skip-name` only. `--auth-choice skip` starts a guest when this login has never signed in. `--spend-mode`, `--limits`, `--per-payment`, and `--per-day` are accepted and not sent. There is no spend mode on this path. The signed Spark allowance is the only cap.
 
 ```bash
 zappi-cli whoami
@@ -34,8 +36,8 @@ zappi-cli logout
 zappi-cli guest
 zappi-cli guest claim --pot <id>
 zappi-cli pots
-zappi-cli pots create [--spend-mode free|auth_required] [--label <name>] [--skip-name] [--auth-choice skip]
-zappi-cli pots connect --pot <name-or-id> [--default]
+zappi-cli pots create [--label <name>] [--skip-name] [--auth-choice skip]
+zappi-cli pots connect --pot <name-or-id>
 zappi-cli pots disconnect --pot <name-or-id>
 zappi-cli pots pair [--pot <id>]
 zappi-cli pots balance [--pot <id>]
@@ -53,18 +55,16 @@ zappi-cli pots send --amount-cents <n> --to <address> [--asset <asset>] [--chain
 
 ## Agent spend
 
+`pay` and `consume` are the PaidResource paywall. That feature is after the MVP, so those lines are not in the agent skill.
+
 ```bash
-zappi-cli pay <resourceIdOrUrl> [--no-consume] [--units N] [--json]
 zappi-cli request --amount-cents <cents> --to <spark-address> [--chain <chain>] [--memo <text>] [--json]
-zappi-cli consume <resourceIdOrUrl> [--units N] [--unlock-token <token>] [--json]
 zappi-cli invite [--json]
 ```
 
 | Command | Required env | Notes |
 | --- | --- | --- |
-| [[commands/pay]] | `ZAPPI_POT_ID` plus `ZAPPI_POT_SEED` or `ZAPPI_POT_KEY_FILE` | `ZAPPI_POT_SPEND_MODE=auth_required` refuses and points at `request`. Resource may be an id or `…/api/paywall/resources/:id`. |
 | [[commands/request]] | `ZAPPI_POT_ID` plus attached host (`ZAPPI_POT_CLIENT_TOKEN` or `~/.zappi/pot-client-*.txt`) | Auth-required send. Fails closed until attached. Stdout is one approve URL. Never a session token or seed. |
-| [[commands/consume]] | `ZAPPI_UNLOCK_TOKEN` (env wins over `--unlock-token`) | `--units` default `1`, positive integer. |
 | [[commands/invite]] | `ZAPPI_POT_ID` (UUID) | Extra args fail. Do not pass an invite code. |
 
 ## Wallet — [[commands/wallet]]
@@ -118,15 +118,11 @@ zappi-cli pots attach-status <requestId>
 ```bash
 zappi-cli propose
 zappi-cli propose --generate --label Research --open
-zappi-cli pay <resourceId>
-zappi-cli pay <resourceId> --no-consume
 zappi-cli request --amount-cents 100 --to <spark-address>
-zappi-cli consume <resourceId> --units 1
 zappi-cli invite --json
-zappi-cli pay <resourceId> --json
 zappi-cli balance --json
 zappi-cli pots
-zappi-cli pots create --spend-mode free --label Research
+zappi-cli pots create --label Research
 zappi-cli pots send --amount-cents 100 --to <spark-address>
 zappi-cli deposit address --asset USDB --network spark
 zappi-cli pots --spend-mode free

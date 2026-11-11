@@ -1,10 +1,19 @@
 ---
 type: log
 tags: [meta]
-updated: 2026-10-08
+updated: 2026-10-25
 ---
 
 # Wiki Log
+
+## [2026-10-25] manual | Pointer to the hosted pot skill
+
+- touched: SKILL.md, skills/zappi-cli/SKILL.md, wiki/sources/skill.md, wiki/log.md
+- notes: `zappi-cli` stays the CLI reference. An agent that has not installed a door fetches `<app origin>/pots/SKILL.md` and picks remote MCP or this CLI.
+
+## [2026-10-25] manual | Agent skill explains the CLI
+- touched: SKILL.md, skills/zappi-cli/SKILL.md, wiki/sources/skill.md, wiki/overview.md, wiki/usages.md, wiki/index.md, docs/developers/cli.mdx
+- notes: The published skill `zappi-cli` states what the binary is and the usage line for the MVP families. Door playbooks stay `zappi-cli-account`, `zappi-cli-pot`, `zappi-cli-deposit`, `zappi-cli-spend`. `pay` and `consume` stay in the binary and are left out of the skill until the paywall ships after the MVP. `pots create` does not send a spend mode. `docs/developers/cli.mdx` matches that.
 
 ## [2026-10-18] note | MCP free pots are signed by Nest
 - touched: wiki/reference/auth.md, docs/remote-mcp-skill.md

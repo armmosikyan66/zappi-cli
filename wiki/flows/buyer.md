@@ -35,4 +35,4 @@ Production paywall is the default (`https://api.zappi.money`) when those exports
 
 ## Agent card
 
-The published skill is [[sources/skill]] (`zappi-agent-pot` / `SKILL.md`). Setup, free `pay` / `consume`, and auth-required `request` are in that one file. Invite is optional and fail-closed ([[commands/invite]]).
+The published skill is [[sources/skill]] (`zappi-cli` / `SKILL.md`). It names the MVP command families. Host setup and auth-required `request` are in that file. Invite is optional and fail-closed ([[commands/invite]]). `pay` and `consume` are the post-MVP paywall and are not in the skill.

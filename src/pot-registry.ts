@@ -67,7 +67,7 @@ const LOCK_POLL_MS = 25
 
 const PROTOTYPE_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
-export type SparkNetwork = 'MAINNET'
+export type SparkNetwork = 'MAINNET' | 'REGTEST'
 export type PotDerivationMode = 'spark'
 export const DEFAULT_POT_DERIVATION_MODE: PotDerivationMode = 'spark'
 
@@ -249,8 +249,8 @@ export function validatePotRecord(raw: unknown, expectedPotId: string): PotRecor
   if (r.spendMode !== 'free') {
     throw new Error('Registry only stores free pots. Auth_required pots are not signed here.')
   }
-  if (r.network !== 'MAINNET') {
-    throw new Error('Registry network must be MAINNET.')
+  if (r.network !== 'MAINNET' && r.network !== 'REGTEST') {
+    throw new Error('Registry network must be MAINNET or REGTEST.')
   }
   if (r.derivationMode !== 'spark') {
     throw new Error('Registry derivationMode must be "spark" (v1).')

@@ -196,14 +196,14 @@ export interface MoneyOutHooks {
   /** Test hook after the verified pot is chosen and before Nest or signing. */
   onContext?: (context: PotContext) => void
   /** Test double for Spark address derivation. Production uses the SDK. */
-  deriveAddress?: (seed: string, network: 'MAINNET', accountIndex: number) => Promise<string>
+  deriveAddress?: (seed: string, network: 'MAINNET' | 'REGTEST', accountIndex: number) => Promise<string>
   /** Test double for the USDB broadcast. Production signs inside gateAndSignFreePot. */
   sendUsdb?: (input: SendUsdbFromPotInput) => Promise<SendUsdbFromPotResult>
   /** Test double for the pot's USDB token id. Production reads the Spark balance. */
   readTokenIdentifier?: (
     mnemonic: string,
     accountNumber: number,
-    network: 'MAINNET',
+    network: 'MAINNET' | 'REGTEST',
   ) => Promise<string>
 }
 

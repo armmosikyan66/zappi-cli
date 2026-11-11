@@ -452,13 +452,13 @@ describe('runProposeWizard', () => {
     )
   })
 
-  it('rejects SPARK_NETWORK other than MAINNET', async () => {
+  it('rejects an unknown SPARK_NETWORK', async () => {
     const { deps } = makeDeps({
       select: ['generate', 'free'],
     })
     await assert.rejects(
-      () => runProposeWizard([], { SPARK_NETWORK: 'REGTEST' }, deps),
-      /SPARK_NETWORK must be MAINNET/,
+      () => runProposeWizard([], { SPARK_NETWORK: 'SIGNET' }, deps),
+      /SPARK_NETWORK must be MAINNET or REGTEST/,
     )
   })
 

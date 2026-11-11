@@ -46,6 +46,30 @@ describe('potDepositQrPayload', () => {
     )
   })
 
+  it('prefers a server qrPayload over the local rail encoding', () => {
+    assert.equal(
+      potDepositQrPayload({
+        depositAddress: 'bc1qtest',
+        sourceAsset: 'BTC',
+        sourceChain: 'bitcoin',
+        qrPayload: 'bitcoin:bc1qfromserver',
+      }),
+      'bitcoin:bc1qfromserver',
+    )
+  })
+
+  it('derives when the server qrPayload is blank', () => {
+    assert.equal(
+      potDepositQrPayload({
+        depositAddress: 'bc1qtest',
+        sourceAsset: 'BTC',
+        sourceChain: 'bitcoin',
+        qrPayload: '   ',
+      }),
+      'bitcoin:bc1qtest',
+    )
+  })
+
   it('throws when the address is missing', () => {
     assert.throws(
       () => potDepositQrPayload({ depositAddress: '  ' }),
@@ -74,6 +98,25 @@ describe('formatDepositCard', () => {
     assert.match(out, /[█▀▄]/)
     assert.match(out, /USDC/)
     assert.match(out, /solana/)
+  })
+
+  it('draws the server qrPayload instead of a re-derived one', async () => {
+    const serverPayload = 'bitcoin:bc1qfromserver'
+    const out = await formatDepositCard(
+      {
+        title: 'Pot deposit address',
+        address: 'bc1qtest',
+        qrPayload: serverPayload,
+        sourceAsset: 'BTC',
+        sourceChain: 'bitcoin',
+        fields: [],
+      },
+      'pretty',
+    )
+    const expected = await renderTerminalQr(serverPayload)
+    const derived = await renderTerminalQr('bitcoin:bc1qtest')
+    assert.ok(out.includes(expected))
+    assert.equal(out.includes(derived), false)
   })
 
   it('omits the QR in plain mode', async () => {

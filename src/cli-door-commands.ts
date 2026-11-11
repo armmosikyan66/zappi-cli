@@ -4,7 +4,22 @@ import { writeCliGuest } from './cli-guest.js'
 import { cliAccessToken, cliRequest, hasCliActor, type CliHttpDeps } from './cli-http.js'
 import { resolvePaywallBase, type PotEnv } from './env.js'
 import { redactSecrets } from './paywall-http.js'
+import { askSendRail, completeDoorSend, type SendRailChoice } from './send-loop.js'
+import {
+  pullAllowanceWithSpender,
+  readSpenderPublicKey,
+  type SpenderSpawn,
+} from './spender-commands.js'
+import { potDepositQrPayload } from './deposit-view.js'
+import { renderTerminalQr } from './terminal-qr.js'
 import { heading, kv, type OutputMode } from './ui.js'
+
+export interface DoorCommandDeps extends CliHttpDeps {
+  spawnSpender?: SpenderSpawn
+  chooseSendRail?: (result: Record<string, unknown>) => Promise<SendRailChoice | null>
+  sleep?: (ms: number) => Promise<void>
+  maxStatusPolls?: number
+}
 
 const NL = '\n'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -31,14 +46,6 @@ function plain(value: string, name: string): string {
   return trimmed
 }
 
-function dollarFlag(value: string, name: string): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`${name} must be a dollar amount.`)
-  }
-  return parsed
-}
-
 function potSelector(value: string | undefined): Record<string, string> {
   if (!value) return {}
   const pot = plain(value, '--pot')
@@ -53,7 +60,20 @@ function formatDoor(command: string, body: Record<string, unknown>, mode: Output
   const json = JSON.stringify(payload, null, 2)
   if (mode === 'json') return redactSecrets(json)
   const lines = [heading(command, mode)]
-  for (const key of ['status', 'message', 'potId', 'name', 'txid', 'approveUrl', 'url', 'address', 'idempotencyKey']) {
+  for (const key of [
+    'status',
+    'message',
+    'potId',
+    'name',
+    'txid',
+    'approveUrl',
+    'url',
+    'address',
+    'idempotencyKey',
+    'requestId',
+    'sparkTxId',
+    'next',
+  ]) {
     const value = rest[key]
     if (typeof value === 'string' && value) lines.push(kv(key, value, mode))
   }
@@ -62,7 +82,11 @@ function formatDoor(command: string, body: Record<string, unknown>, mode: Output
       if (!choice || typeof choice !== 'object') continue
       const label = 'label' in choice && typeof choice.label === 'string' ? choice.label : ''
       const id = 'id' in choice && typeof choice.id === 'string' ? choice.id : ''
-      if (label || id) lines.push(kv('choice', label || id, mode))
+      const asset = 'asset' in choice && typeof choice.asset === 'string' ? choice.asset : ''
+      const network =
+        'networkName' in choice && typeof choice.networkName === 'string' ? choice.networkName : ''
+      const shown = [network, asset].filter(Boolean).join(' ')
+      if (label || id || shown) lines.push(kv('choice', label || shown || id, mode))
     }
   }
   if (lines.length === 1) lines.push(redactSecrets(json))
@@ -135,33 +159,16 @@ export async function runDoorPotCreate(
     'per-day',
   ])
   const { strings, booleans } = parseArgs(argv)
-  const spendMode = strings['spend-mode']
-  if (spendMode && spendMode !== 'free' && spendMode !== 'auth_required') {
-    throw new Error('--spend-mode must be free or auth_required.')
-  }
   const authChoice = strings['auth-choice']
   if (authChoice && authChoice !== 'skip') {
     throw new Error('--auth-choice must be skip.')
-  }
-  const limits = strings.limits
-  if (limits && limits !== 'default' && limits !== 'custom') {
-    throw new Error('--limits must be default or custom.')
   }
   if (authChoice === 'skip' && !cliAccessToken(env) && !hasCliActor(env)) {
     await mintGuest(env, deps)
   }
   const body: Record<string, unknown> = {}
-  if (spendMode) body.spendMode = spendMode
   if (strings.label) body.label = plain(strings.label, '--label')
   if (booleans['skip-name']) body.skipName = true
-  if (authChoice === 'skip') body.authChoice = 'skip'
-  if (limits) body.limitsChoice = limits
-  if (strings['per-payment'] !== undefined) {
-    body.perPaymentDollars = dollarFlag(strings['per-payment'], '--per-payment')
-  }
-  if (strings['per-day'] !== undefined) {
-    body.perDayDollars = dollarFlag(strings['per-day'], '--per-day')
-  }
   const result = await cliRequest(env, '/api/cli/pots', { method: 'POST', body }, deps)
   return formatDoor('pots create', result, mode)
 }
@@ -173,14 +180,11 @@ export async function runDoorPotConnect(
   deps: CliHttpDeps = {},
 ): Promise<string> {
   requireActor(env)
-  assertKnownFlags(argv, ['pot', 'default'])
-  const { strings, booleans } = parseArgs(argv)
+  assertKnownFlags(argv, ['pot'])
+  const { strings } = parseArgs(argv)
   const selected = potSelector(strings.pot)
   if (!selected.pot && !selected.potId) throw new Error('Missing --pot')
-  const body = {
-    ...selected,
-    ...(booleans.default ? { default: true } : {}),
-  }
+  const body = selected
   const result = await cliRequest(env, '/api/cli/pots/connect', { method: 'POST', body }, deps)
   return formatDoor('pots connect', result, mode)
 }
@@ -250,16 +254,26 @@ export async function runDoorPotChallenge(
   return formatDoor('pots challenge', result, mode)
 }
 
-/** `zappi-cli pots send` — server-signed send. `assets` and `networks` list the catalog. */
+/** `zappi-cli pots send` — same send as MCP. `assets` and `networks` list the catalog. */
 export async function runDoorPotSend(
   argv: string[],
   mode: OutputMode,
   env: PotEnv = process.env,
-  deps: CliHttpDeps = {},
+  deps: DoorCommandDeps = {},
 ): Promise<string> {
   requireActor(env)
-  assertKnownFlags(argv, ['amount-cents', 'to', 'asset', 'chain', 'memo', 'pot', 'idempotency-key'])
-  const { strings, positionals } = parseArgs(argv)
+  assertKnownFlags(argv, [
+    'amount-cents',
+    'to',
+    'asset',
+    'chain',
+    'memo',
+    'pot',
+    'idempotency-key',
+    'spark-tx-id',
+    'no-wait',
+  ])
+  const { strings, positionals, booleans } = parseArgs(argv)
   const sub = positionals[0]
   if (positionals.length > 1) {
     throw new Error('Usage: zappi-cli pots send [--amount-cents <n> --to <address>] [assets|networks]')
@@ -290,12 +304,71 @@ export async function runDoorPotSend(
   if (strings.asset) body.asset = plain(strings.asset, '--asset')
   if (strings.chain) body.destinationChain = plain(strings.chain, '--chain')
   if (strings.memo) body.memo = plain(strings.memo, '--memo')
-  const result = await cliRequest(env, '/api/cli/send', { method: 'POST', body }, deps)
+  if (strings['spark-tx-id']) body.sparkTxId = plain(strings['spark-tx-id'], '--spark-tx-id')
+  const post = (next: Record<string, unknown>) =>
+    cliRequest(env, '/api/cli/send', { method: 'POST', body: next }, deps)
+  const result = await completeDoorSend(body, await post(body), {
+    post,
+    status: (requestId) =>
+      cliRequest(env, '/api/cli/payment-status', { query: { requestId, ...pot } }, deps),
+    pull: (offer) =>
+      pullAllowanceWithSpender(offer, deps.spawnSpender, env as NodeJS.ProcessEnv),
+    choose: mode === 'json' ? undefined : (deps.chooseSendRail ?? askSendRail),
+    sleep: deps.sleep,
+    maxPolls: deps.maxStatusPolls,
+    noWait: booleans['no-wait'] === true,
+  })
   const echoed =
     typeof result.idempotencyKey === 'string' && result.idempotencyKey
       ? result.idempotencyKey
-      : idempotencyKey
+      : typeof result.requestId === 'string' && result.requestId
+        ? result.requestId
+        : idempotencyKey
   return formatDoor('pots send', { ...result, idempotencyKey: echoed }, mode)
+}
+
+/** `zappi-cli pots send-status <requestId>`. */
+export async function runDoorPotSendStatus(
+  argv: string[],
+  mode: OutputMode,
+  env: PotEnv = process.env,
+  deps: DoorCommandDeps = {},
+): Promise<string> {
+  requireActor(env)
+  assertKnownFlags(argv, ['pot'])
+  const { strings, positionals } = parseArgs(argv)
+  const requestId = positionals.length === 1 ? plain(positionals[0] ?? '', 'requestId') : ''
+  if (!requestId) throw new Error('Usage: zappi-cli pots send-status <requestId> [--pot <id>]')
+  const result = await cliRequest(
+    env,
+    '/api/cli/payment-status',
+    { query: { requestId, ...potSelector(strings.pot) } },
+    deps,
+  )
+  return formatDoor('pots send-status', result, mode)
+}
+
+/** `zappi-cli pots spender [pubkey]`. Omit the key to read it from the spender. */
+export async function runDoorPotSpender(
+  argv: string[],
+  mode: OutputMode,
+  env: PotEnv = process.env,
+  deps: DoorCommandDeps = {},
+): Promise<string> {
+  requireActor(env)
+  assertKnownFlags(argv, ['pot'])
+  const { strings, positionals } = parseArgs(argv)
+  if (positionals.length > 1) throw new Error('Usage: zappi-cli pots spender [pubkey] [--pot <id>]')
+  const given = positionals[0] ? plain(positionals[0], 'pubkey') : ''
+  const spenderPublicKey =
+    given || (await readSpenderPublicKey(deps.spawnSpender, env as NodeJS.ProcessEnv))
+  const result = await cliRequest(
+    env,
+    '/api/cli/pots/spender',
+    { method: 'POST', body: { spenderPublicKey, ...potSelector(strings.pot) } },
+    deps,
+  )
+  return formatDoor('pots spender', result, mode)
 }
 
 /** `zappi-cli deposit rails|assets|networks|address`. */
@@ -335,7 +408,20 @@ export async function runDoorDeposit(
     ...(strings.network ? { network: plain(strings.network, '--network') } : {}),
   }
   const result = await cliRequest(env, '/api/cli/deposit/address', { method: 'POST', body }, deps)
-  return formatDoor('deposit address', result, mode)
+  const text = formatDoor('deposit address', result, mode)
+  if (mode !== 'pretty') return text
+  const address = typeof result.address === 'string' ? result.address : ''
+  if (!address.trim()) return text
+  const qr = await renderTerminalQr(
+    potDepositQrPayload({
+      depositAddress: address,
+      sourceAsset: typeof result.asset === 'string' ? result.asset : null,
+      sourceChain: typeof result.sourceChain === 'string' ? result.sourceChain : null,
+      sourceToken: result.sourceToken,
+      qrPayload: typeof result.qrPayload === 'string' ? result.qrPayload : null,
+    }),
+  )
+  return `${text}${NL}${NL}${qr}`
 }
 
 export function usesWalletPotList(argv: string[], env: PotEnv = process.env): boolean {

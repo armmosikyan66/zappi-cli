@@ -36,7 +36,7 @@ import {
 import { loadPotSeed } from './load-pot-seed.js'
 import { inspectSparkAddress } from './spark-address.js'
 
-export type SparkNetwork = 'MAINNET'
+export type SparkNetwork = 'MAINNET' | 'REGTEST'
 export type PotDerivationMode = 'spark'
 export const DEFAULT_POT_DERIVATION_MODE: PotDerivationMode = 'spark'
 export const DEFAULT_POT_ACCOUNT_INDEX = 1
