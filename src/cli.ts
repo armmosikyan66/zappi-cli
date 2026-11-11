@@ -71,12 +71,6 @@ import {
   type ProposeResult,
 } from './results.js'
 import { forwardedSpenderExitCode } from './spender-commands.js'
-import {
-  forwardedSignerExitCode,
-  isSignerCliCommand,
-  runSignerCli,
-  type SignerSpawn,
-} from './signer-commands.js'
 
 /** @deprecated Prefer renderHelp(); kept for tests that import HELP. */
 export const HELP = renderHelp('plain')
@@ -143,16 +137,9 @@ export function parseConsumeCliArgs(argv: string[]): ConsumeCliArgs {
   return parsed
 }
 
-export interface RunCliDeps {
-  spawn?: SignerSpawn
-}
+export interface RunCliDeps {}
 
 export function writeCliFailure(error: unknown, mode: OutputMode): void {
-  const signerCode = forwardedSignerExitCode(error)
-  if (signerCode !== undefined) {
-    process.exitCode = signerCode === 0 ? 1 : signerCode
-    return
-  }
   const spenderCode = forwardedSpenderExitCode(error)
   if (spenderCode !== undefined) {
     const message = error instanceof Error ? error.message : String(error)
@@ -168,17 +155,12 @@ export function writeCliFailure(error: unknown, mode: OutputMode): void {
 export async function runCli(
   argv: string[],
   mode: OutputMode = 'pretty',
-  deps: RunCliDeps = {},
+  _deps: RunCliDeps = {},
 ): Promise<string> {
   const [command, ...rest] = argv
 
   if (!command || command === '--help' || command === '-h') {
     return renderHelp(mode === 'json' ? 'plain' : mode)
-  }
-
-  if (isSignerCliCommand(command)) {
-    await runSignerCli(command, rest, deps.spawn)
-    return ''
   }
 
   if (command === 'propose') {

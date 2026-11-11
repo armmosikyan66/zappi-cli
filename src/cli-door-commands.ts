@@ -10,6 +10,8 @@ import {
   readSpenderPublicKey,
   type SpenderSpawn,
 } from './spender-commands.js'
+import { potDepositQrPayload } from './deposit-view.js'
+import { renderTerminalQr } from './terminal-qr.js'
 import { heading, kv, type OutputMode } from './ui.js'
 
 export interface DoorCommandDeps extends CliHttpDeps {
@@ -178,14 +180,11 @@ export async function runDoorPotConnect(
   deps: CliHttpDeps = {},
 ): Promise<string> {
   requireActor(env)
-  assertKnownFlags(argv, ['pot', 'default'])
-  const { strings, booleans } = parseArgs(argv)
+  assertKnownFlags(argv, ['pot'])
+  const { strings } = parseArgs(argv)
   const selected = potSelector(strings.pot)
   if (!selected.pot && !selected.potId) throw new Error('Missing --pot')
-  const body = {
-    ...selected,
-    ...(booleans.default ? { default: true } : {}),
-  }
+  const body = selected
   const result = await cliRequest(env, '/api/cli/pots/connect', { method: 'POST', body }, deps)
   return formatDoor('pots connect', result, mode)
 }
@@ -409,7 +408,20 @@ export async function runDoorDeposit(
     ...(strings.network ? { network: plain(strings.network, '--network') } : {}),
   }
   const result = await cliRequest(env, '/api/cli/deposit/address', { method: 'POST', body }, deps)
-  return formatDoor('deposit address', result, mode)
+  const text = formatDoor('deposit address', result, mode)
+  if (mode !== 'pretty') return text
+  const address = typeof result.address === 'string' ? result.address : ''
+  if (!address.trim()) return text
+  const qr = await renderTerminalQr(
+    potDepositQrPayload({
+      depositAddress: address,
+      sourceAsset: typeof result.asset === 'string' ? result.asset : null,
+      sourceChain: typeof result.sourceChain === 'string' ? result.sourceChain : null,
+      sourceToken: result.sourceToken,
+      qrPayload: typeof result.qrPayload === 'string' ? result.qrPayload : null,
+    }),
+  )
+  return `${text}${NL}${NL}${qr}`
 }
 
 export function usesWalletPotList(argv: string[], env: PotEnv = process.env): boolean {

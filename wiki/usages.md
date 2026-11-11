@@ -37,7 +37,7 @@ zappi-cli guest
 zappi-cli guest claim --pot <id>
 zappi-cli pots
 zappi-cli pots create [--label <name>] [--skip-name] [--auth-choice skip]
-zappi-cli pots connect --pot <name-or-id> [--default]
+zappi-cli pots connect --pot <name-or-id>
 zappi-cli pots disconnect --pot <name-or-id>
 zappi-cli pots pair [--pot <id>]
 zappi-cli pots balance [--pot <id>]

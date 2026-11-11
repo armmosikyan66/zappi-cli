@@ -79,7 +79,7 @@ export function writeKeyFile(
 /** Public Spark address for a fresh pot key. Does not print the mnemonic. */
 export async function deriveSparkAddress(
   mnemonic: string,
-  network: 'MAINNET',
+  network: 'MAINNET' | 'REGTEST',
 ): Promise<string> {
   const { SparkWallet } = await import('@buildonspark/spark-sdk')
   const { wallet } = await SparkWallet.initialize({

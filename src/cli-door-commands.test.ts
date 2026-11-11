@@ -5,12 +5,14 @@ import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { writeCliCredentials } from './credentials.js'
 import {
+  runDoorDeposit,
   runDoorPotCreate,
   runDoorPotSend,
   runDoorPotSendStatus,
   runDoorPotSpender,
   runGuestCommand,
 } from './cli-door-commands.js'
+import { renderTerminalQr } from './terminal-qr.js'
 import { SpenderNotFoundError, SpenderPullUncertain } from './spender-commands.js'
 import type { PotEnv } from './env.js'
 import { redactSecrets } from './paywall-http.js'
@@ -52,6 +54,31 @@ describe('cli door commands', () => {
       target,
     )
   }
+
+  it('prints a QR of the server payload for a ready deposit', async () => {
+    const target = env()
+    signIn(target)
+    const output = await runDoorDeposit(
+      ['address', '--asset', 'btc', '--network', 'bitcoin'],
+      'pretty',
+      target,
+      {
+        fetchImpl: async () =>
+          jsonResponse({
+            status: 'ready',
+            address: 'bc1qtest',
+            asset: 'BTC',
+            sourceChain: 'bitcoin',
+            qrPayload: 'bitcoin:bc1qfromserver',
+          }),
+      },
+    )
+    assert.match(output, /bc1qtest/)
+    const expected = await renderTerminalQr('bitcoin:bc1qfromserver')
+    const derived = await renderTerminalQr('bitcoin:bc1qtest')
+    assert.ok(output.includes(expected))
+    assert.equal(output.includes(derived), false)
+  })
 
   it('returns need_choice without failing the command', async () => {
     const target = env()

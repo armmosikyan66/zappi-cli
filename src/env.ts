@@ -159,10 +159,13 @@ function safeOrigin(origin: string): string {
   }
 }
 
-export function resolveSparkNetwork(env: PotEnv = process.env): 'MAINNET' {
+export type CliSparkNetwork = 'MAINNET' | 'REGTEST'
+
+export function resolveSparkNetwork(env: PotEnv = process.env): CliSparkNetwork {
   const raw = env.SPARK_NETWORK?.trim().toUpperCase()
   if (!raw || raw === 'MAINNET') return 'MAINNET'
-  throw new Error('SPARK_NETWORK must be MAINNET. Regtest is not supported.')
+  if (raw === 'REGTEST') return 'REGTEST'
+  throw new Error('SPARK_NETWORK must be MAINNET or REGTEST.')
 }
 
 export function resolvePotSpendMode(

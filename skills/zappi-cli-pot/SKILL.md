@@ -27,7 +27,7 @@ Run `zappi-cli pots create` with no extra flags first. Do not ask the name befor
 
 The only spending cap is a signed Spark allowance the human sets on the pot page. Until then, every send returns an approve URL.
 
-Before they save a host-held allowance, run `zappi-cli pots spender`. That runs `zappi-allowance-spender pubkey` when no key is given and registers it on the default pot. Pass `--pot <id>` for a guest pot. Pass a 33-byte hex public key only when you already have one.
+Before they save a host-held allowance, run `zappi-cli pots spender`. That runs `zappi-allowance-spender pubkey` when no key is given and registers it on the pot you pass with `--pot`. Pass `--pot <id>` for a guest pot. Pass a 33-byte hex public key only when you already have one.
 
 If `zappi-allowance-spender` is missing, install it from `/spender/install` (Windows: `/spender/windows`) and use the path it prints. Do not use npx. Do not ask the human to install it. Set `ZAPPI_ALLOWANCE_SPENDER_BIN` when the binary is not on PATH.
 
@@ -35,18 +35,18 @@ On `allowance_required`, do not register a spender. Ask once to set the allowanc
 
 ## After the login is still here
 
-The login file and the guest file stay on this machine. Omit `--pot` for the default pot. Pass `--pot <id>` from the create result when a command asks for a pot. A pot name does not reattach a guest pot. Do not create a second pot while that pot still exists.
+The login file and the guest file stay on this machine. Pass `--pot <id>` from the create result when a command asks for a pot. Omitting it asks which pot. A pot name does not reattach a guest pot. Do not create a second pot while that pot still exists.
 
 ## List, connect, pair, balance
 
-`zappi-cli pots` shows what is on this login. `session` `default` is the pot used when `--pot` is omitted. `session` `attached` is on this login. `session` `unattached` cannot be spent from, deposited to, or read on this login. `attachment` is wallet pairing, separate from `session`. `sparkAddress` is the pot address when it has one. On a fresh guest with no pot the list is empty. Pass `--pot <id>` when the list must include a guest pot.
+`zappi-cli pots` shows what is on this login. `session` is `attached` or `unattached`. `attached` is on this login. `unattached` cannot be spent from, deposited to, or read on this login. There is no default pot. Omitting `--pot` asks which pot. `attachment` is wallet pairing, separate from `session`. `sparkAddress` is the pot address when it has one. On a fresh guest with no pot the list is empty. Pass `--pot <id>` when the list must include a guest pot.
 
-`zappi-cli pots connect --pot <name-or-id>` puts one of this account's pots on this login. `--default` moves the default. The first one becomes the default.
+`zappi-cli pots connect --pot <name-or-id>` puts one of this account's pots on this login.
 
-`zappi-cli pots disconnect --pot <name-or-id>` removes a pot from this login. The pot and its funds stay on the account. This is not a revoke. Disconnecting the default clears it.
+`zappi-cli pots disconnect --pot <name-or-id>` removes a pot from this login. The pot and its funds stay on the account. This is not a revoke.
 
 `zappi-cli pots pair` returns a `/pair` URL. Do not run it when create already returned `paired: true`.
 
-`zappi-cli pots balance` reads the pot. Omit `--pot` for the default. Pass `--pot <id>` when the command asks for it.
+`zappi-cli pots balance` reads the pot. Omitting `--pot` asks which pot. Pass `--pot <id>` when the command asks for it.
 
 `zappi-cli pots challenge --address <spark>` issues an address challenge. Create does not use it.

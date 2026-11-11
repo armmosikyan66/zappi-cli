@@ -7,7 +7,7 @@ description: Spend from a pot with zappi-cli pots send. Use when the user wants 
 
 The send command is `zappi-cli pots send --amount-cents <n> --to <address>`. `zappi-cli pots send assets` and `zappi-cli pots send networks` list payout rails. Run those two only when the person asks what they can send to. `zappi-cli send` is the wallet send. Do not use it for this login.
 
-`--pot` selects by name or id from `zappi-cli pots`. Omit it for the default. Pass `--pot <id>` from `zappi-cli pots create` for a guest pot. A refusal that asks for `potId` means pass `--pot`.
+`--pot` selects by name or id from `zappi-cli pots`. Omitting it asks which pot. Pass `--pot <id>` from `zappi-cli pots create` for a guest pot. A refusal that asks for `potId` means pass `--pot`.
 
 There is no per-payment limit and no per-day limit. The signed Spark allowance is the only cap. Do not put a limit on send. Do not offer a limits link.
 
@@ -17,7 +17,7 @@ The CLI mints an idempotency key when `--idempotency-key` is omitted and include
 
 A Spark address needs no chain. An `0x` address needs `--chain`. Pass `--memo` when the person gives a memo or tag for an exchange deposit.
 
-- On `need_choice`, show `networkName` and `asset`, ask the person, then run `zappi-cli pots send` again with those flags. The command exits 0. Do not pick a chain because it appeared on a deposit list. In a terminal, the command asks and sends again itself.
+- On `need_choice`, show each `label` when the result has one, otherwise `networkName` and `asset`, copied exactly, in that order. Do not paraphrase into prose or invent a fee. Then run `zappi-cli pots send` again with those flags. The command exits 0. Do not pick a chain because it appeared on a deposit list. In a terminal, the command asks and sends again itself.
 - On any refusal (`wrong_family`, `unsupported`, `too_small`, `memo_required`, `insufficient_funds`, `self_send`, `catalog_unavailable`, `quote_expired`, `balance_unavailable`), surface the reason verbatim to the person and stop. Do not retry unchanged, and do not retry with a different chain. `quote_expired` means nothing moved; a later send needs a new idempotency key.
 - On `pending_recovery`, tell the person the transfer is in flight with the `txid` and never send again for that request.
 - Treat the `next` field of every response as the instruction.

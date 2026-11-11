@@ -15,7 +15,7 @@ Ingest of `packages/zappi-cli/SKILL.md` (`name: zappi-cli`). The same file is `s
 
 ## Takeaways
 
-- One binary, four families in this skill: this login (`/api/cli/*`), host key (`propose`, `request`, `invite`), local signer (`sign` and the `zappi-signer` commands), and wallet (`balance`, `send`, `withdraw`, project-key `pots`). `pay` and `consume` are the post-MVP paywall and are not in the skill.
+- One binary, three families in this skill: this login (`/api/cli/*`), host key (`propose`, `request`, `invite`), and wallet (`balance`, `send`, `withdraw`, project-key `pots`). `pay` and `consume` are the post-MVP paywall and are not in the skill.
 - This login has no spend mode and no per-pot limit. The signed Spark allowance is the only cap. `pots create` sends `--label` and `--skip-name`. `--spend-mode` on create is accepted and not sent.
 - Read one door playbook before that job: `zappi-cli-account`, `zappi-cli-pot`, `zappi-cli-deposit`, `zappi-cli-spend`. Leave the others closed. A Spark address is `sparkAddress` on `zappi-cli pots`. A balance is `zappi-cli pots balance`.
 - `pots connect` connects this login. `pots attach` is device-code pairing. `pots send` is this login. `send` is the wallet. `request` prints an approve URL.
