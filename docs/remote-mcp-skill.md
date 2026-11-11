@@ -1,6 +1,6 @@
 ---
 name: zappi-remote-mcp
-description: Connect any MCP client to the Zappi staging HTTP MCP server at https://api-dev.zappi.money/mcp over OAuth. After pairing, offer to add money. A deposit asks currency, then network, then the amount and its minimum, then the address. There is no default pot and no spend mode. Never hold, request, or echo a seed, deviceCode, zpc_, or pot-client token.
+description: Connect any MCP client to the Zappi staging HTTP MCP server at https://api-dev.zappi.money/mcp over OAuth. After pairing, offer to add money. A deposit asks currency, then network, then shows the address and states the network minimum. Any amount at or above that minimum can be sent. An amount is asked only for a Lightning invoice. There is no default pot and no spend mode. Never hold, request, or echo a seed, deviceCode, zpc_, or pot-client token.
 ---
 
 # Zappi remote MCP
@@ -43,7 +43,7 @@ When `wait_pairing` returns `approved`, say the pot is attached and include `pot
 
 ## Deposit
 
-A deposit with nothing named asks the currency, then the network, then the amount and its minimum, then the address. Do not show asset and network pairs in one list. Do not hardcode USDC, USDT, or any other asset. Do not skip the amount.
+A deposit with nothing named asks the currency, then the network, then shows the address and states the network minimum. Any amount at or above that minimum can be sent. An amount is asked only for a Lightning invoice. Do not show asset and network pairs in one list. Do not hardcode USDC, USDT, or any other asset.
 
 - Nothing named. Call `list_deposit_assets`, or `deposit_address` with no asset. Both return `assets` and do not mint. Ask `message` with one option per `assets` label, copied exactly, in that order. Stop until they pick.
 - Currency named. Call `list_deposit_networks` with that asset. Ask which network, one option per `networkName`. One network still states `minDepositCents` and does not mint. Several networks return those networks and do not mint.

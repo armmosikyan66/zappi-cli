@@ -11,10 +11,10 @@ Commands: `zappi-cli deposit assets`, `zappi-cli deposit networks`, `zappi-cli d
 
 `zappi-cli deposit-options` and `zappi-cli deposit-address` are the wallet commands. This playbook is `zappi-cli deposit`.
 
-A deposit with nothing named runs `zappi-cli deposit assets` and asks the currency. Then `zappi-cli deposit networks --asset` and ask the network. Then ask the amount and state that network's minimum. Then `zappi-cli deposit address --asset --network --amount-cents`, plus `--pot <id>` when you have it. A Lightning invoice uses `--amount-sats` instead of `--amount-cents`. Do not run `deposit address` with no asset. `need_choice` means ask that question and stop. The command exits 0. `unsupported` means say so and repeat the asset list. Do not guess another asset. Do not show asset and network pairs in one list.
+A deposit with nothing named runs `zappi-cli deposit assets` and asks the currency. Then `zappi-cli deposit networks --asset` and asks the network. Then `zappi-cli deposit address --asset --network` with no `--amount-cents`, plus `--pot <id>` when you have it. Show the address or Lightning Address on its own line. State the network minimum. Say they can send any amount at or above that minimum. Ask for an amount only for a Lightning invoice, then pass `--amount-sats`. Do not run `deposit address` with no asset. `need_choice` means ask that question and stop. The command exits 0. `unsupported` means say so and repeat the asset list. Do not guess another asset. Do not show asset and network pairs in one list.
 
 Pass `--pot <id>` from `zappi-cli pots create` for a guest pot. A pot name does not reattach a guest pot. A refusal that asks for `potId` means pass `--pot`. It does not mean the command is missing and it does not mean sign in.
 
 ## Presenting the address
 
-Show the address as plain monospace text with the network in words, for example: Send USDC on Base to `<address>`. State that only the named asset and network will land in the pot. Do not generate a QR image. `sourceChain` is informational.
+Show the address or Lightning Address on its own line as plain monospace text, and name the network in words. State that only the named asset and network will land in the pot. Do not generate a QR image. `sourceChain` is informational.

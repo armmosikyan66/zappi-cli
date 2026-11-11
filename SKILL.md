@@ -50,7 +50,7 @@ zappi-cli login
 | `zappi-cli pots send networks [--asset] [--pot <id>]` | Payout networks |
 | `zappi-cli pots send --amount-cents <n> --to <address> [--asset] [--chain] [--memo] [--pot] [--idempotency-key]` | Send |
 
-`pots connect` is not `pots attach`. `pots attach` is the device-code pairing command. `pots send` is not `zappi-cli send`. `zappi-cli send` is the wallet send. `deposit rails` is not the deposit question. It is not `deposit-options` or `deposit-address`. A deposit with nothing named is `deposit assets`, then `deposit networks --asset`, then the amount and its minimum, then `deposit address --amount-cents`. A Lightning invoice uses `--amount-sats`.
+`pots connect` is not `pots attach`. `pots attach` is the device-code pairing command. `pots send` is not `zappi-cli send`. `zappi-cli send` is the wallet send. `deposit rails` is not the deposit question. It is not `deposit-options` or `deposit-address`. A deposit with nothing named is `deposit assets`, then `deposit networks --asset`, then `deposit address --asset --network` with no `--amount-cents`. Show the address or Lightning Address on its own line. State the network minimum. Say they can send any amount at or above that minimum. Ask for an amount only for a Lightning invoice, then pass `--amount-sats`.
 
 `zappi-cli pots` with no subcommand lists this login. A project API key, or `--origin` / `--spend-mode`, keeps the wallet list.
 
