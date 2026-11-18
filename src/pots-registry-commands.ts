@@ -53,7 +53,7 @@ export interface PotsRegistryCommandDeps {
   env?: PotEnv
   askSecret?: (prompt: string) => Promise<string>
   /** Override Spark address derivation (tests). Default uses the Spark SDK. */
-  deriveAddress?: (seed: string, network: 'MAINNET', accountIndex: number) => Promise<string>
+  deriveAddress?: (seed: string, network: 'MAINNET' | 'REGTEST', accountIndex: number) => Promise<string>
   now?: () => Date
   /** OS keychain double. Production loads `pot-keychain` only for this command. */
   unlockKeychain?: UnlockKeychain
@@ -502,7 +502,7 @@ function parseStrings(argv: string[]): Record<string, string> {
   return out
 }
 
-async function defaultDeriveAddress(seed: string, network: 'MAINNET', accountIndex: number): Promise<string> {
+async function defaultDeriveAddress(seed: string, network: 'MAINNET' | 'REGTEST', accountIndex: number): Promise<string> {
   const { SparkWallet } = await import('@buildonspark/spark-sdk')
   const { wallet } = await SparkWallet.initialize({
     mnemonicOrSeed: seed,

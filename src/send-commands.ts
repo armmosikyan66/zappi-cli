@@ -82,7 +82,7 @@ async function runSendSparkUsdb(
     readTokenIdentifier?: (
       mnemonic: string,
       accountNumber: number,
-      network: 'MAINNET',
+      network: 'MAINNET' | 'REGTEST',
     ) => Promise<string>
     sendUsdb?: (input: SendUsdbFromPotInput) => Promise<SendUsdbFromPotResult>
   },
@@ -90,7 +90,7 @@ async function runSendSparkUsdb(
   const inspected = inspectSparkAddress(to)
   if (!inspected.valid || !inspected.network || inspected.network === 'FOREIGN') {
     throw new Error(
-      'Destination is not a valid Spark address for MAINNET: ' + to,
+      'Destination is not a valid Spark address: ' + to,
     )
   }
 

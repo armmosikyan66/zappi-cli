@@ -72,7 +72,7 @@ export interface PotBindClient {
 
 export interface PotBindDeps {
   client?: PotBindClient
-  deriveSparkAddress?: (mnemonic: string, network: 'MAINNET') => Promise<string>
+  deriveSparkAddress?: (mnemonic: string, network: 'MAINNET' | 'REGTEST') => Promise<string>
   generateMnemonic?: () => string
 }
 

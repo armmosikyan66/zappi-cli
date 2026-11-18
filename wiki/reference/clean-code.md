@@ -6,7 +6,7 @@ updated: 2026-09-30
 
 # Clean Code skill
 
-Project skill at [`.agents/skills/clean-code/SKILL.md`](../../.agents/skills/clean-code/SKILL.md) (`name: clean-code`, v1.4.0, MIT, author wondelai). Distinct from the published buyer skill [[sources/skill]] (`zappi-agent-pot`). Cursor loads this one from `.agents/skills/` inside the CLI repo. Invoke with `/clean-code` when cleaning or reviewing CLI code.
+Project skill at [`.agents/skills/clean-code/SKILL.md`](../../.agents/skills/clean-code/SKILL.md) (`name: clean-code`, v1.4.0, MIT, author wondelai). Distinct from the published buyer skill [[sources/skill]] (`zappi-cli`). Cursor loads this one from `.agents/skills/` inside the CLI repo. Invoke with `/clean-code` when cleaning or reviewing CLI code.
 
 **Code is read far more often than it is written.** Rate the code 0–10 and name the changes that would reach 10/10.
 

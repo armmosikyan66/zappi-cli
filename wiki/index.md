@@ -1,10 +1,10 @@
 ---
 type: index
 tags: [meta, cli]
-updated: 2026-10-07
+updated: 2026-10-25
 source_count: 3
 page_count: 23
-last_change: 2026-10-07 Added [[reference/agent-ops]] (Grok Bot guide alignment).
+last_change: 2026-10-25 [[sources/skill]] is the zappi-cli usage skill. Paywall `pay` / `consume` are after the MVP.
 ---
 
 # zappi-cli Wiki
@@ -31,7 +31,7 @@ LLM-maintained knowledge base for `@zappimoney/zappi-cli` (`zappi-cli`). The age
 ## Sources
 
 - [[sources/readme]] — package README: install, command table, env, staging, hard rules.
-- [[sources/skill]] — agent skill `zappi-agent-pot` (the only published buyer skill): propose, pay, consume, auth-required `request`.
+- [[sources/skill]] — agent skill `zappi-cli`: what the CLI is, the five command families, and the usage for each command. Door playbooks live under `skills/`.
 - [[sources/command-source]] — `src/` dispatch, help text, and per-command flags (source of truth when README lags).
 
 ## Overview

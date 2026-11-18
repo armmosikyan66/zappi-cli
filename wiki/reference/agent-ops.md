@@ -11,7 +11,7 @@ How the zappi-cli specialist bot works. Aligns with Grok Bot engineering + 101 (
 ## Ownership
 
 - Own **only** `@zappimoney/zappi-cli` / GitHub `armmosikyan66/zappi-cli` (local `packages/zappi-cli`).
-- Nest, web, SDK, CRM: hand off; do not invent their APIs.
+- Nest, web, SDK: hand off; do not invent their APIs.
 
 ## Wiki first
 
@@ -25,6 +25,6 @@ How the zappi-cli specialist bot works. Aligns with Grok Bot engineering + 101 (
 
 ## Skills for repeatable flows
 
-- Buyer skill: published `zappi-agent-pot` ([[sources/skill]]).
+- Buyer skill: published `zappi-cli` ([[sources/skill]]), plus the door playbooks under `skills/`.
 - Repo skills under `.agents/skills/` for repeatable CLI/dev flows (e.g. clean-code).
 - Package a flow as a skill when it repeats more than once.

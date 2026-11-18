@@ -152,7 +152,7 @@ export interface PayResourceOptions {
   readTokenIdentifier?: (
     mnemonic: string,
     accountNumber: number,
-    network: 'MAINNET',
+    network: 'MAINNET' | 'REGTEST',
   ) => Promise<string>
   /** `--pot <id>`. Wins over `ZAPPI_POT_ID` when they differ (fail closed). */
   potFlag?: string

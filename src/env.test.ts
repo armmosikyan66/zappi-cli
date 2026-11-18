@@ -121,13 +121,14 @@ describe('resolveAppOrigin + spark network + units', () => {
     )
   })
 
-  it('defaults spark network to MAINNET and rejects anything else', () => {
+  it('defaults spark network to MAINNET and accepts explicit REGTEST', () => {
     assert.equal(resolveSparkNetwork({}), 'MAINNET')
     assert.equal(resolveSparkNetwork({ SPARK_NETWORK: 'mainnet' }), 'MAINNET')
     assert.equal(resolveSparkNetwork({ SPARK_NETWORK: '  ' }), 'MAINNET')
+    assert.equal(resolveSparkNetwork({ SPARK_NETWORK: 'regtest' }), 'REGTEST')
     assert.throws(
-      () => resolveSparkNetwork({ SPARK_NETWORK: 'regtest' }),
-      /MAINNET/,
+      () => resolveSparkNetwork({ SPARK_NETWORK: 'signet' }),
+      /MAINNET or REGTEST/,
     )
   })
 

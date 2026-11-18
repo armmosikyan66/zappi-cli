@@ -16,7 +16,7 @@ This workspace is **`zappi-cli`** (buyer CLI + tests). Canonical system map + fu
 
 Wiki hub: `../zappi/wiki/codebase/eval-harness.md` (Linear 1-247). Memo: `../zappi/wiki/analyses/llm-as-judge-pilot.md`.
 
-Do **not** overwrite this package’s root `SKILL.md` (`zappi-agent-pot` buyer skill). Do not publish this folder to `.well-known/agent-skills`.
+Do **not** overwrite this package’s root `SKILL.md` (`zappi-cli` buyer skill). Do not publish this folder to `.well-known/agent-skills`.
 
 ## Run
 

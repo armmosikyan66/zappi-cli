@@ -173,8 +173,7 @@ This removes the pot's entry from the local registry. It does **not**:
 
 ## 7. Compromised-seed response
 
-If a seed was exposed (or the signer host was compromised), encryption and
-CLI caps **cannot** prevent theft. The response is:
+If a seed was exposed, encryption and CLI caps **cannot** prevent theft. The response is:
 
 1. Create a **fresh, independent** free pot (`propose --generate`).
 2. Migrate funds from the compromised pot to the new one, **authorized by a

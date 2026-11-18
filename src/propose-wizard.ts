@@ -88,7 +88,7 @@ function formatFreeSuccess(input: {
   sparkAddress: string
   label: string
   href: string
-  network: 'MAINNET'
+  network: 'MAINNET' | 'REGTEST'
   origin: string
   keyFile?: string
   provisionId?: string
@@ -136,7 +136,7 @@ export interface WizardDeps {
   ask: (prompt: string) => Promise<string>
   select: (prompt: string, options: SelectOption[]) => Promise<string>
   generateMnemonic: () => string
-  deriveAddress: (mnemonic: string, network: 'MAINNET') => Promise<string>
+  deriveAddress: (mnemonic: string, network: 'MAINNET' | 'REGTEST') => Promise<string>
   writeKeyFile: (path: string, mnemonic: string, sparkAddress: string, label?: string) => void
   defaultKeyFile: (label?: string) => string
   promptOpenLink: (href: string, options?: { autoOpenMs?: number; headline?: string; openBrowser?: boolean }) => Promise<{ action: string; auto: boolean }>
@@ -154,7 +154,7 @@ export interface WizardDeps {
     seed: string
     sparkAddress: string
     label?: string
-    network: 'MAINNET'
+    network: 'MAINNET' | 'REGTEST'
     passphrase: string
     env: PotEnvSubset
   }) => Promise<{ provisionId: string }>
@@ -172,7 +172,7 @@ export interface RunProposeWizardResult {
   mode: WizardMode
   spendMode: PotSpendMode
   label: string
-  network: 'MAINNET'
+  network: 'MAINNET' | 'REGTEST'
   origin: string
   sparkAddress?: string
   keyFile?: string
@@ -214,7 +214,7 @@ export function parseHttpOrigin(raw: string): string | null {
 const ORIGIN_GUIDANCE =
   'Choose a Zappi app origin: staging (https://dev.zappi.money), production (https://zappi.money), local (http://localhost:3000), or a custom http(s) URL.'
 
-function resolveWizardNetwork(env: PotEnvSubset): 'MAINNET' {
+function resolveWizardNetwork(env: PotEnvSubset): 'MAINNET' | 'REGTEST' {
   return resolveSparkNetwork(env)
 }
 
