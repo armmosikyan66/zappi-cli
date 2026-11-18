@@ -11,7 +11,7 @@ How the zappi-cli specialist bot works. Aligns with Grok Bot engineering + 101 (
 ## Ownership
 
 - Own **only** `@zappimoney/zappi-cli` / GitHub `armmosikyan66/zappi-cli` (local `packages/zappi-cli`).
-- Nest, web, SDK, CRM: hand off; do not invent their APIs.
+- Nest, web, SDK: hand off; do not invent their APIs.
 
 ## Wiki first
 

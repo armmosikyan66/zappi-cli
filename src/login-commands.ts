@@ -131,7 +131,7 @@ export async function runLogout(
   const token = env.ZAPPI_ACCESS_TOKEN?.trim() || stored?.accessToken
   const apiUrl = stored?.apiUrl || resolvePaywallBase(env)
   if (token) {
-    await fetchImpl(`${apiUrl}/api/auth/logout`, {
+    await fetchImpl(`${apiUrl}/api/auth/sessions/end`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -139,7 +139,7 @@ export async function runLogout(
         'User-Agent': 'zappi-cli',
         'x-zappi-access-token': token,
       },
-      body: '{}',
+      body: JSON.stringify({ signOut: {} }),
     }).catch(() => undefined)
   }
   try {

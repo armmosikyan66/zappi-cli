@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
@@ -90,10 +97,46 @@ describe('zappi-cli login', () => {
     assert.match(who, /ada@example.com/)
     assert.equal(who.includes(SECRET), false)
 
+    let logoutUrl = ''
+    let logoutBody = ''
     const loggedOut = await runLogout([], 'json', env, {
-      fetchImpl: async () => jsonResponse({ ok: true }),
+      fetchImpl: async (input, init) => {
+        logoutUrl = String(input)
+        logoutBody = typeof init?.body === 'string' ? init.body : ''
+        return jsonResponse({ ok: true })
+      },
     })
     assert.match(loggedOut, /logout/)
+    assert.equal(logoutUrl, 'https://api.test/api/auth/sessions/end')
+    assert.equal(logoutBody, JSON.stringify({ signOut: {} }))
+    assert.throws(() => readFileSync(env.ZAPPI_CREDENTIALS_FILE, 'utf8'))
+  })
+
+  it('deletes the credentials file when sign-out fails', async () => {
+    const env = envFile()
+    writeFileSync(
+      env.ZAPPI_CREDENTIALS_FILE,
+      JSON.stringify({
+        version: 1,
+        apiUrl: 'https://api.test',
+        accessToken: SECRET,
+        refreshToken: REFRESH,
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      }),
+    )
+    chmodSync(env.ZAPPI_CREDENTIALS_FILE, 0o600)
+    let logoutUrl = ''
+    let logoutBody = ''
+    const loggedOut = await runLogout([], 'json', env, {
+      fetchImpl: async (input, init) => {
+        logoutUrl = String(input)
+        logoutBody = typeof init?.body === 'string' ? init.body : ''
+        throw new Error('offline')
+      },
+    })
+    assert.match(loggedOut, /logout/)
+    assert.equal(logoutUrl, 'https://api.test/api/auth/sessions/end')
+    assert.equal(logoutBody, JSON.stringify({ signOut: {} }))
     assert.throws(() => readFileSync(env.ZAPPI_CREDENTIALS_FILE, 'utf8'))
   })
 
